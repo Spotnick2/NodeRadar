@@ -1,0 +1,21 @@
+package-as: NodeRadar
+
+enable-nolib-creation: no
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+# YAML list, not markdown bullets. Every pattern matches the WHOLE path from
+# the package root.
+ignore:
+  - .github
+  - .gitignore
+  - .gitattributes
+  - .claude
+  - docs
+  - tests
+  - Tools
+  - CLAUDE.md
+  - README.md
+  - CHANGELOG.md

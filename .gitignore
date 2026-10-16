@@ -1,0 +1,15 @@
+# Compiled Lua / syntax-check output
+luac.out
+
+# Per-machine Claude Code settings
+.claude/settings.local.json
+
+# Packager output
+.release/
+*.zip
+
+# Per-session Claude Code runtime state
+.claude/scheduled_tasks.lock
+
+# The CurseForge description: kept beside README.md, pasted into CurseForge by hand.
+README.curseforge.md
