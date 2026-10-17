@@ -6,6 +6,7 @@ dofile("tests/harness.lua")
 
 WoW.tracking[1].active = true                              -- Find Herbs on before the login
 local NR = loadAddon()
+NR.db.interval = 0.5                                       -- a quick idle cadence: these test behaviour, not cadence
 local Alert, Learn = NR.Alert, NR.Learn
 NR.db.learn = false                                        -- no experiments here
 

@@ -9,6 +9,7 @@ dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
 local NR = loadAddon()
+NR.db.interval = 0.5                                       -- a quick idle cadence: these test behaviour, not cadence
 NR.db.learn = true                                         -- off by default (the restore costs a GCD); on here
 local Learn = NR.Learn
 

@@ -13,6 +13,7 @@ C_AddOns.IsAddOnLoaded = function(name) return name == "GlassMiniMap", name == "
 
 WoW.tracking[1].active = true                              -- Find Herbs, before the login
 local NR = loadAddon()
+NR.db.interval = 0.5                                       -- a quick idle cadence: these test behaviour, not cadence
 local FP = loadForeverProbe()
 local T = loadProbe()._test
 local S = FP.Steps

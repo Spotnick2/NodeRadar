@@ -23,6 +23,16 @@ function Scan.Geometry()
     return { es = es, l = l, b = b, w = w, h = h }
 end
 
+-- A line's text as a name: the client's escape codes out. A node above or below
+-- the player reads "|TInterface\Minimap\Minimap-PositionArrows:…|tPeacebloom",
+-- quest lines carry colours (release check, 70450): the same node must read the
+-- same name at every height, and as gathering names it.
+function Scan.Plain(s)
+    s = s:gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|H.-|h(.-)|h", "%1")
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn[^:]*:", ""):gsub("|r", ""):gsub("|n", " ")
+    return (s:match("^%s*(.-)%s*$"))
+end
+
 -- The names under the mouseover, or throws: a secret answer fails the sweep.
 local function names()
     local data = C_TooltipInfo.GetMinimapMouseover()
@@ -37,8 +47,11 @@ local function names()
         if API.IsSecret(t) then error("a mouseover line reads secret", 0) end
         if type(t) == "string" then
             for row in t:gmatch("[^\n]+") do
-                list = list or {}
-                list[#list + 1] = row
+                local name = Scan.Plain(row)
+                if name ~= "" then
+                    list = list or {}
+                    list[#list + 1] = name
+                end
             end
         end
     end

@@ -428,7 +428,7 @@ local function blipsAt(dx, dy)
     for _, b in ipairs(WoW.blips) do
         if (b[2] - dx) ^ 2 + (b[3] - dy) ^ 2 <= 36 and (not b.kind or kindOn(b.kind)) then
             local c = b.colour or { 1, 1, 1 }
-            local text = WoW.secretNames and WoW.Secret("name") or b[1]
+            local text = WoW.secretNames and WoW.Secret("name") or b.text or b[1]
             lines[#lines + 1] = { leftText = text, type = 0, leftColor = { r = c[1], g = c[2], b = c[3], a = 1 } }
         end
     end

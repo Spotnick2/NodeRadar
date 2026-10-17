@@ -20,7 +20,7 @@ local DEFAULTS = {
     learn    = false,   -- learn unknown names by turning tracking off and on: off, since
                         -- turning it back on costs a global cooldown (release check, 70450)
     cooldown = 5,       -- seconds between alerts
-    interval = 0.5,     -- seconds between sweeps
+    interval = 2,       -- seconds between sweeps standing still; moving, NR.Interval adapts it
     ringR = 0.2, ringG = 1.0, ringB = 0.4,
 }
 -- v1's settings (it never worked on Forever): dropped.
@@ -38,6 +38,7 @@ local function initDB()
     setmetatable(db, { __index = DEFAULTS })
     if type(db.learned) ~= "table" then db.learned = {} end
     NR.db = db
+    Learn.CleanNames()
     if type(NodeRadarCharDB) ~= "table" then NodeRadarCharDB = {} end
     NR.charDb = NodeRadarCharDB
 end
@@ -69,13 +70,25 @@ function NR.Step(now)
     return result
 end
 
+-- Seconds until the next sweep, from the movement speed (the owner, release
+-- check): about YARDS of movement between sweeps, so 0.29 s at 100% (7 yd/s),
+-- 0.48 s at 60%, 0.71 s at 40%; never faster than FASTEST; standing still,
+-- db.interval (nothing on the map moves but a spawn).
+NR.YARDS, NR.FASTEST = 2, 0.2
+function NR.Interval()
+    local idle = NR.db.interval
+    local speed = API.Speed()
+    if not speed or speed <= 0 then return idle end
+    return math.max(NR.FASTEST, math.min(idle, NR.YARDS / speed))
+end
+
 local radar = CreateFrame("Frame")
 radar:SetScript("OnUpdate", function(_, dt)
     if not NR.db then return end
     local now = GetTime()
     Learn.Tick(now)
     elapsed = elapsed + (dt or 0)
-    if elapsed < NR.db.interval then return end
+    if elapsed < NR.Interval() then return end
     elapsed = 0
     NR.Step(now)
 end)

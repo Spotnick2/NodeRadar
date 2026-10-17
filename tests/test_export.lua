@@ -24,6 +24,9 @@ local a = { file = "a.lua", learned = { enUS = {
     ["Carry Your Weight"] = { kind = false, source = "toggle", build = "70450" },
     ["Silverleaf"] = { kind = "ore", source = "toggle", build = "70450" },          -- against the library
     ["Mageroyal"] = { kind = "herbs", source = "gather", build = "70450" },
+    -- Saved before the escape codes came out: the same node as the clean name.
+    ["|TInterface\\Minimap\\Minimap-PositionArrows:0:0:0:0:16:32:0:16:16:32|tCopper Vein"] =
+        { kind = "ore", source = "toggle", build = "70450" },
 } } }
 local b = { file = "b.lua", learned = {
     enUS = {
@@ -50,7 +53,8 @@ local c = {}
 for _, x in ipairs(conflicts) do c[x.name] = x end
 check(c.Mageroyal and #c.Mageroyal.from == 2, "the Mageroyal conflict, with both sources")
 check(c.Silverleaf and c.Silverleaf.existing == "herbs", "the Silverleaf conflict, with the library's kind")
-eq(#added, 3, "three added")
+eq(#added, 3, "three added (the arrow-prefixed Copper Vein merged into the clean one)")
+for _, x in ipairs(added) do check(not x.name:find("|", 1, true), "no escape code ships: " .. x.name) end
 eq(added[1].from[1].source ~= nil, true, "every addition carries its source for review")
 
 -- The written file loads back to the same library, names quoted safely.

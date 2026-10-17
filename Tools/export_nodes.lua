@@ -15,6 +15,14 @@ M.LOCALES = { enUS = true, enGB = true, deDE = true, frFR = true, esES = true, e
               ruRU = true, koKR = true, zhCN = true, zhTW = true, itIT = true }
 M.KINDS = { herbs = true, ore = true }
 
+-- A name without the client's escape codes: the same rule as Scan.Plain (a
+-- SavedVariables file written before that rule still has them).
+function M.plain(s)
+    s = s:gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|H.-|h(.-)|h", "%1")
+    s = s:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn[^:]*:", ""):gsub("|r", ""):gsub("|n", " ")
+    return (s:match("^%s*(.-)%s*$"))
+end
+
 -- Runs a Lua file in its own environment and returns that environment.
 function M.load(path)
     local chunk, err = loadfile(path)
@@ -40,8 +48,9 @@ function M.merge(lib, inputs)
             if not M.LOCALES[locale] then
                 problems[#problems + 1] = input.file .. ": unknown locale " .. tostring(locale)
             else
-                for name, e in pairs(names) do
-                    if type(e) == "table" and M.KINDS[e.kind] and type(name) == "string" and name ~= "" then
+                for raw, e in pairs(names) do
+                    local name = type(raw) == "string" and M.plain(raw) or ""
+                    if type(e) == "table" and M.KINDS[e.kind] and name ~= "" then
                         seen[locale] = seen[locale] or {}
                         local s = seen[locale][name] or { kinds = {}, from = {} }
                         seen[locale][name] = s

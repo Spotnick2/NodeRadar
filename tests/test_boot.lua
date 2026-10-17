@@ -4,7 +4,27 @@
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
-local NR = loadAddon({ db = { enabled = false, soundEnabled = true, mountedOnly = true, cooldown = 9, soundID = 8332 } })
+-- Names saved before the escape codes came out (release check, 70450), as the owner's file had them.
+local ARROW = "|TInterface\\Minimap\\Minimap-PositionArrows:0:0:0:0:16:32:0:16:16:32|t"
+local NR = loadAddon({ db = { enabled = false, soundEnabled = true, mountedOnly = true, cooldown = 9, soundID = 8332,
+    learned = { enUS = {
+        [ARROW .. "Peacebloom"] = { kind = "herbs", source = "toggle" },
+        ["Peacebloom"] = { kind = "herbs", source = "gather" },
+        [ARROW .. "Mageroyal"] = { kind = "herbs", source = "gather" },
+        ["Mageroyal"] = { kind = false, source = "toggle" },
+        ["For Honor|cffffffff"] = { kind = false, source = "toggle" },
+        ["|T.:0|t"] = { kind = false, source = "toggle" },
+    } } } })
+local L = NR.db.learned.enUS
+eq(L["Peacebloom"].source, "gather", "a dirty name cleaned onto a gathered one: the gathered one kept")
+eq(L[ARROW .. "Peacebloom"], nil, "...the dirty key gone")
+eq(L["Mageroyal"].kind, "herbs", "a dirty gathered name beats a clean toggle's 'not a node'")
+eq(L["For Honor"].kind, false, "a colour code cleaned")
+eq(L[""], nil, "a name that was only a code: dropped")
+local dirty = 0
+for name in pairs(L) do if name:find("|", 1, true) then dirty = dirty + 1 end end
+eq(dirty, 0, "no escape code left in the learned names")
+NR.db.interval = 0.5                                       -- a quick idle cadence: this tests behaviour, not cadence
 eq(NR.db.enabled, false, "a saved setting kept")
 eq(NR.db.cooldown, 9, "...another")
 eq(NR.db.soundEnabled, nil, "v1's settings dropped")
@@ -42,7 +62,7 @@ newChat()
 nr("status")
 lines = table.concat(newChat(), "\n")
 check(lines:find("radar"), "/nr status")
-check(lines:find("known: 1 nodes and 0 other names learned here, 3 nodes shipped %(enUS%)"), "...counts what's known")
+check(lines:find("known: 3 nodes and 1 other names learned here, 3 nodes shipped %(enUS%)"), "...counts what's known (with the cleaned names)")
 check(not lines:find("measured on"), "...no build warning on the measured build")
 nr("failures")
 check(chatHas("no failures"), "/nr failures")
@@ -66,7 +86,7 @@ GetBuildInfo = real
 WoW.tracking[1].active = true
 WoW.blips = { { "Earthroot", 30, -20, kind = "herbs" } }
 WoW.fire("ZONE_CHANGED_NEW_AREA")
-WoW.advance(1)
+WoW.advance(2.5)                                           -- past one idle sweep (2 s after /nr reset)
 eq(next(NR.failures), nil, "no failure while sweeping")
 
 local f = io.open(WoW.DUMP, "r")

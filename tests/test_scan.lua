@@ -33,6 +33,25 @@ check(near.a and near.b, "each blip at its herb (within 4 units)")
 eq(WoW.softCursor, false, "the soft cursor off after a sweep")
 eq(r.geometry.w, 198, "the geometry rides along")
 
+-- Escape codes out (release check, 70450): a node above the player reads with
+-- the position arrow's texture first, quest lines with colours.
+WoW.blips = {
+    { "Peacebloom", 30, -20, text = "|TInterface\\Minimap\\Minimap-PositionArrows:0:0:0:0:16:32:0:16:16:32|tPeacebloom" },
+    { "Peacebloom", -60, 40 },
+    { "For Honor", 80, -80, text = "For Honor|cffffffff" },
+    { "Raider's Bow", -80, -80, text = "- 0/1 Raider's Bow|r" },
+}
+r = Scan.Sweep()
+eq(Scan.Count(r, "Peacebloom"), 2, "a node above the player is the same name: two Peaceblooms")
+eq(Scan.Count(r, "For Honor"), 1, "a colour code out")
+eq(Scan.Count(r, "- 0/1 Raider's Bow"), 1, "a reset code out")
+eq(Scan.Plain("|cnGREEN_FONT_COLOR:Silverleaf|r"), "Silverleaf", "a named colour out")
+eq(Scan.Plain("|Hitem:2447|h[Peacebloom]|h"), "[Peacebloom]", "a link keeps its text")
+eq(Scan.Plain("|A:atlas:16:16|a Earthroot  "), "Earthroot", "an atlas out, spaces trimmed")
+eq(Scan.Plain("|T.:0|t"), "", "nothing but a code: empty")
+for name in pairs(r.byName) do check(not name:find("|", 1, true), "no escape left: " .. name) end
+WoW.blips = { { "Peacebloom", 30, -20 }, { "Peacebloom", -60, 40 }, { "Carry Your Weight", 80, -80 } }
+
 -- With the cursor on the map, the mouseover goes back to it after the sweep.
 WoW.hover(30, -20)
 Scan.Sweep()
