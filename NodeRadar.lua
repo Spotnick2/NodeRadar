@@ -115,7 +115,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.Void("the zoom changed")
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         Alert.Reset()
-        Learn.OnTrackingChanged(now)
+        Learn.OnTrackingChanged()
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
     end

@@ -136,8 +136,10 @@ local function cooling(spellID)
     return not ok or type(info) ~= "table" or info.isActive == true   -- unreadable: don't start
 end
 
+-- Our change, awaited until its state is seen (exp.awaiting); any other change
+-- of that tracking is the player's (Codex on #9: no time window).
 local function setTracking(index, on)
-    exp.ours, exp.oursAt = on, GetTime()
+    exp.awaiting = on
     local ok, err = pcall(C_Minimap.SetTracking, index, on)
     if not ok then API.Fail("SetTracking " .. tostring(on), err) end
     return ok
@@ -247,6 +249,11 @@ function Learn.Tick(now)
         if speed == nil or speed > 0 then void("the player moved") end
     end
     local t = find(exp.spellID)
+    if t and exp.awaiting ~= nil and t.active == exp.awaiting then
+        -- Our change seen: acknowledged, and the event that may follow isn't a change.
+        exp.awaiting = nil
+        exp.states[t.index] = t.active
+    end
     if exp.phase == "middle" and now >= exp.due then
         if t and t.active then void("tracking didn't go off") else exp.middle = diagnostic("middle") end
         exp.phase, exp.restoreSince = "restore", now
@@ -270,7 +277,10 @@ function Learn.Tick(now)
         end
     elseif exp.phase == "after" then
         if not (t and t.active) then
-            exp.phase = "restore"
+            -- It was on (seen) and went off: the player's, theirs to keep off.
+            void("the player changed tracking")
+            NR.charDb.pendingRestore = nil
+            finish(now)
         elseif now - exp.onAt >= Learn.AFTER then
             NR.charDb.pendingRestore = nil
             if not exp.restoreOnly then
@@ -284,20 +294,19 @@ end
 
 -- MINIMAP_UPDATE_TRACKING: a change we didn't make voids the experiment, and
 -- the player's choice wins (Codex).
-function Learn.OnTrackingChanged(now)
+function Learn.OnTrackingChanged()
     if not exp then return end
     local current = states()
     local t = find(exp.spellID)
     for i, on in pairs(current) do
         local ours = t ~= nil and t.index == i
-        if not ours and exp.states[i] ~= on then void("the player changed tracking") end
-        if ours and exp.ours ~= nil and on ~= exp.ours and now - (exp.oursAt or 0) > 1 then
-            void("the player changed tracking")
-            if not on and exp.states[i] == true then
-                -- It was on (our restore took) and went off: the player's, theirs to keep off.
-                NR.charDb.pendingRestore = nil
-                finish(now)
-                return
+        if exp.states[i] ~= on then
+            if ours and exp.awaiting ~= nil and on == exp.awaiting then
+                exp.awaiting = nil                     -- our own change, seen
+            else
+                -- The player's. If they turned ours off after it was back on, the
+                -- next tick ends the experiment without restoring it.
+                void("the player changed tracking")
             end
         end
     end

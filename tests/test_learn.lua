@@ -236,6 +236,53 @@ check(not Learn.Busy(), "...the experiment over")
 WoW.tracking[1].active = true
 Learn.Forget("Carry Your Weight")
 
+-- (Codex on #9) The player turns it off within a second of our confirmed restore:
+-- still theirs, never cast again.
+ready({ { "Peacebloom", 30, -20, kind = "herbs" }, QUEST })
+check(start(), "Peacebloom: started")
+WoW.advance(1.6)                                           -- off, middle, restore called
+check(herbsOn(), "restored")
+WoW.advance(0.2)                                           -- the restore seen
+calls = {}
+WoW.tracking[1].active = false
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+WoW.advance(5)
+eq(herbsOn(), false, "turned off 0.2 s after our restore: stays off")
+eq(#calls, 0, "...no SetTracking at all")
+eq(NR.charDb.pendingRestore, nil, "...no restore pending")
+check(not Learn.Busy(), "...the experiment over")
+WoW.tracking[1].active = true
+Learn.Forget("Carry Your Weight")
+
+-- The same when the tick sees it off before the event comes.
+ready({ { "Peacebloom", 30, -20, kind = "herbs" }, QUEST })
+check(start(), "Peacebloom again: started")
+WoW.advance(1.8)
+check(herbsOn(), "restored")
+calls = {}
+WoW.tracking[1].active = false                             -- no event yet
+WoW.advance(5)
+eq(herbsOn(), false, "seen off by the tick after our restore: stays off")
+eq(#calls, 0, "...no SetTracking at all")
+WoW.tracking[1].active = true
+Learn.Forget("Carry Your Weight")
+
+-- And after a reload's restore.
+ready({})
+WoW.tracking[1].active = false
+NR.charDb.pendingRestore = 2383
+WoW.fire("PLAYER_ENTERING_WORLD", false, true)
+WoW.advance(0.3)
+check(herbsOn(), "the reload's restore ran")
+calls = {}
+WoW.tracking[1].active = false
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+WoW.advance(5)
+eq(herbsOn(), false, "turned off right after a reload's restore: stays off")
+eq(#calls, 0, "...no SetTracking at all")
+eq(NR.charDb.pendingRestore, nil, "...nothing pending")
+WoW.tracking[1].active = true
+
 -- A restore that never succeeds: said in chat, and retried until it does.
 WoW.refuseTrackingOn = true
 ready({ { "Ghost Mushroom", 30, -20, kind = "herbs" }, QUEST })
