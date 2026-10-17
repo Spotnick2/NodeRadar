@@ -109,7 +109,7 @@ poll()                                                     -- 4
 eq(result(4).check, "PASS", "the herb vanished while tracking was off, and tracking came back")
 eq(#T.state.toggle.vanished, 1, "...only the herb")
 eq(T.state.toggle.vanished[1], "Peacebloom", "...Peacebloom")
-check(logged("toggle: back on true; .*; vanished while off: Peacebloom"), "...logged")
+check(logged("toggle: back on true; .*; vanished while off and back: Peacebloom; gone and not back: nothing$"), "...logged")
 S.Answer(true)                                             -- 5
 
 WoW.leaveMap()                                             -- 6 walk
@@ -196,6 +196,37 @@ eq(T.state.toggle.back, false, "a refused SetTracking on reads as not back on")
 check(logged("toggle: back on false"), "...logged")
 WoW.refuseTrackingOn = false
 WoW.tracking[1].active = true
+
+-- (Codex on #8) A herb someone else gathers mid-test vanishes and never comes
+-- back: it's "gone", not a node.
+WoW.blips = { { "Peacebloom", 30, -20, kind = "herbs" } }
+fp("nr toggle")
+WoW.flushTimers(1.5)                                       -- the middle sweep, tracking off
+WoW.blips = {}                                             -- gathered by someone else
+WoW.drainTimers()
+eq(#T.state.toggle.vanished, 0, "a herb that never comes back isn't a node")
+eq(T.state.toggle.gone[1], "Peacebloom", "...it's gone")
+check(logged("gone and not back: Peacebloom"), "...logged")
+
+-- (Codex on #8) A failed middle sweep is inconclusive, never "everything vanished".
+WoW.blips = { { "Peacebloom", 30, -20, kind = "herbs" }, { "Burning Blade Medallion", -40, 60 } }
+fp("nr toggle")
+local rect = Minimap._rect
+Minimap._rect = nil                                        -- the geometry unreadable for the middle sweep
+WoW.flushTimers(1.5)
+Minimap._rect = rect
+WoW.drainTimers()
+eq(#T.state.toggle.vanished, 0, "a failed middle sweep finds no node")
+check(T.state.toggle.failed and T.state.toggle.failed:find("middle sweep failed"), "...inconclusive, saying why")
+check(logged("INCONCLUSIVE: middle sweep failed"), "...logged")
+eq(WoW.tracking[1].active, true, "...and tracking is back on")
+
+-- Tracking that never goes off is inconclusive too.
+WoW.refuseTrackingOff = true
+fp("nr toggle")
+WoW.drainTimers()
+eq(T.state.toggle.failed, "tracking never went off", "tracking that stays on proves nothing")
+WoW.refuseTrackingOff = false
 
 -- The soft cursor does nothing: with the cursor off the map, no convention.
 WoW.softIgnored = true

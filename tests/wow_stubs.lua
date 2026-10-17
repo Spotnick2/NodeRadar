@@ -440,12 +440,12 @@ C_Minimap = {
                            spellID = t.spellID } end
     end,
     GetViewRadius = function() return 150 end,
-    -- WoW.refuseTrackingOn: turning a tracking on does nothing (a cast the
+    -- WoW.refuseTrackingOn / Off: turning a tracking on / off does nothing (a cast the
     -- client refuses). Either way MINIMAP_UPDATE_TRACKING fires.
     SetTracking = function(i, on)
         assert(type(on) == "boolean", "SetTracking takes a bool")
         local t = WoW.tracking[i]
-        if t and not (on and WoW.refuseTrackingOn) then t.active = on end
+        if t and not (on and WoW.refuseTrackingOn) and not (not on and WoW.refuseTrackingOff) then t.active = on end
         WoW.fire("MINIMAP_UPDATE_TRACKING")
     end,
 }

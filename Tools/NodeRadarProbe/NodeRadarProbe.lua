@@ -691,7 +691,37 @@ local function trackingOn(i)
     return info ~= nil and yes(info.active)
 end
 
-local function soften(r) return r and r.list or {} end
+-- One of the toggle's sweeps: its names, or nil and why (a failed sweep must
+-- never read as "nothing there", or everything would seem to vanish).
+local function toggleSweep(conv, t, label)
+    local r, why = sweep(conv, nil, true)
+    if not r then
+        t.failed = t.failed or (label .. " sweep failed: " .. str(why))
+        return nil
+    end
+    return r.list
+end
+
+local function set(list)
+    local s = {}
+    for _, n in ipairs(list or {}) do s[n] = true end
+    return s
+end
+
+-- A name is a node of this tracking only when it was there before, gone with
+-- the tracking confirmed off, and back once it's on again (Codex on #8: a herb
+-- someone else gathers mid-test vanishes too, but never comes back: `gone`).
+local function toggleVerdict(t)
+    t.vanished, t.gone = {}, {}
+    if t.failed then return end
+    local during, after = set(t.during), set(t.after)
+    for _, n in ipairs(t.before) do
+        if not during[n] then
+            if after[n] then t.vanished[#t.vanished + 1] = n else t.gone[#t.gone + 1] = n end
+        end
+    end
+    if t.offState ~= false then t.failed = "tracking never went off" end
+end
 
 local function toggleTracking()
     local i, info = gatherIndex()
@@ -702,27 +732,25 @@ local function toggleTracking()
     local conv = convention(MEASURED)
     local t = { index = i, name = info.name }
     state.toggle = t
-    t.before = soften(sweep(conv, nil, true))
+    t.before = toggleSweep(conv, t, "before") or {}
     local ok, err = pcall(C_Minimap.SetTracking, i, false)
     t.offCall = ok and "returned" or ("ERROR " .. str(err))
     say(("toggle %s: %s before; SetTracking(%d, false) %s"):format(str(t.name), join(t.before), i, t.offCall))
     C_Timer.After(1.5, function()
         t.offState = trackingOn(i)
-        t.during = soften(sweep(conv, nil, true))
+        t.during = toggleSweep(conv, t, "middle")
         local ok2, err2 = pcall(C_Minimap.SetTracking, i, true)
         t.onCall = ok2 and "returned" or ("ERROR " .. str(err2))
         say(("toggle: tracking on %s after off; %s while off; SetTracking(%d, true) %s"):format(str(t.offState),
-            join(t.during), i, t.onCall))
+            t.during and join(t.during) or "NO SWEEP", i, t.onCall))
         C_Timer.After(2.5, function()
             t.back = trackingOn(i)
-            t.after = soften(sweep(conv, nil, true))
-            local during = {}
-            for _, n in ipairs(t.during) do during[n] = true end
-            t.vanished = {}
-            for _, n in ipairs(t.before) do if not during[n] then t.vanished[#t.vanished + 1] = n end end
+            t.after = toggleSweep(conv, t, "after")
+            toggleVerdict(t)
             t.done = true
-            say(("toggle: back on %s; %s after; vanished while off: %s"):format(str(t.back), join(t.after),
-                join(t.vanished)))
+            say(("toggle: back on %s; %s after; vanished while off and back: %s; gone and not back: %s%s"):format(
+                str(t.back), t.after and join(t.after) or "NO SWEEP", join(t.vanished), join(t.gone),
+                t.failed and ("; INCONCLUSIVE: " .. t.failed) or ""))
         end)
     end)
     return t
@@ -776,8 +804,10 @@ Probe:Steps("ids", {
       check = function()
           local t = state.toggle
           if not (t and t.done) then return false, "didn't finish" end
+          if t.failed then return false, "inconclusive: " .. t.failed end
           return #t.vanished > 0 and t.back == true,
-              ("vanished while off: %s; tracking back on %s"):format(join(t.vanished), str(t.back))
+              ("vanished while off and back: %s; gone and not back: %s; tracking back on %s"):format(join(t.vanished),
+                  join(t.gone), str(t.back))
       end },
     { text = "Is your gathering tracking back on? (If not, turn it on again before going on.) Did anything else "
           .. "happen: a cast, an error, a cooldown? Say what in the note.", ask = true },
