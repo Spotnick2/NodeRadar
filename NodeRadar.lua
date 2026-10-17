@@ -17,7 +17,8 @@ local DEFAULTS = {
     ring     = true,    -- a ring on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
-    learn    = true,    -- learn unknown names by turning tracking off and on
+    learn    = false,   -- learn unknown names by turning tracking off and on: off, since
+                        -- turning it back on costs a global cooldown (release check, 70450)
     cooldown = 5,       -- seconds between alerts
     interval = 0.5,     -- seconds between sweeps
     ringR = 0.2, ringG = 1.0, ringB = 0.4,
@@ -32,9 +33,9 @@ local function initDB()
     if type(NodeRadarDB) ~= "table" then NodeRadarDB = {} end
     local db = NodeRadarDB
     for _, k in ipairs(V1_KEYS) do db[k] = nil end
-    for k, v in pairs(DEFAULTS) do
-        if db[k] == nil then db[k] = v end
-    end
+    -- Only what the player set is saved; the rest reads the defaults, so a
+    -- default can change in a later version.
+    setmetatable(db, { __index = DEFAULTS })
     if type(db.learned) ~= "table" then db.learned = {} end
     NR.db = db
     if type(NodeRadarCharDB) ~= "table" then NodeRadarCharDB = {} end
@@ -214,7 +215,7 @@ SlashCmdList.NODERADAR = function(msg)
         end
         if not any then API.Say("no failures") end
     elseif cmd == "reset" then
-        for k, v in pairs(DEFAULTS) do db[k] = v end
+        for k in pairs(DEFAULTS) do db[k] = nil end
         API.Say("settings reset (learned names kept)")
     else
         help()

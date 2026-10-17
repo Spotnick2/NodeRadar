@@ -47,12 +47,12 @@ fp("steps nr release")
 poll()
 eq(result(1).status, "done", "NodeRadar ready")
 eq(result(2).status, "done", "the state read on arrival")
-check(logged("NodeRadar: learn true, cooldown 5, interval 0%.5; learned 0 nodes and 0 others; skins GlassMiniMap"),
+check(logged("NodeRadar: learn false, cooldown 5, interval 0%.5; learned 0 nodes and 0 others; skins GlassMiniMap; Gamepad UI false, GamePadEnable false, gamepad cursor false, so the radar runs"),
     "...NodeRadar's settings and the skin logged")
 
 S.Run()                                                    -- 3 toggle
 eq(NR.db.learn, false, "NodeRadar's learning paused for the probe's toggle")
-eq(db.restoreLearn, true, "...its setting saved first")
+check(type(db.restoreLearn) == "table" and db.restoreLearn.value == nil, "...its setting saved first: the default")
 WoW.flushTimers(1.5)                                       -- off, middle, restore (the GCD starts)
 WoW.advance(2.2)                                           -- the watch
 WoW.drainTimers()                                          -- the after sweep
@@ -60,7 +60,7 @@ poll()
 eq(result(4).check, "PASS", "the restore measured")
 check(T.state.gcd.seen, "...the global cooldown seen")
 check(logged("gcd after the restore: SEEN .*action slots 1 2 3"), "...on the action bar's slots")
-eq(NR.db.learn, true, "NodeRadar's learning put back")
+eq(rawget(NR.db, "learn"), nil, "NodeRadar's learning put back: the default, not a saved choice")
 eq(db.restoreLearn, nil, "...nothing left to restore")
 S.Answer(true)                                             -- 5
 
@@ -70,6 +70,7 @@ WoW.advance(12)                                            -- NodeRadar's gap si
 poll()
 eq(result(6).status, "done", "NodeRadar learned a name by itself")
 check(tostring(result(6).detail):find("Earthroot = herbs"), "...Earthroot: " .. tostring(result(6).detail))
+eq(rawget(NR.db, "learn"), nil, "...learning on for that step only, the default put back")
 
 WoW.fire("UNIT_SPELLCAST_SENT", "player", "Mageroyal", "Cast-1", 2366)   -- 7 gather
 poll()
@@ -111,9 +112,27 @@ eq(result(17).check, "PASS", "settings and learned names survived (in memory her
 eq(NR.db.cooldown, 5, "...the cooldown put back")
 eq(record().at, 18, "at the last reload")
 
+-- The walk alone: NodeRadar learns by itself and alerts, the setting put back.
+fp("steps stop")
+WoW.blips = { { "Wilted Peacebloom", 30, -20, kind = "herbs" }, { "Swiftthistle", -30, -60, kind = "herbs" } }
+fp("steps nr walk")
+local function walk(i) return FP.db.steps.records["NodeRadarProbe/walk"].results[i] or {} end
+poll()
+eq(walk(1).status, "done", "walk: ready")
+eq(walk(2).status, "done", "walk: read")
+WoW.advance(12)
+poll()
+eq(walk(3).status, "done", "walk: NodeRadar learned a name by itself")
+check(tostring(walk(3).detail):find("Swiftthistle = herbs"), "...Swiftthistle")
+eq(rawget(NR.db, "learn"), nil, "...the default put back")
+table.insert(WoW.blips, { "Swiftthistle", 70, 40, kind = "herbs" })
+WoW.advance(2)
+check(logged("NodeRadar alert: Swiftthistle"), "walk: the alert counted")
+fp("steps stop")
+
 -- A reload between the pause and the resume: learning comes back at login.
 NR.db.learn = false
-db.restoreLearn = true
+db.restoreLearn = { value = true }
 WoW.fire("PLAYER_LOGIN")
 eq(NR.db.learn, true, "learning put back at login after an interrupted toggle")
 eq(db.restoreLearn, nil, "...once")

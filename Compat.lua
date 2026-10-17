@@ -68,4 +68,13 @@ end
 
 function API.Dead() return API.Yes(UnitIsDeadOrGhost("player")) end
 
-function API.Gamepad() return GetCVarBool("GamePadEnable") == true end
+-- The Gamepad UI (Options > "Enable Gamepad UI"), read the way Blizzard's own
+-- UI reads it (Blizzard_SharedXML/Mainline/InputUtil.lua:11). Not the
+-- GamePadEnable CVar: it reads true on a keyboard-and-mouse client with that
+-- option off (release check, 70450), which stopped every sweep.
+function API.Gamepad()
+    local f = InputUtil and InputUtil.IsGamepadUIEnabled
+    if type(f) ~= "function" then return false end
+    local ok, on = pcall(f)
+    return ok and on == true
+end

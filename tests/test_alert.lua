@@ -138,10 +138,17 @@ WoW.fire("MINIMAP_UPDATE_TRACKING")
 WoW.advance(2)
 eq(reads, 0, "no gathering tracking on: no sweep")
 WoW.tracking[1].active = true
+-- GamePadEnable is on by default on a keyboard client (release check, 70450):
+-- it alone must not stop the radar.
 WoW.cvars.GamePadEnable = "1"
+WoW.advance(1)
+check(reads > 0, "GamePadEnable alone: the radar sweeps")
+reads = 0
+WoW.cvars.GamePadEnable = nil
+WoW.gamepadUI = true
 WoW.advance(2)
 eq(reads, 0, "the gamepad on: no sweep")
-WoW.cvars.GamePadEnable = nil
+WoW.gamepadUI = false
 WoW.advance(1)
 check(reads > 0, "...and sweeping again")
 C_TooltipInfo.GetMinimapMouseover = real

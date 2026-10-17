@@ -29,7 +29,8 @@
 --   /fp nr pairs                        names paired with the game-object IDs in range
 --   /fp nr clear                        empty the saved log
 --
--- Procedures: /fp steps nr ids (round 3, #7); /fp steps nr release (NodeRadar's release check, #3).
+-- Procedures: /fp steps nr ids (round 3, #7); /fp steps nr release (NodeRadar's release check, #3);
+-- /fp steps nr walk (its walk alone).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -910,15 +911,20 @@ end
 
 -- NodeRadar's learning paused while the probe toggles tracking itself, and
 -- put back after, or at the next login if a reload came in between.
-local function pauseLearning(n)
-    if NodeRadarProbeDB.restoreLearn == nil then NodeRadarProbeDB.restoreLearn = n.db.learn end
-    n.db.learn = false
+-- The player's own setting is kept raw ({ value = nil } for "the default"), so
+-- putting it back never turns a default into a saved choice.
+local function setLearning(n, on)
+    if NodeRadarProbeDB.restoreLearn == nil then NodeRadarProbeDB.restoreLearn = { value = rawget(n.db, "learn") } end
+    n.db.learn = on
 end
+
+local function pauseLearning(n) setLearning(n, false) end
 
 local function resumeLearning()
     local n = nr()
-    if n and NodeRadarProbeDB.restoreLearn ~= nil then
-        n.db.learn = NodeRadarProbeDB.restoreLearn
+    local saved = NodeRadarProbeDB.restoreLearn
+    if n and type(saved) == "table" then
+        n.db.learn = saved.value
         NodeRadarProbeDB.restoreLearn = nil
     end
 end
@@ -963,18 +969,21 @@ end
 
 local SKINS = { "GlassMiniMap", "SexyMap", "ElvUI", "Leatrix_Maps", "BasicMinimap" }
 
-Probe:Steps("release", {
-    rev = 1,
-    title = "NodeRadar's release check (#3)",
-    { text = "Stand near herbs or ore, out of combat, with Find Herbs or Find Minerals on and NodeRadar on (/nr).",
+-- Steps both procedures use (each gets fresh tables).
+local function readyStep()
+    return { text = "Stand near herbs or ore, out of combat, with Find Herbs or Find Minerals on and NodeRadar on (/nr).",
       wait = function()
           local n = nr()
           if not n then return false, "NodeRadar isn't loaded" end
           if not n.db.enabled then return false, "NodeRadar is off: type /nr" end
           if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          state.learnStart, state.gatherStart = nil, nil      -- a fresh run's "since"
           return true, "ready"
-      end },
-    { text = "Reading NodeRadar and the client.", auto = true, run = function()
+      end }
+end
+
+local function readStep()
+    return { text = "Reading NodeRadar and the client.", auto = true, run = function()
           report()
           local n = nr()
           local skins = {}
@@ -984,11 +993,63 @@ Probe:Steps("release", {
           end
           local nodes, others = 0, 0
           for _, e in pairs(learned(n)) do if e.kind then nodes = nodes + 1 else others = others + 1 end end
-          say(("NodeRadar: learn %s, cooldown %s, interval %s; learned %d nodes and %d others; skins %s; gamepad %s")
+          local okC, cursorPad = pcall(IsGamePadCursorControlEnabled)
+          say(("NodeRadar: learn %s, cooldown %s, interval %s; learned %d nodes and %d others; skins %s; "
+              .. "Gamepad UI %s, GamePadEnable %s, gamepad cursor %s, so the radar %s")
               :format(str(n.db.learn), str(n.db.cooldown), str(n.db.interval), nodes, others, join(skins),
-                  str(GetCVarBool("GamePadEnable"))))
-          return "skins: " .. join(skins), ("learned %d nodes, %d others"):format(nodes, others)
-      end },
+                  str(n.API.Gamepad()), str(GetCVarBool("GamePadEnable")), str(okC and cursorPad),
+                  n.API.Gamepad() and "STOPS (Gamepad UI on)" or "runs"))
+          return "skins: " .. join(skins), ("learned %d nodes, %d others"):format(nodes, others),
+              "radar " .. (n.API.Gamepad() and "stopped by the Gamepad UI" or "runs")
+      end }
+end
+
+-- NodeRadar learns a name by itself: learning on for the step (off by default:
+-- the restore costs a global cooldown), the player's setting put back after.
+local function learnStep()
+    return { text = "Stand still near a herb or ore NodeRadar doesn't know yet (the line below lists the unknown "
+          .. "names it sees). Learning is on for this step; it learns one by itself within about 15 seconds.",
+      wait = function()
+          local n = nr()
+          setLearning(n, true)
+          state.learnStart = state.learnStart or snapshot(n)
+          local got = learnedSince(n, state.learnStart, "toggle")
+          if #got > 0 then
+              resumeLearning()
+              return true, "learned: " .. table.concat(got, ", ")
+          end
+          if n.Learn.Busy() then return false, "learning..." end
+          local r = n.Scan.Sweep()
+          local unknown = {}
+          for name in pairs(r and r.byName or {}) do
+              if n.Learn.Kind(name) == nil then unknown[#unknown + 1] = name end
+          end
+          table.sort(unknown)
+          return false, "unknown here: " .. join(unknown)
+      end }
+end
+
+local function walkStep()
+    return { text = "Walk past a few nodes for a minute or two, the cursor off the minimap. NodeRadar pings each new "
+          .. "one; the line below counts its alerts. Press Done when you've passed a few.",
+      wait = function()
+          resumeLearning()                                 -- if the learning step was ended by hand
+          hookAlerts(nr())
+          local last = {}
+          for i = math.max(1, #alerts - 4), #alerts do last[#last + 1] = alerts[i] end
+          return false, ("%d alerts; last: %s"):format(#alerts, join(last))
+      end }
+end
+
+local function walkAskStep()
+    return { text = "Did NodeRadar ping once for each new node, without repeating for one it had already pinged?", ask = true }
+end
+
+Probe:Steps("release", {
+    rev = 2,
+    title = "NodeRadar's release check (#3)",
+    readyStep(),
+    readStep(),
     { text = "Stand still and watch your action bars. Press Toggle: your gathering tracking goes off and back on "
           .. "(about 4 seconds) while the probe watches the global cooldown.",
       button = "Toggle", run = function()
@@ -1016,39 +1077,18 @@ Probe:Steps("release", {
               or "tracking didn't come back, or nothing measured"
       end },
     { text = "When tracking came back on, did your action bars show a global-cooldown sweep?", ask = true },
-    { text = "Stand still near a herb or ore NodeRadar doesn't know yet (the line below lists the unknown names "
-          .. "it sees). It learns one by itself within about 15 seconds.",
-      wait = function()
-          local n = nr()
-          state.learnStart = state.learnStart or snapshot(n)
-          local got = learnedSince(n, state.learnStart, "toggle")
-          if #got > 0 then return true, "learned: " .. table.concat(got, ", ") end
-          if n.Learn.Busy() then return false, "learning..." end
-          local r = n.Scan.Sweep()
-          local unknown = {}
-          for name in pairs(r and r.byName or {}) do
-              if n.Learn.Kind(name) == nil then unknown[#unknown + 1] = name end
-          end
-          table.sort(unknown)
-          return false, "unknown here: " .. join(unknown)
-      end },
+    learnStep(),
     { text = "Now gather a node (any herb or ore).",
       wait = function()
+          resumeLearning()                                 -- if the learning step was ended by hand
           local n = nr()
           state.gatherStart = state.gatherStart or snapshot(n)
           local got = learnedSince(n, state.gatherStart, "gather")
           if #got > 0 then return true, "learned: " .. table.concat(got, ", ") end
           return false, "waiting for a gather"
       end },
-    { text = "Walk past a few nodes for a minute or two, the cursor off the minimap. NodeRadar pings each new one; "
-          .. "the line below counts its alerts. Press Done when you've passed a few.",
-      wait = function()
-          hookAlerts(nr())
-          local last = {}
-          for i = math.max(1, #alerts - 4), #alerts do last[#last + 1] = alerts[i] end
-          return false, ("%d alerts; last: %s"):format(#alerts, join(last))
-      end },
-    { text = "Did NodeRadar ping once for each new node, without repeating for one it had already pinged?", ask = true },
+    walkStep(),
+    walkAskStep(),
     { text = "Press Test: NodeRadar's own alert at the minimap's centre.", button = "Test", screenshot = "NodeRadar's ring",
       run = function()
           SlashCmdList.NODERADAR("test")
@@ -1111,6 +1151,19 @@ Probe:Steps("release", {
       check = function()
           return state.persisted == true, state.persisted and "settings and learned names survived" or "something was lost"
       end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+-- The release check's walk again, alone: learning by itself and the alerts
+-- never ran in its first run (the radar stopped on GamePadEnable, 70450).
+Probe:Steps("walk", {
+    rev = 1,
+    title = "NodeRadar on a walk: learning by itself, alerts (#3)",
+    readyStep(),
+    readStep(),
+    learnStep(),
+    walkStep(),
+    walkAskStep(),
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
 

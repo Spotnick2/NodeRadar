@@ -490,6 +490,12 @@ C_ActionBar = {
 }
 WoW.onGCD = onGCD
 
+-- The Gamepad UI option (InputUtil, Blizzard_SharedXML): WoW.gamepadUI. The
+-- GamePadEnable CVar is something else, on by default.
+WoW.gamepadUI = false
+InputUtil = { IsGamepadUIEnabled = function() return WoW.gamepadUI == true end }
+function IsGamePadCursorControlEnabled() return WoW.gamepadCursor == true end
+
 -- The client's secure hook: the original runs, then the hook, with the same arguments.
 function hooksecurefunc(t, name, fn)
     if type(t) == "string" then t, name, fn = _G, t, name end
