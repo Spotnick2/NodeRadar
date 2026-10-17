@@ -77,8 +77,9 @@ Reviewed by Codex (round 1: revise first; the changes are marked "Codex").
   name; a blip covers 4–16 cells). A secret or missing geometry, or a secret line, fails the sweep.
 
 The **radar** calls it every `interval` seconds (0.5 by default; round 3: 3.6 ms average, 12 ms
-worst) when enabled, a gathering tracking is on, `Minimap` is visible and the gamepad is off
-(`GetCVarBool("GamePadEnable")`: a gamepad player's own soft cursor isn't ours to turn off). The
+worst) when enabled, a gathering tracking is on, `Minimap` is visible and the Gamepad UI is off
+(`InputUtil.IsGamepadUIEnabled()`: a gamepad player's own soft cursor isn't ours to turn off; the
+`GamePadEnable` CVar the plan first named is on for keyboard players too, release check). The
 **toggle** calls it directly, without those conditions: its middle sweep runs with the tracking off
 on purpose, and its sweeps never reach the alerts (Codex). The sweep doesn't stop while the player
 hovers the map: round 2's soft sweeps under the player's cursor never disturbed their tooltip.
@@ -130,7 +131,9 @@ Find Herbs off to learn a node and couldn't turn it back on: please turn it on."
 
 **On by default only if the in-game check passes:** whether the restore's cast costs a global
 cooldown or interrupts anything hasn't been measured (Codex). The release check (below) measures
-it; if it costs, `/nr learn` ships off and learning is by gathering only.
+it; if it costs, `/nr learn` ships off and learning is by gathering only. **Measured: it costs a
+global cooldown (release check, 70450), so `learn` ships off.** Settings save only what the player
+set, so a later default reaches everyone who never chose.
 
 **Limits, said in the README:** names are the unit. A quest or NPC with a node's exact name would be
 taken for a node, and a node whose name was learned `false` wouldn't alert. Round 3 saw no such

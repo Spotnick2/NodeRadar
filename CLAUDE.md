@@ -15,8 +15,9 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 
 **Status:** the port (#3) is written: the soft sweep, learning which names are nodes, the alert,
 the library and its export tool, as `docs/PLAN.md` "The port (#3)" (reviewed by Codex to
-consensus). Its in-game release check comes next; until it passes, `learn`'s default is
-provisional. Done: the repo setup (#1), the probe rounds that decided detection (#2) and
+consensus). Release check run 1 (70450, docs/FOREVER-PROBE.md): the restore costs a global
+cooldown, so `learn` ships off; reload restore and persistence pass; the walk is re-run as
+`/fp steps nr walk` after the gamepad-guard fix. Done: the repo setup (#1), the probe rounds that decided detection (#2) and
 classification (#7). Next after the port: the public API for minimap skins (#4), an options page.
 
 ## The UI contract (non-negotiable)
@@ -26,7 +27,8 @@ classification (#7). Next after the port: the public API for minimap skins (#4),
   `Minimap`.
 - Never reassign a Blizzard global or method; `hooksecurefunc` and our own frames only.
 - The sweep drives the minimap's mouseover and the soft cursor: the soft cursor is turned off after
-  every sweep, on every path, and no sweep runs with the gamepad on (its soft cursor isn't ours).
+  every sweep, on every path, and no sweep runs with the Gamepad UI on (`InputUtil.IsGamepadUIEnabled()`,
+  never the `GamePadEnable` CVar: it's on for keyboard players too).
 - **Gathering tracking is the player's.** The toggle turns it off only to learn, restores it always
   (across a reload too), and never overrides a change the player made.
 

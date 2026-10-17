@@ -28,6 +28,7 @@ NodeRadar itself, end to end (docs/PLAN.md, "Release check, in game"):
 | 10–11 | `/nr test`: the ring at the centre, with a screenshot; the skin named in the note |
 | 12–14 | tracking off with a restore pending, as mid-experiment; `/reload`; NodeRadar restores it by itself (20 s) |
 | 15–17 | cooldown set to 7 and the learned count noted; **a full client exit**; both read back, then the cooldown put back |
+`/fp steps nr walk` is steps 1–2, 6 and 8–9 alone: NodeRadar learning a name by itself (learning on forthat step, the player's own setting put back after, a default kept a default) and the walk's alerts.
 
 The commands, for one-offs (`/fp nr` lists them):
 
@@ -142,3 +143,15 @@ can share one spot (a quest and its objective line).
 learns names, per name and once each: from gathering casts for free, and by turning the tracking off
 and on when a sweep sees a name it doesn't know yet, out of combat. A name is the client's own,
 localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-coded.
+
+### Release check, run 1: `release`, 1.60.1.70450 (owner's run, 2026-10-17, Durotar, Find Herbs; Glass MiniMap and Leatrix Maps)
+
+| Check | Result |
+|---|---|
+| **The restore's global cooldown** | **Yes.** After `SetTracking(1, true)`: the tracking spell's cooldown went active, and action slots 2, 3 and 4 started a ≤ 1.6 s cooldown (220 samples); Retail's GCD spell (61304) never did. The owner saw the sweep. So **`learn` ships off**: learning is by gathering, and by toggle only for players who turn it on (`/nr learn`) |
+| The toggle | Find Herbs off and back on, `UNIT_SPELLCAST_SENT` 2383 at the restore; Silverleaf vanished and came back, eight quest lines stayed |
+| NodeRadar learning by itself; the walk's alerts | **Never ran: every sweep was skipped.** NodeRadar's gamepad guard read `GamePadEnable`, which is **true on this keyboard-and-mouse client** with "Enable Gamepad UI" off (the owner's options). Fixed: the guard reads the Gamepad UI the way Blizzard does, `InputUtil.IsGamepadUIEnabled()`. Re-run as `/fp steps nr walk` |
+| Learning by gathering | works: Silverleaf, Peacebloom, Earthroot |
+| `/nr test` | the ring and the sound (owner), under Glass MiniMap |
+| A `/reload` with a restore pending | NodeRadar restored tracking 1.2 s after the login (`UNIT_SPELLCAST_SENT` 2383), nothing left pending |
+| **A full client exit** | the cooldown set to 7 and 3 learned names both came back; no NodeRadar failure |
