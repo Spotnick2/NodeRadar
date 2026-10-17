@@ -158,3 +158,20 @@ localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-co
 | `/nr test` | the ring and the sound (owner), under Glass MiniMap |
 | A `/reload` with a restore pending | NodeRadar restored tracking 1.2 s after the login (`UNIT_SPELLCAST_SENT` 2383), nothing left pending |
 | **A full client exit** | the cooldown set to 7 and 3 learned names both came back; no NodeRadar failure |
+
+### Release check, the walk: `walk`, 1.60.1.70450 (owner's run, 2026-10-17, Durotar)
+
+- **The radar runs** with the gamepad fix: Gamepad UI false, `GamePadEnable` true, gamepad cursor
+  false.
+- **Learning by itself:** within 1 s it learned "A Solvent Spirit" (a quest) as **not a node**.
+- **Alerts:** Peacebloom twice in 2½ minutes, once per node, no repeats (owner: yes).
+- **Names carry escape codes** (`NodeRadar.lua`'s learned names). A node above or below the player
+  reads `|TInterface\Minimap\Minimap-PositionArrows:…|tPeacebloom`: the position arrow's texture
+  comes first, so it was a different name and pinged only once the player reached its height (the
+  owner's "too slow"). Quest lines carry colours (`For Honor|cffffffff`, `- 0/1 … slain|r`). Fixed:
+  `Scan.Plain` strips textures, atlases, colours and links; names saved before are cleaned at
+  login; the export tool cleans too.
+- **The cadence follows the speed** (the owner): about 2 yards between sweeps (0.29 s at 100%,
+  0.48 s at 60%, 0.71 s at 40%, 0.2 s at most), and 2 s standing still.
+- **The ring:** `Interface\Cooldown\ping4` draws in a black square (no additive blend), and isn't
+  Blizzard's ping animation (owner). An original alert is a follow-up.

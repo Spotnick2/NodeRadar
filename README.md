@@ -5,9 +5,10 @@ ping and a ring on the minimap the moment a herb or ore node comes into range.
 
 ## How it works
 
-- **It reads the minimap's blips.** Twice a second it samples the minimap through the client's own
-  mouseover (the same data its tooltip shows), so it sees what you'd see by hovering every blip.
-  That takes about 4 ms. It works under any minimap skin, and your own hover tooltip isn't affected.
+- **It reads the minimap's blips.** About every 2 yards you move (every 2 s standing still) it
+  samples the minimap through the client's own mouseover (the same data its tooltip shows), so it
+  sees what you'd see by hovering every blip. Each look takes about 4 ms. It works under any minimap
+  skin, and your own hover tooltip isn't affected.
 - **It learns which names are nodes.** The minimap also shows quests, group members and town
   NPCs. NodeRadar knows a node by its name, learned once and remembered for your whole account:
   - when you **gather** a node, it learns that node's name;
