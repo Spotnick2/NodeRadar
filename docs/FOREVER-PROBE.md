@@ -28,7 +28,10 @@ NodeRadar itself, end to end (docs/PLAN.md, "Release check, in game"):
 | 10–11 | `/nr test`: the ring at the centre, with a screenshot; the skin named in the note |
 | 12–14 | tracking off with a restore pending, as mid-experiment; `/reload`; NodeRadar restores it by itself (20 s) |
 | 15–17 | cooldown set to 7 and the learned count noted; **a full client exit**; both read back, then the cooldown put back |
-`/fp steps nr walk` is steps 1–2, 6 and 8–9 alone: NodeRadar learning a name by itself (learning on forthat step, the player's own setting put back after, a default kept a default) and the walk's alerts.
+
+`/fp steps nr walk` is steps 1–2, 6 and 8–9 alone: NodeRadar learning a name by itself (learning on
+for that step, the player's own setting put back after, a default kept a default) and the walk's
+alerts.
 
 The commands, for one-offs (`/fp nr` lists them):
 
