@@ -106,3 +106,23 @@ an addon reads the minimap's blips with the cursor anywhere, at about 4 ms a swe
 disturbing the player's own hover. **For the port (#3):** turn the soft cursor on only for the
 sweep; cluster hits into nodes; keep only gathering nodes; never ping by default in a group (it
 goes to the group), or mark the node with our own ring at its position instead.
+
+### Round 3: `ids`, 1.60.1.70450 (owner's run, 2026-10-17, Valley of Trials to Sen'jin, Find Herbs) (#7)
+
+| Way to tell nodes from other blips | Result |
+|---|---|
+| **Turning gathering tracking off and on** (the owner's idea) | **Works.** From addon code, out of combat: `C_Minimap.SetTracking(1, false)` turned Find Herbs off (`MINIMAP_UPDATE_TRACKING` at once); a sweep 1.5 s later had lost **exactly the two herbs** (Stunted Silverleaf, Wilted Peacebloom) and kept the three quest lines. `SetTracking(1, true)` **casts Find Herbs** (`UNIT_SPELLCAST_SENT` spell 2383) and tracking was back on 0.1 s later; the herbs were back in the next sweep. No blocked action; the owner noticed nothing else |
+| **Line colour** | **Useless:** every blip is `#ffd200` (gold): herbs, quest lines, town NPCs |
+| **Object IDs** (`OBJECT_ENTERED_AOI` / `OBJECT_LEFT_AOI`) | **Nothing:** 0 events in a 4-minute walk past herbs, NPCs and boars. Whether the registration was refused isn't known: the probe registered before its saved log was bound, so a refusal only reached the console. So no pairs, and `ClosestGameObjectPosition` had no ID to try |
+| **Learning names from gathering** (`UNIT_SPELLCAST_SENT`) | **Works:** Herb Gathering (2366) reports the node as its target, as the client names it: "Silverleaf", "Wilted Peacebloom" |
+
+What a sweep reads, besides nodes: quest titles **and their objective lines** ("Carry Your Weight",
+"- 0/8 Canvas Scraps", "Report to Sen'jin Village"), and **town NPCs** shown by the town trackers
+("Lar Prowltusk", "Xar'Ti", "Vel'rin Fang", "Master Vornal"). The walk: 768 sweeps over 4 minutes,
+3.6 ms average, 12 ms max, **in and out of combat** (boars), with no blocked action. Several names
+can share one spot (a quest and its objective line).
+
+**So (#7 answered):** a node is a name that vanishes when its gathering tracking goes off. The port
+learns names, per name and once each: from gathering casts for free, and by turning the tracking off
+and on when a sweep sees a name it doesn't know yet, out of combat. A name is the client's own,
+localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-coded.
