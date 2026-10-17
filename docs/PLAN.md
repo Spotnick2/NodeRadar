@@ -51,6 +51,7 @@ be, not that one is up.
 What the three probe rounds measured (70450, docs/FOREVER-PROBE.md and PR #8) decides the design:
 the soft sweep reads every named blip with the cursor anywhere, and a node is a name that vanishes
 when its gathering tracking goes off. v1's code is replaced, not patched; its slash commands stay.
+Reviewed by Codex (round 1: revise first; the changes are marked "Codex").
 
 ### Files (TOC order)
 
@@ -65,66 +66,105 @@ when its gathering tracking goes off. v1's code is replaced, not patched; its sl
 
 ### The sweep (`Scan.lua`)
 
-Every `interval` seconds (0.5 by default; round 3: 3.6 ms average, 12 ms worst):
-- skipped when disabled, when no gathering tracking is on, when `Minimap` isn't visible, or when
-  the geometry reads secret or missing;
-- `Minimap:SetUsingSoftCursor(true)`, then `Minimap:UpdateMouseoverAtPoint(px, py)` over a grid 8
-  of the map's units apart, in `GetCursorPosition`'s space (`(left + ox) * effectiveScale`), reading
-  `C_TooltipInfo.GetMinimapMouseover()` at each point; then the point back on the cursor, and
-  `SetUsingSoftCursor(false)`. The whole sweep is one function call inside a `pcall`; the soft cursor
-  is turned off on every path, errors included;
-- hits are grouped into **blips**: per name, grid cells that touch (8-neighbour) are one blip, at the
-  centre of its cells, in the map's units from its centre (round 2: several nodes share a name; a
-  blip covers 4–16 cells);
-- with `rotateMinimap` on, offsets are turned to north-up with `GetPlayerFacing()` (plain outdoors,
-  porting guide), so a blip's position doesn't jump when the player turns.
+`Scan.Sweep()` reads the map once and returns its **blips**, or nil and why:
+- `Minimap:SetUsingSoftCursor(true)`, then `Minimap:UpdateMouseoverAtPoint(px, py)` over a grid 8 of
+  the map's units apart, in `GetCursorPosition`'s space (`(left + ox) * effectiveScale`), reading
+  `C_TooltipInfo.GetMinimapMouseover()` at each point. The grid runs inside a `pcall`; **after it,
+  unconditionally**, the point goes back on the cursor (or off the map) and
+  `SetUsingSoftCursor(false)` runs, so an error inside can't leave the soft cursor on (Codex);
+- hits are grouped into blips: per name, grid cells that touch (8-neighbour) are one blip, at the
+  centre of its cells, in the map's units from its centre, as drawn (round 2: several nodes share a
+  name; a blip covers 4–16 cells). A secret or missing geometry, or a secret line, fails the sweep.
 
-The sweep doesn't stop while the player hovers the map: round 2's soft sweeps 3 times a second
-under the player's cursor never disturbed their tooltip.
+The **radar** calls it every `interval` seconds (0.5 by default; round 3: 3.6 ms average, 12 ms
+worst) when enabled, a gathering tracking is on, `Minimap` is visible and the gamepad is off
+(`GetCVarBool("GamePadEnable")`: a gamepad player's own soft cursor isn't ours to turn off). The
+**toggle** calls it directly, without those conditions: its middle sweep runs with the tracking off
+on purpose, and its sweeps never reach the alerts (Codex). The sweep doesn't stop while the player
+hovers the map: round 2's soft sweeps under the player's cursor never disturbed their tooltip.
 
 ### Which names are nodes (`Learn.lua`)
 
 `kind(name)` answers `"herbs"`, `"ore"`, `false` (not a node) or `nil` (unknown), from, in order:
-1. this account's learned names, `NodeRadarDB.learned[locale][name]` (`kind` or `false`, with the
-   build and the source: `gather` or `toggle`);
+1. this account's learned names, `NodeRadarDB.learned[locale][name] = { kind = …, source =
+   "gather" | "toggle", build = … }` (`kind` is a string or `false`);
 2. the shipped library, `NodeRadar.LIBRARY[GetLocale()]` (nodes only).
 
-Learning:
-- **From gathering:** `UNIT_SPELLCAST_SENT` for the player whose spell is a gathering spell: Herb
-  Gathering (2366) → herbs, Mining (2575) → ore, matched by ID and, for other ranks, by the name
-  `C_Spell.GetSpellInfo(2366/2575)` returns. The target is the node's name (round 3).
-- **From the toggle**, for an unknown name a sweep sees. Out of combat, not casting or channelling
-  (`UnitCastingInfo` / `UnitChannelInfo`), not dead, at most one every 10 s, and only when the
-  gathering tracking's spell isn't on cooldown (`C_Spell.GetSpellCooldown`). It turns that tracking
-  off (`C_Minimap.SetTracking(i, false)`), sweeps 1.5 s later, turns it back on (a cast of the
-  spell, round 3), sweeps 2.5 s later. A name is that kind only when it was there before, gone with
-  the tracking confirmed off, and back after (Codex on #8); it's `false` when it stayed while off;
-  anything else stays unknown, to try again later. A failed sweep makes the whole run inconclusive.
-  With both Find Herbs and Find Minerals on, a name is `false` only once it survived both toggles.
-- **Tracking must come back.** If it isn't on 2.5 s after re-enabling (a cast that failed, combat
-  that started), retry once out of combat; if it's still off, **say so in chat**: "NodeRadar turned
-  Find Herbs off to learn a node and couldn't turn it back on: turn it on again." Never silent.
-- `/nr learn on|off` (on by default) turns the toggle off for players who'd rather learn only by
-  gathering.
+**From gathering:** `UNIT_SPELLCAST_SENT` for the player, when the spell is Herb Gathering (2366) →
+herbs or Mining (2575) → ore, matched by ID and, for other ranks, by `C_Spell.GetSpellInfo(id).name`
+(a plain string, else ignored). The target is the node's name (round 3). Gathering is the strongest
+evidence: it overrides a toggle's `false`, and a toggle never overrides it (Codex).
+
+**From the toggle**, for an unknown name a radar sweep sees. One experiment at a time:
+1. **Start** only when: out of combat, not casting or channelling (`UnitCastingInfo` /
+   `UnitChannelInfo`), alive (`UnitIsDeadOrGhost`), standing still (`GetUnitSpeed("player") == 0`),
+   not in a loading screen, the gamepad off, the last experiment ≥ 10 s ago, and the tracking's
+   spell not on cooldown. Then: a sweep (**before**), `C_Minimap.SetTracking(i, false)`, and
+   `NodeRadarDB.pendingRestore = spellID` **saved before the call**.
+2. **Middle**, 1.5 s later: tracking must read off; a sweep.
+3. **Restore:** `SetTracking(i, true)` only when not casting or channelling and alive (Codex: a
+   cast started meanwhile); else retry every 0.5 s. Combat doesn't wait: the client cast Find Herbs
+   in round 3 and an instant tracking cast isn't refused in combat as far as measured; if it is,
+   the retries continue after combat.
+4. **After**, 2.5 s after tracking reads on again: a sweep; then `pendingRestore` is cleared.
+
+**The experiment is void** (nothing learned, the restore still runs) when: the player moved
+(`GetUnitSpeed` > 0 at any step), the zone changed, a loading screen came, the player died, the
+minimap's zoom or size changed, a sweep failed, tracking didn't read off in the middle, or tracking
+changed in a way we didn't cause (Codex). **A tracking change by the player wins:** if they turned
+it back on themselves, we're done; if they turned off another tracking, we don't touch it.
+
+**The verdict**, on a valid experiment, per name: that kind when it was there before, gone in the
+middle and back after; `false` when **every** blip of that name stayed through the middle, **and**
+it also stayed through the other gathering tracking's toggle when both are on; anything mixed
+(one blip of the name gone, another stayed, or gone and never back) stays unknown (Codex).
+
+**Tracking must come back, even across a reload.** At login and after every loading screen, a
+`pendingRestore` whose tracking is off is restored (out of combat, not casting), then cleared. If
+tracking is still off 10 s after the first restore attempt, **say so in chat**: "NodeRadar turned
+Find Herbs off to learn a node and couldn't turn it back on: please turn it on." Never silent.
+
+**On by default only if the in-game check passes:** whether the restore's cast costs a global
+cooldown or interrupts anything hasn't been measured (Codex). The release check (below) measures
+it; if it costs, `/nr learn` ships off and learning is by gathering only.
+
+**Limits, said in the README:** names are the unit. A quest or NPC with a node's exact name would be
+taken for a node, and a node whose name was learned `false` wouldn't alert. Round 3 saw no such
+collision.
 
 ### New nodes and the alert (`Alert.lua`)
 
-- Each sweep's node blips are matched to the previous sweep's (same name, within 10 units); an
-  unmatched one is new. A new blip within 15 units of one that disappeared less than 20 s ago is the
-  same node coming back (the map's edge), not new.
-- A new node, at most one alert per `cooldown` seconds (5): `PlaySound(3175, "Master")` (MAP_PING,
-  checked `willPlay`), a ring on the map at the node's position (our unnamed frame on `Minimap`,
-  `HIGH` strata, `Interface\Cooldown\ping4`), and an optional chat line.
-- Blizzard's ping (`Minimap:PingLocation`, centre offsets in the map's units) is optional and
-  **solo only**: it's sent to the group (round 2). Off by default.
-- No mounted-only mode: there are no mounts on the beta.
+Matching blips across sweeps by their position fails while the player moves: the offsets are the
+player's, not the world's (Codex). So v1 counts instead, which no movement or turn changes:
+- per node name, the number of its blips now vs the last radar sweep. A **rise** is a new node; the
+  new blip is the one farthest from every blip of that name last time (where the ring goes);
+- a rise right after a drop of that name (within 20 s) is the same node blinking at the map's edge,
+  not new;
+- the history resets, silently, when the zoom or the map's size changes and when tracking changes;
+  after a zone change it starts from zero (a new area's nodes alert);
+- at most one alert per `cooldown` seconds (5): `PlaySound(3175, "Master")` (MAP_PING, `willPlay`
+  checked), a ring on the map at the blip's drawn position (our unnamed frame on `Minimap`, `HIGH`
+  strata, `Interface\Cooldown\ping4`), an optional chat line.
+
+Known misses, accepted for v1: a node leaving one edge in the same half second another of that name
+enters the other. World positions (`UnitPosition`) would fix it once their axes are measured.
+
+Blizzard's ping (`Minimap:PingLocation`) is optional, solo only (it's sent to the group, round 2),
+and off by default. No mounted-only mode: there are no mounts on the beta.
 
 ### The library (`Tools/export_nodes.lua`)
 
-`lua5.1 Tools/export_nodes.lua <SavedVariables/NodeRadar.lua>` merges every account's learned nodes
-(`kind`, never `false`) into `Data/Nodes.lua`, sorted by locale and name, keeping what's there; a
-name learned as two kinds is reported and left out. `pwsh Tools/export_nodes.ps1` finds the
-SavedVariables files. A test pins the merge and the data file's shape.
+`lua5.1 Tools/export_nodes.lua <SavedVariables/NodeRadar.lua>...` merges the learned nodes (`kind`,
+never `false`) into `Data/Nodes.lua`:
+- every new name is printed with its source and build, for review before committing (Codex: the
+  source says how it was learned, not that it's right);
+- a conflict, across the inputs **and** the existing library (one name, two kinds), is reported and
+  left out; an existing entry is never silently replaced;
+- locales must be one of the client's `GetLocale()` values; names are written with `%q`; the
+  output is sorted, so a re-run changes nothing.
+
+`pwsh Tools/export_nodes.ps1` finds the SavedVariables files. A test pins the merge, the conflicts
+and the file's shape.
 
 ### Commands
 
@@ -135,18 +175,25 @@ is a follow-up issue.
 ### Tests
 
 The probe's stubbed minimap (screen-space points, soft cursor, tracking that hides its blips,
-`SetTracking`) moves into the shared stubs. Offline: grouping into blips, matching and the "came
-back" rule, learning from gathering and from the toggle (each Codex case: a name that never comes
-back, a failed sweep, tracking that stays on or won't come back), the soft cursor off on every path,
-the alert's cooldown, the export's merge.
+`SetTracking`) moves into the shared stubs, with `GetUnitSpeed`, casting, death and loading screens.
+Offline:
+- the sweep: grouping into blips; the soft cursor off after an error inside the grid;
+- learning from gathering (by ID, by rank name), and its precedence over the toggle;
+- the toggle: each Codex case (a name that never comes back, a failed sweep, tracking that stays on);
+  a cast, combat, death, movement, a zone change or a loading screen between off and on; the player
+  changing tracking mid-test; a `/reload` between off and on (`pendingRestore`); a restore that
+  never succeeds (the chat line); the middle sweep with the only tracking off;
+- the alerts: a rise, a blink at the edge, a reset on zoom, the cooldown;
+- the export: merge, conflicts with inputs and the library, a re-run that changes nothing.
 
-### Risks to check in game (a short procedure in the probe, after the port)
+### Release check, in game (a short procedure in the probe)
 
-- Does re-enabling tracking cost a global cooldown, or interrupt a cast? (Guarded: never while
-  casting; measured here.)
-- Does a sweep every 0.5 s show in the frame time with a large map or a high zoom?
-- A gamepad player using the soft cursor: we turn it off after every sweep. Skip sweeps while
-  `GetCVarBool("GamePadEnable")`, until measured.
+- Does the restore's cast cost a global cooldown, or interrupt a cast? Decides `learn`'s default.
+- Learning end to end: an unknown herb learned by the toggle, then one by gathering.
+- Alerts while walking: a new node pings once; nothing spams.
+- A `/reload` during an experiment restores tracking; **settings and learned names survive a full
+  client exit** (CLAUDE.md: persistence needs a full exit).
+- With Glass MiniMap, and with the stock map: the sweep and the ring behave the same.
 
 ## A public API (#4), after #3
 
