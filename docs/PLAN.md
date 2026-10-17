@@ -25,6 +25,12 @@ together, would read the blips:
   Blizzard's own minimap tooltip works (`Blizzard_Minimap/Mainline/Minimap.lua:269-272`).
 
 Sampling a grid of points a few times a second would then give each node's name and where it is.
+
+**Measured (70450, two rounds): it works.** The point is in `GetCursorPosition`'s space, and with
+`Minimap:SetUsingSoftCursor(true)` around the sweep it counts with the cursor anywhere, at about
+4 ms a sweep, without disturbing the player's own hover. A sweep reads every named blip (quests
+ready for turn-in, group members, the player), so the port must keep only nodes.
+`Minimap:PingLocation` marks a node but is sent to the group. Details: docs/FOREVER-PROBE.md.
 `Tools/NodeRadarProbe` measures it (docs/FOREVER-PROBE.md has the procedure and the results):
 
 1. what the mouseover reads while the player really hovers a blip;

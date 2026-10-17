@@ -78,3 +78,32 @@ UI), which conventions place the point right (with the cursor on an empty part o
 `Minimap:PingLocation` to mark a found node.
 
 **For the port:** no mounted-only default (no mounts); the ring needs a real strata.
+
+### Round 2: `soft`, 1.60.1.70450 (owner's run, 2026-10-17, Valley of Trials, Find Herbs, grouped with a second character)
+
+Same map (198×198, scale 0.640). The owner hovered a Wilted Peacebloom at (−17.9, 21.3) from the
+map's centre.
+
+| Question | Result |
+|---|---|
+| The convention, cursor on an **empty** part of the map | **`screen`**: `GetCursorPosition`'s space, as is. The far point read nothing, the blip read the herb at once (not 0.1 s later: the hardware cursor takes the mouseover back by then). The other nine read nothing |
+| The convention, cursor **off** the map, **`SetUsingSoftCursor(true)`** | **`screen` again, and it reads the herb at once and still 0.1 s later.** The soft cursor is what makes the point count without the hardware cursor |
+| A whole-map sweep, cursor on the map / soft cursor | Both: Wilted Peacebloom ×33 hits, Burning Blade Medallion ×4, in 3.0 / 5.3 ms. The "where it is" check FAILED, but the probe's fault: it averages every hit of a name, and several Wilted Peaceblooms were on the map (the screenshot shows them right of the player; the walk found another at (65, −47)), so the average (18, −1) sat between them. The port must cluster hits into separate nodes |
+| The player's own hover after the soft cursor | works (step 8) |
+| Soft sweeps 3 times a second for 10 s while hovering | 33 sweeps, 4.0 ms average, 7.2 ms max; the hover read right after every one; no flicker (owner) |
+| `Minimap:PingLocation(-17.9, 21.3)` | the ping showed **on the blip**, with its sound (owner, twice). `GetPingPosition` → (−0.0906, 0.1075): the offset ÷ the map's width. **The grouped second character saw it too**: a ping is sent to the group |
+| A 70 s walk with the soft radar | 236 sweeps, 4.3 ms average, 27.4 ms max; 6 names (see below) |
+| v1's ring with the `HIGH` strata | shows (owner) |
+
+**What a sweep finds is every minimap blip with a name, not just nodes.** The walk logged Burning
+Blade Medallion and Thazz'ril's Pick (two quests ready for turn-in, in the quest tracker), Karuzo
+Loco (the grouped second character) and Drakuza Memphisto (the player, at the centre) besides
+Stunted Silverleaf and Wilted Peacebloom. Other addons' pins (RestedXP's step arrow, HereBeDragons
+icons) are frames, not blips, and never appear. The port has to tell nodes from the rest.
+
+**So (#2 answered):** with `Minimap:SetUsingSoftCursor(true)` around a sweep of
+`Minimap:UpdateMouseoverAtPoint(x, y)` in screen pixels and `C_TooltipInfo.GetMinimapMouseover()`,
+an addon reads the minimap's blips with the cursor anywhere, at about 4 ms a sweep, without
+disturbing the player's own hover. **For the port (#3):** turn the soft cursor on only for the
+sweep; cluster hits into nodes; keep only gathering nodes; never ping by default in a group (it
+goes to the group), or mark the node with our own ring at its position instead.
