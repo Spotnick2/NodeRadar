@@ -11,7 +11,7 @@
 --   string.format on one throw. Lua 5.1 cannot make a truth test or == throw,
 --   so those two misuses are NOT caught here (only in game / in review).
 -- - EVENT names: RegisterEvent throws on a name the API dump does not declare
---   (tests/events-70425.txt when the dump is absent, as on CI).
+--   (tests/events-70450.txt when the dump is absent, as on CI).
 -- - METHOD calls: every widget method called is recorded (WoW.methodsCalled)
 --   so a test can check each against the dump's widget methods.
 -- - THE MINIMAP'S MOUSEOVER: Minimap:UpdateMouseoverAtPoint(x, y) moves it and
@@ -20,9 +20,9 @@
 --   it's WoW.mouseoverConvention, offsets from the map's centre by default.
 
 WoW = {}
-local DUMP = os.getenv("NODERADAR_API_DUMP") or "C:/Projects/WoW/References/forever-api-1.60.1.70425.md"
+local DUMP = os.getenv("NODERADAR_API_DUMP") or "C:/Projects/WoW/References/forever-api-1.60.1.70450.md"
 WoW.DUMP = DUMP
-WoW.FIXTURE = "tests/events-70425.txt"
+WoW.FIXTURE = "tests/events-70450.txt"
 
 --------------------------------------------------------------------------------
 -- Secrets
@@ -259,7 +259,7 @@ date = os.date
 function time(t) if t then return os.time(t) end return 1760000000 + math.floor(WoW.now) end
 function GetTime() return WoW.now end
 function GetServerTime() return time() end
-function GetBuildInfo() return "1.60.1", "70425", "Oct 14 2026", 16001 end
+function GetBuildInfo() return "1.60.1", "70450", "Oct 15 2026", 16001 end
 function InCombatLockdown() return WoW.combat == true end
 function GetCVar(name) return WoW.cvars[name] end
 function GetCVarBool(name) return WoW.cvars[name] == "1" end

@@ -14,7 +14,7 @@ alerts. Its vignette fallback (`info.type == 2`) doesn't mean "gathering node" e
 
 ## The candidate on Forever (#2)
 
-Forever runs Blizzard's Mainline code, and its API dump (1.60.1.70425) has two calls that, put
+Forever runs Blizzard's Mainline code, and its API dump (1.60.1.70425, unchanged in 70450) has two calls that, put
 together, would read the blips:
 
 - **`Minimap:UpdateMouseoverAtPoint(pointX, pointY)`** (MinimapFrameAPI): moves the minimap's

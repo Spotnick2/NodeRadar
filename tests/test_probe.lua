@@ -3,11 +3,11 @@
 -- log what they read, never to chat; the blips procedure runs end to end on a
 -- client whose UpdateMouseoverAtPoint takes centre offsets, finds exactly
 -- that convention, and finds none on a client that ignores the call. Every
--- widget method it calls exists on 70425. Runs locally only (CI skips it).
+-- widget method it calls exists on 70450. Runs locally only (CI skips it).
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
--- What the host touches beyond the shared stub (all in the 70425 dump).
+-- What the host touches beyond the shared stub (all in the 70450 dump).
 rawset(_G, "Screenshot", function() WoW.shots = (WoW.shots or 0) + 1 end)
 rawset(_G, "EnumerateFrames", function() return nil end)
 

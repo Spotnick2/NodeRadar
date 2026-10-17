@@ -35,7 +35,7 @@ skins is #4 (after #3).
   (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr blips` for #2.
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
 - `tests/`: `wow_stubs.lua` (strict globals as an allowlist of APIs verified in the dump, secrets,
-  event names checked against the dump or `events-70425.txt`, every widget method recorded, and a
+  event names checked against the dump or `events-70450.txt`, every widget method recorded, and a
   minimap whose mouseover reads blips), `harness.lua`, `test_*.lua`, `run.ps1`.
 
 ## Forever basics (shared with the siblings)
@@ -56,7 +56,7 @@ skins is #4 (after #3).
 - `C:\Projects\WoW\References\PORTING-TBC-TO-FOREVER.md`: measured, addon-agnostic field notes.
   Treat them as fact. New addon-agnostic findings go there, not into a copy here.
 - `C:\Projects\WoW\References\forever-api-<version>.<build>.md`: the API dump; use the **highest
-  build** there. This repo was set up on **1.60.1.70425** (the stubs and `tests\events-70425.txt`
+  build** there. This repo follows **1.60.1.70450** (the stubs and `tests\events-70450.txt`
   follow it). **Presence is not a contract.**
 - `C:\Projects\WoW\References\PROBES.md` and `C:\Projects\WoW\ForeverProbe\docs\GUIDE.md`: probes.
 - `C:\Projects\WoW\wow-ui-source`: the client's own FrameXML. `Blizzard_Minimap/Mainline/Minimap.lua`
