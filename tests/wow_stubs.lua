@@ -410,8 +410,10 @@ local function blipsAt(dx, dy)
 end
 
 C_TooltipInfo = {
-    -- MayReturnNothing (TooltipInfoDocumentation.lua:619).
+    -- MayReturnNothing (TooltipInfoDocumentation.lua:619). WoW.mouseoverThrows
+    -- makes every read throw.
     GetMinimapMouseover = function()
+        if WoW.mouseoverThrows then error("GetMinimapMouseover failed") end
         local dx, dy
         local pointCounts = WoW.cursorOnMap or (WoW.softCursor and not WoW.softIgnored)
         if WoW.mouseoverPoint and pointCounts then

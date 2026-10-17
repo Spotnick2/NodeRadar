@@ -221,6 +221,20 @@ check(T.state.toggle.failed and T.state.toggle.failed:find("middle sweep failed"
 check(logged("INCONCLUSIVE: middle sweep failed"), "...logged")
 eq(WoW.tracking[1].active, true, "...and tracking is back on")
 
+-- (Codex on #8, follow-up) Point reads that fail in the middle sweep, the
+-- geometry readable: the quest would seem to vanish and come back. Inconclusive.
+WoW.blips = { { "Burning Blade Medallion", -40, 60 } }
+fp("nr toggle")
+WoW.mouseoverThrows = true
+WoW.flushTimers(1.5)
+WoW.mouseoverThrows = false
+WoW.drainTimers()
+eq(#T.state.toggle.vanished, 0, "a middle sweep with point errors finds no node")
+check(T.state.toggle.failed and T.state.toggle.failed:find("middle sweep had 625 point errors in 625"),
+    "...inconclusive, with the count: " .. tostring(T.state.toggle.failed))
+eq(WoW.tracking[1].active, true, "...and tracking is back on")
+WoW.blips = { { "Peacebloom", 30, -20, kind = "herbs" } }
+
 -- Tracking that never goes off is inconclusive too.
 WoW.refuseTrackingOff = true
 fp("nr toggle")

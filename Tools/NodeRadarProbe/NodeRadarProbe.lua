@@ -691,12 +691,17 @@ local function trackingOn(i)
     return info ~= nil and yes(info.active)
 end
 
--- One of the toggle's sweeps: its names, or nil and why (a failed sweep must
--- never read as "nothing there", or everything would seem to vanish).
+-- One of the toggle's sweeps: its names, or nil and why. A failed sweep, or
+-- one where any point failed to read, must never read as "nothing there", or
+-- everything would seem to vanish (Codex on #8).
 local function toggleSweep(conv, t, label)
     local r, why = sweep(conv, nil, true)
     if not r then
         t.failed = t.failed or (label .. " sweep failed: " .. str(why))
+        return nil
+    end
+    if r.errors > 0 then
+        t.failed = t.failed or (("%s sweep had %d point errors in %d"):format(label, r.errors, r.points))
         return nil
     end
     return r.list
