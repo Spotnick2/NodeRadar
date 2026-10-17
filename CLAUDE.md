@@ -53,7 +53,7 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
   prints additions with their provenance for review, writes with `--write`.
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
-  (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr ids` for #7 (round 3).
+  (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr release` for the release check (#3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
 - `tests/`: `wow_stubs.lua` (strict globals as an allowlist of APIs verified in the dump, secrets,
   event names checked against the dump or `events-70450.txt`, every widget method recorded, and a
@@ -90,7 +90,7 @@ Lua 5.1 at `C:\Program Files (x86)\Lua\5.1\` (`lua.exe`, `luac.exe`). No build s
 ```powershell
 pwsh tests\run.ps1                                                   # luac -p on the TOC files + probe, then every tests\test_*.lua (needs ..\ForeverProbe)
 & 'C:\Program Files (x86)\Lua\5.1\lua.exe' tests\test_probe.lua     # one test, from the repo root
-pwsh Tools\deploy.ps1 -ProbeOnly                                     # ForeverProbe + NodeRadarProbe into AddOns
+pwsh Toolsdeploy.ps1 -Probe                                         # NodeRadar + ForeverProbe + NodeRadarProbe into AddOns
 ```
 
 - Default AddOns path: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns`

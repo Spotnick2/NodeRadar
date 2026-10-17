@@ -84,4 +84,4 @@ if ($Probe -or $ProbeOnly) { Deploy-Probe }
 
 Write-Host ""
 Write-Host "/reload is enough, a brand-new addon folder included." -ForegroundColor Yellow
-Write-Host "In game:  /console scriptErrors 1   then   /fp steps nr ids   (the probe's lines: /fp)" -ForegroundColor Green
+Write-Host "In game:  /console scriptErrors 1   then   /fp steps nr release   (the probe's lines: /fp)" -ForegroundColor Green

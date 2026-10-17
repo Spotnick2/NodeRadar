@@ -6,12 +6,28 @@ the `/fp` console and `NodeRadarProbeDB.log`, never to chat.
 ## Running it
 
 ```powershell
-pwsh Tools\deploy.ps1 -ProbeOnly     # ForeverProbe, then NodeRadarProbe (not v1, until #3)
+pwsh Tools\deploy.ps1 -Probe         # NodeRadar, ForeverProbe, then NodeRadarProbe
 ```
 
-In game: `/console scriptErrors 1`, `/reload`, then **`/fp steps nr ids`** (round 3, #7) and follow
-the panel. It needs a character with Herbalism or Mining, outdoors near nodes. End with `/reload`;
-the session reads the results from `SavedVariables\NodeRadarProbe.lua` and `ForeverProbe.lua`.
+In game: `/console scriptErrors 1`, `/reload`, then **`/fp steps nr release`** (NodeRadar's
+release check, #3) and follow the panel. It needs a character with Herbalism or Mining, outdoors
+near nodes, one full client exit along the way. End with `/reload`; the session reads the results
+from `SavedVariables\NodeRadarProbe.lua`, `ForeverProbe.lua` and `NodeRadar.lua`.
+
+## The `release` procedure (#3)
+
+NodeRadar itself, end to end (docs/PLAN.md, "Release check, in game"):
+
+| Step | Measures |
+|---|---|
+| 1–2 | NodeRadar on, a gathering tracking on; its settings, learned counts, the minimap skin, the gamepad |
+| 3–5 | **Does the restore cost a global cooldown?** The probe's own toggle (NodeRadar's learning paused meanwhile, put back after, or at the next login): for 2 s after `SetTracking(i, true)`, Retail's GCD spell (61304), the tracking spell's cooldown, and action slots 1–12 that start a ≤ 1.6 s cooldown. Then: did you see a sweep? Decides `learn`'s default |
+| 6 | NodeRadar learns an unknown name **by itself** (the line lists the unknown names it sees) |
+| 7 | it learns one **by gathering** |
+| 8–9 | a walk: NodeRadar's alerts counted (a secure hook on `Alert.Fire`); one per new node? |
+| 10–11 | `/nr test`: the ring at the centre, with a screenshot; the skin named in the note |
+| 12–14 | tracking off with a restore pending, as mid-experiment; `/reload`; NodeRadar restores it by itself (20 s) |
+| 15–17 | cooldown set to 7 and the learned count noted; **a full client exit**; both read back, then the cooldown put back |
 
 The commands, for one-offs (`/fp nr` lists them):
 
@@ -28,7 +44,7 @@ The commands, for one-offs (`/fp nr` lists them):
 | `vignettes` | every vignette the client lists |
 | `sound [kit]` | `PlaySound(kit, "Master")`, MAP_PING (3175) by default |
 | `ring` | v1's ring on the minimap, and `GetFileIDFromPath` of its texture |
-| `toggle` | gathering tracking off and on, sweeping each time; what vanished |
+| `toggle [gcd]` | gathering tracking off and on, sweeping each time; what vanished (`gcd`: and the global cooldown of the restore) |
 | `pairs` | names paired with the game-object IDs in range; `ClosestGameObjectPosition` for each |
 
 ## The `ids` procedure (round 3, #7)

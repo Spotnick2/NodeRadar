@@ -29,7 +29,7 @@
 --   /fp nr pairs                        names paired with the game-object IDs in range
 --   /fp nr clear                        empty the saved log
 --
--- Procedure: /fp steps nr ids (round 3, #7).
+-- Procedures: /fp steps nr ids (round 3, #7); /fp steps nr release (NodeRadar's release check, #3).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -728,7 +728,63 @@ local function toggleVerdict(t)
     if t.offState ~= false then t.failed = "tracking never went off" end
 end
 
-local function toggleTracking()
+--------------------------------------------------------------------------------
+-- The global cooldown of the restore (the release check, #3): turning a
+-- gathering tracking back on casts its spell (round 3). Does it start a global
+-- cooldown? Watched three ways for 2 s, since none is measured yet: Retail's
+-- GCD spell (61304), the tracking spell's own cooldown, and the action bar's
+-- first 12 slots that weren't cooling down before (a cooldown of 1.6 s or less).
+--------------------------------------------------------------------------------
+
+local GCD_SPELL = 61304
+local gcdFrame = CreateFrame("Frame")
+
+local function cooldownOf(fn, arg)
+    if type(fn) ~= "function" then return nil end
+    local ok, info = pcall(fn, arg)
+    if not ok or type(info) ~= "table" then return nil end
+    return { active = info.isActive == true, onGCD = info.isOnGCD == true, duration = num(info.duration) }
+end
+
+local function slotsCooling()
+    local s = {}
+    for slot = 1, 12 do
+        local c = cooldownOf(C_ActionBar and C_ActionBar.GetActionCooldown, slot)
+        if c and c.active then s[slot] = c.duration or 0 end
+    end
+    return s
+end
+
+-- Starts watching just before the restore; state.gcd holds the answer.
+local function watchGcd(spellID)
+    local g = { samples = 0, gcdSpell = false, tracking = false, slots = {}, before = slotsCooling() }
+    state.gcd = g
+    local untilT = GetTime() + 2
+    gcdFrame:SetScript("OnUpdate", function()
+        if GetTime() >= untilT then
+            gcdFrame:SetScript("OnUpdate", nil)
+            local slots = {}
+            for slot in pairs(g.slots) do slots[#slots + 1] = slot end
+            table.sort(slots)
+            g.seen = g.gcdSpell or g.tracking or #slots > 0
+            g.done = true
+            say(("gcd after the restore: %s (%d samples; GCD spell %s, tracking spell %s, action slots %s)"):format(
+                g.seen and "SEEN" or "none seen", g.samples, str(g.gcdSpell), str(g.tracking),
+                #slots > 0 and table.concat(slots, " ") or "none"))
+            return
+        end
+        g.samples = g.samples + 1
+        local c = cooldownOf(C_Spell.GetSpellCooldown, GCD_SPELL)
+        if c and c.active then g.gcdSpell = true end
+        c = cooldownOf(C_Spell.GetSpellCooldown, spellID)
+        if c and (c.active or c.onGCD) then g.tracking = true end
+        for slot, d in pairs(slotsCooling()) do
+            if not g.before[slot] and d <= 1.6 then g.slots[slot] = true end
+        end
+    end)
+end
+
+local function toggleTracking(gcd)
     local i, info = gatherIndex()
     if not i then
         say("toggle: no gathering tracking on")
@@ -744,6 +800,7 @@ local function toggleTracking()
     C_Timer.After(1.5, function()
         t.offState = trackingOn(i)
         t.during = toggleSweep(conv, t, "middle")
+        if gcd then watchGcd(num(info.spellID)) end
         local ok2, err2 = pcall(C_Minimap.SetTracking, i, true)
         t.onCall = ok2 and "returned" or ("ERROR " .. str(err2))
         say(("toggle: tracking on %s after off; %s while off; SetTracking(%d, true) %s"):format(str(t.offState),
@@ -761,7 +818,8 @@ local function toggleTracking()
     return t
 end
 
-Probe:Command("toggle", function() toggleTracking() end, "gathering tracking off and on, sweeping each time")
+Probe:Command("toggle", function(args) toggleTracking(args == "gcd") end,
+    "[gcd]: gathering tracking off and on, sweeping each time (gcd: watch the global cooldown)")
 Probe:Command("pairs", function()
     closest()
     say("pairs: " .. pairsText())
@@ -841,12 +899,228 @@ Probe:Steps("ids", {
 })
 
 --------------------------------------------------------------------------------
+-- The release check (#3, docs/PLAN.md "Release check, in game"): NodeRadar
+-- itself, end to end. Reads NodeRadar's own tables (same project).
+--------------------------------------------------------------------------------
+
+local function nr()
+    local n = rawget(_G, "NodeRadar")
+    if type(n) == "table" and type(n.db) == "table" and n.Learn and n.Scan then return n end
+end
+
+-- NodeRadar's learning paused while the probe toggles tracking itself, and
+-- put back after, or at the next login if a reload came in between.
+local function pauseLearning(n)
+    if NodeRadarProbeDB.restoreLearn == nil then NodeRadarProbeDB.restoreLearn = n.db.learn end
+    n.db.learn = false
+end
+
+local function resumeLearning()
+    local n = nr()
+    if n and NodeRadarProbeDB.restoreLearn ~= nil then
+        n.db.learn = NodeRadarProbeDB.restoreLearn
+        NodeRadarProbeDB.restoreLearn = nil
+    end
+end
+
+local function learned(n) return n.db.learned[GetLocale()] or {} end
+
+local function snapshot(n)
+    local s = {}
+    for name, e in pairs(learned(n)) do s[name] = tostring(e.kind) .. "/" .. tostring(e.source) end
+    return s
+end
+
+-- The names learned (or relearned) from a source since a snapshot.
+local function learnedSince(n, snap, source)
+    local list = {}
+    for name, e in pairs(learned(n)) do
+        if e.source == source and snap[name] ~= tostring(e.kind) .. "/" .. tostring(e.source) then
+            list[#list + 1] = name .. " = " .. tostring(e.kind)
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local function trackingOnBySpell(n, spellID)
+    for _, t in ipairs(n.Learn.Trackings()) do
+        if t.spellID == spellID then return t.active end
+    end
+    return false
+end
+
+-- NodeRadar's alerts, counted (a secure hook: NodeRadar's code runs unchanged).
+local alerts, hooked = {}, false
+local function hookAlerts(n)
+    if hooked then return end
+    hooked = true
+    hooksecurefunc(n.Alert, "Fire", function(names)
+        for _, name in ipairs(names or {}) do alerts[#alerts + 1] = name end
+        say("NodeRadar alert: " .. join(names))
+    end)
+end
+
+local SKINS = { "GlassMiniMap", "SexyMap", "ElvUI", "Leatrix_Maps", "BasicMinimap" }
+
+Probe:Steps("release", {
+    rev = 1,
+    title = "NodeRadar's release check (#3)",
+    { text = "Stand near herbs or ore, out of combat, with Find Herbs or Find Minerals on and NodeRadar on (/nr).",
+      wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if not n.db.enabled then return false, "NodeRadar is off: type /nr" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          return true, "ready"
+      end },
+    { text = "Reading NodeRadar and the client.", auto = true, run = function()
+          report()
+          local n = nr()
+          local skins = {}
+          for _, a in ipairs(SKINS) do
+              local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, a)
+              if ok and loaded == true then skins[#skins + 1] = a end
+          end
+          local nodes, others = 0, 0
+          for _, e in pairs(learned(n)) do if e.kind then nodes = nodes + 1 else others = others + 1 end end
+          say(("NodeRadar: learn %s, cooldown %s, interval %s; learned %d nodes and %d others; skins %s; gamepad %s")
+              :format(str(n.db.learn), str(n.db.cooldown), str(n.db.interval), nodes, others, join(skins),
+                  str(GetCVarBool("GamePadEnable"))))
+          return "skins: " .. join(skins), ("learned %d nodes, %d others"):format(nodes, others)
+      end },
+    { text = "Stand still and watch your action bars. Press Toggle: your gathering tracking goes off and back on "
+          .. "(about 4 seconds) while the probe watches the global cooldown.",
+      button = "Toggle", run = function()
+          local n = nr()
+          if n.Learn.Busy() then error("NodeRadar is learning right now: wait a few seconds, then Retry", 0) end
+          pauseLearning(n)
+          state.gcd = nil
+          if not toggleTracking(true) then
+              resumeLearning()
+              error("no gathering tracking on: turn it on, then Retry", 0)
+          end
+          return "started"
+      end },
+    { text = "Toggling, about 4 seconds.",
+      wait = function()
+          local t, g = state.toggle, state.gcd
+          if not (t and t.done and g and g.done) then return false, "toggling" end
+          resumeLearning()
+          return true, g.seen and "global cooldown SEEN" or "no global cooldown seen", "back on: " .. str(t.back)
+      end,
+      check = function()
+          local t, g = state.toggle, state.gcd
+          local ok = t ~= nil and t.back == true and g ~= nil and g.done == true
+          return ok, ok and ("measured: " .. (g.seen and "a global cooldown" or "no global cooldown"))
+              or "tracking didn't come back, or nothing measured"
+      end },
+    { text = "When tracking came back on, did your action bars show a global-cooldown sweep?", ask = true },
+    { text = "Stand still near a herb or ore NodeRadar doesn't know yet (the line below lists the unknown names "
+          .. "it sees). It learns one by itself within about 15 seconds.",
+      wait = function()
+          local n = nr()
+          state.learnStart = state.learnStart or snapshot(n)
+          local got = learnedSince(n, state.learnStart, "toggle")
+          if #got > 0 then return true, "learned: " .. table.concat(got, ", ") end
+          if n.Learn.Busy() then return false, "learning..." end
+          local r = n.Scan.Sweep()
+          local unknown = {}
+          for name in pairs(r and r.byName or {}) do
+              if n.Learn.Kind(name) == nil then unknown[#unknown + 1] = name end
+          end
+          table.sort(unknown)
+          return false, "unknown here: " .. join(unknown)
+      end },
+    { text = "Now gather a node (any herb or ore).",
+      wait = function()
+          local n = nr()
+          state.gatherStart = state.gatherStart or snapshot(n)
+          local got = learnedSince(n, state.gatherStart, "gather")
+          if #got > 0 then return true, "learned: " .. table.concat(got, ", ") end
+          return false, "waiting for a gather"
+      end },
+    { text = "Walk past a few nodes for a minute or two, the cursor off the minimap. NodeRadar pings each new one; "
+          .. "the line below counts its alerts. Press Done when you've passed a few.",
+      wait = function()
+          hookAlerts(nr())
+          local last = {}
+          for i = math.max(1, #alerts - 4), #alerts do last[#last + 1] = alerts[i] end
+          return false, ("%d alerts; last: %s"):format(#alerts, join(last))
+      end },
+    { text = "Did NodeRadar ping once for each new node, without repeating for one it had already pinged?", ask = true },
+    { text = "Press Test: NodeRadar's own alert at the minimap's centre.", button = "Test", screenshot = "NodeRadar's ring",
+      run = function()
+          SlashCmdList.NODERADAR("test")
+          return "/nr test"
+      end },
+    { text = "Did a green ring show at the minimap's centre, with the ping sound? (Name your minimap skin in the "
+          .. "note, or 'stock'.)", ask = true },
+    { text = "Press Off: your gathering tracking goes off as if NodeRadar were in the middle of learning. Then "
+          .. "reload.",
+      button = "Off", run = function()
+          local n = nr()
+          if n.Learn.Busy() then error("NodeRadar is learning right now: wait a few seconds, then Retry", 0) end
+          local i, info = gatherIndex()
+          if not i then error("no gathering tracking on: turn it on, then Retry", 0) end
+          local spell = num(info.spellID)
+          n.charDb.pendingRestore = spell
+          NodeRadarProbeDB.reloadTest = spell
+          local ok, err = pcall(C_Minimap.SetTracking, i, false)
+          return ok and "off" or ("ERROR " .. str(err)), "pendingRestore " .. str(spell)
+      end },
+    { text = "Type /reload (or press Reload now).", reload = true },
+    { text = "After the reload, NodeRadar turns your tracking back on by itself.", timeout = 20,
+      wait = function()
+          local n = nr()
+          local spell = NodeRadarProbeDB.reloadTest
+          if not (n and spell) then return false, "nothing to check: go Back two steps" end
+          local on = trackingOnBySpell(n, spell)
+          if on and n.charDb.pendingRestore == nil then
+              NodeRadarProbeDB.reloadTest = nil
+              return true, "restored, nothing pending"
+          end
+          return false, ("tracking on %s, pending %s"):format(str(on), str(n.charDb.pendingRestore))
+      end },
+    { text = "Press Mark: NodeRadar's alert cooldown becomes 7 s and the probe notes how many names it knows.",
+      button = "Mark", run = function()
+          local n = nr()
+          local count = 0
+          for _ in pairs(learned(n)) do count = count + 1 end
+          NodeRadarProbeDB.persist = { cooldown = n.db.cooldown, learned = count }
+          n.db.cooldown = 7
+          return "learned " .. count, "cooldown 7 (was " .. str(NodeRadarProbeDB.persist.cooldown) .. ")"
+      end },
+    { text = "Exit the game fully (not /reload), start it again and log back in.", reload = "exit" },
+    { text = "Reading NodeRadar's saved settings after the restart.", auto = true,
+      run = function()
+          local n = nr()
+          local p = NodeRadarProbeDB.persist
+          if not (n and p) then return "nothing marked" end
+          local count = 0
+          for _ in pairs(learned(n)) do count = count + 1 end
+          state.persisted = n.db.cooldown == 7 and count >= p.learned
+          local text = ("cooldown %s (7 marked), learned %d (%d marked)"):format(str(n.db.cooldown), count, p.learned)
+          n.db.cooldown = p.cooldown
+          NodeRadarProbeDB.persist = nil
+          local fails = {}
+          for key, f in pairs(n.failures) do fails[#fails + 1] = key .. ": " .. f.err end
+          say("after the restart: " .. text .. "; NodeRadar failures: " .. join(fails))
+          return text
+      end,
+      check = function()
+          return state.persisted == true, state.persisted and "settings and learned names survived" or "something was lost"
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
 local boot = CreateFrame("Frame")
-Probe:RegisterEvents(boot, { "ADDON_LOADED", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING", "VIGNETTE_MINIMAP_UPDATED",
-    "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI" })
+Probe:RegisterEvents(boot, { "ADDON_LOADED", "PLAYER_LOGIN", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING",
+    "VIGNETTE_MINIMAP_UPDATED", "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI" })
 -- The player's casts only: the target's name is what a gathering cast is
 -- aimed at (the name-learning fallback, #7).
 local okSent, errSent = pcall(boot.RegisterUnitEvent, boot, "UNIT_SPELLCAST_SENT", "player")
@@ -859,7 +1133,9 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if type(NodeRadarProbeDB.log) ~= "table" then NodeRadarProbeDB.log = {} end
         Probe:UseLog(NodeRadarProbeDB.log, MAX_LOG)
         NodeRadarProbeDB.loads = (NodeRadarProbeDB.loads or 0) + 1
-        say("loaded (" .. NodeRadarProbeDB.loads .. " loads). /fp nr for the commands, /fp steps nr ids for #7")
+        say("loaded (" .. NodeRadarProbeDB.loads .. " loads). /fp nr for the commands, /fp steps nr release for #3")
+    elseif event == "PLAYER_LOGIN" then
+        resumeLearning()                               -- a reload came between pause and resume
     elseif event == "OBJECT_ENTERED_AOI" or event == "OBJECT_LEFT_AOI" then
         aoi(event, a1)
     elseif event == "UNIT_SPELLCAST_SENT" then
