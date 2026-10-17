@@ -174,4 +174,8 @@ localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-co
 - **The cadence follows the speed** (the owner): about 2 yards between sweeps (0.29 s at 100%,
   0.48 s at 60%, 0.71 s at 40%, 0.2 s at most), and 2 s standing still.
 - **The ring:** `Interface\Cooldown\ping4` draws in a black square (no additive blend), and isn't
-  Blizzard's ping animation (owner). An original alert is a follow-up.
+  Blizzard's ping animation (owner). Replaced by the sonar (the owner's pick): two rings ripple out
+  from the node and a glow stays on it for 3 s, green for herbs, gold for ore, from our own art
+  (`Tools/make_media.py`) drawn additively. Not yet seen in game.
+- **Respawns** alert like any new node. A node gathered by the player no longer counts as one
+  blinking at the edge, so the next of its name within 20 s alerts.

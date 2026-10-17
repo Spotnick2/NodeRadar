@@ -1,7 +1,8 @@
 # NodeRadar
 
 A gathering-node alert for **World of Warcraft: Forever**: with Find Herbs or Find Minerals on, a
-ping and a ring on the minimap the moment a herb or ore node comes into range.
+ping and a sonar on the minimap the moment a herb or ore node comes into range: two rings ripple
+out from the node and a glow stays on it, green for herbs, gold for ore.
 
 ## How it works
 
@@ -27,7 +28,7 @@ alert.
 ## Commands
 
 - `/nr`: radar on or off
-- `/nr sound`, `/nr ring`, `/nr chat`: the ping sound, the ring on the node, a chat line
+- `/nr sound`, `/nr ring`, `/nr chat`: the ping sound, the sonar on the node, a chat line
 - `/nr ping`: Blizzard's minimap ping on the node too, solo only (in a group it would show on
   everyone's minimap)
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)

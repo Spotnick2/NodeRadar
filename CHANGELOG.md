@@ -6,7 +6,8 @@ Rebuilt for WoW: Forever (#3). The first version, written for TBC Anniversary, n
 looked for the minimap's blips where the game doesn't put them.
 
 - **Detects herb and ore nodes on the minimap**, with Find Herbs or Find Minerals on: a ping and a
-  ring on the node the moment it comes into range. It reads the minimap through the client's own
+  sonar on the node the moment it comes into range (two rings ripple out and a glow stays, green for
+  herbs, gold for ore: NodeRadar's own art). It reads the minimap through the client's own
   mouseover (about 4 ms a look), under any minimap skin, without touching your hover tooltip.
 - **Learns which names are nodes**, once per name, for the whole account: from what you gather, and
   optionally (`/nr learn`, off by default since it costs a global cooldown) by turning your
@@ -19,6 +20,8 @@ looked for the minimap's blips where the game doesn't put them.
   2 s standing still.
 - A node above or below you is the same node: names lose the minimap's position arrow and colour
   codes (it used to ping only once you reached its height).
+- Respawns alert, and so does the next node of a name you just gathered (it isn't taken for the
+  gathered one blinking at the map's edge).
 - **Ships with node names already learned**, and works in any language.
 - Blizzard's minimap ping on the node, optional and solo only (`/nr ping`).
 - `/nr known`, `/nr forget`, `/nr status` (names a build it wasn't measured on), `/nr failures`.
