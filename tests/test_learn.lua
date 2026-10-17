@@ -283,6 +283,39 @@ eq(#calls, 0, "...no SetTracking at all")
 eq(NR.charDb.pendingRestore, nil, "...nothing pending")
 WoW.tracking[1].active = true
 
+-- (Codex on #9, follow-up) Our restore acknowledged by its event, then the
+-- player's off arrives before the next frame: no frame in between.
+local function frameUntilRestoreCalled()
+    for _ = 1, 100 do
+        WoW.advance(0.1)
+        if turnedOn() then return true end
+    end
+end
+local function offBeforeNextFrame(label)
+    check(frameUntilRestoreCalled(), label .. ": our restore called")
+    check(herbsOn(), label .. ": ...and acknowledged by its event")
+    calls = {}
+    WoW.tracking[1].active = false                         -- the player, before any frame
+    WoW.fire("MINIMAP_UPDATE_TRACKING")
+    WoW.advance(5)
+    eq(herbsOn(), false, label .. ": stays off")
+    eq(#calls, 0, label .. ": no SetTracking after")
+    eq(NR.charDb.pendingRestore, nil, label .. ": nothing pending")
+    check(not Learn.Busy(), label .. ": over")
+    WoW.tracking[1].active = true
+end
+
+ready({})
+WoW.tracking[1].active = false
+NR.charDb.pendingRestore = 2383
+WoW.fire("PLAYER_ENTERING_WORLD", false, true)
+offBeforeNextFrame("a reload's restore")
+
+ready({ { "Peacebloom", 30, -20, kind = "herbs" }, QUEST })
+check(start(), "Peacebloom, third time: started")
+offBeforeNextFrame("an experiment's restore")
+Learn.Forget("Carry Your Weight")
+
 -- A restore that never succeeds: said in chat, and retried until it does.
 WoW.refuseTrackingOn = true
 ready({ { "Ghost Mushroom", 30, -20, kind = "herbs" }, QUEST })

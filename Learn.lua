@@ -136,6 +136,15 @@ local function cooling(spellID)
     return not ok or type(info) ~= "table" or info.isActive == true   -- unreadable: don't start
 end
 
+-- Our change seen, by the tick or the event, whichever comes first. Seeing our
+-- restore moves straight to "after", so a later off is the player's in any
+-- order of events and frames (Codex on #9).
+local function acknowledge(index, on)
+    exp.awaiting = nil
+    exp.states[index] = on
+    if on and exp.phase == "restore" then exp.phase, exp.onAt = "after", GetTime() end
+end
+
 -- Our change, awaited until its state is seen (exp.awaiting); any other change
 -- of that tracking is the player's (Codex on #9: no time window).
 local function setTracking(index, on)
@@ -249,11 +258,7 @@ function Learn.Tick(now)
         if speed == nil or speed > 0 then void("the player moved") end
     end
     local t = find(exp.spellID)
-    if t and exp.awaiting ~= nil and t.active == exp.awaiting then
-        -- Our change seen: acknowledged, and the event that may follow isn't a change.
-        exp.awaiting = nil
-        exp.states[t.index] = t.active
-    end
+    if t and exp.awaiting ~= nil and t.active == exp.awaiting then acknowledge(t.index, t.active) end
     if exp.phase == "middle" and now >= exp.due then
         if t and t.active then void("tracking didn't go off") else exp.middle = diagnostic("middle") end
         exp.phase, exp.restoreSince = "restore", now
@@ -302,7 +307,7 @@ function Learn.OnTrackingChanged()
         local ours = t ~= nil and t.index == i
         if exp.states[i] ~= on then
             if ours and exp.awaiting ~= nil and on == exp.awaiting then
-                exp.awaiting = nil                     -- our own change, seen
+                acknowledge(i, on)                     -- our own change, seen
             else
                 -- The player's. If they turned ours off after it was back on, the
                 -- next tick ends the experiment without restoring it.
