@@ -68,7 +68,8 @@ jobs:
           args: -d
 
       # The zip is what players install, so assert its SHAPE: the TOC, every
-      # Lua file it loads and LICENSE. NOTHING else (no probe, no tests).
+      # Lua file it loads, LICENSE and our Media/*.tga (the sonar). NOTHING else
+      # (no probe, no tests, no generator).
       - name: The package is exactly the addon
         run: |
           zip=$(ls .release/*.zip | head -1)
@@ -77,6 +78,7 @@ jobs:
             echo NodeRadar/NodeRadar.toc
             echo NodeRadar/LICENSE
             tr -d '\r' < NodeRadar.toc | grep -v '^#' | grep '\.lua$' | tr '\\' '/' | sed 's|^|NodeRadar/|'
+            ls Media/*.tga | sed 's|^|NodeRadar/|'
           } | sort > expected.txt
           (cd unpacked && find . -type f | sed 's|^\./||' | sort) > actual.txt
           if ! diff -u expected.txt actual.txt; then

@@ -154,6 +154,59 @@ WoW.advance(1)
 check(reads > 0, "...and sweeping again")
 C_TooltipInfo.GetMinimapMouseover = real
 
+-- The sonar: our own art, drawn additively, green for herbs and gold for ore.
+NR.db.sound, NR.db.ring, NR.db.chat, NR.db.ping = true, true, false, false
+hideRings()
+WoW.advance(6)
+table.insert(WoW.blips, { "Copper Vein", -50, 60, kind = "herbs" })     -- shown under Find Herbs here
+NR.db.learned.enUS["Copper Vein"] = { kind = "ore", source = "gather" }
+WoW.advance(0.6)
+local sonar
+for _, f in ipairs(WoW.frames) do
+    if f._parent == Minimap and f._strata == "HIGH" and f._shown and f.kind == "ore" then sonar = f end
+end
+check(sonar, "an ore's sonar")
+local parts = sonar and { sonar.rings[1], sonar.rings[2], sonar.glow } or {}
+for i, part in ipairs(parts) do
+    check(part.tex._file and part.tex._file:find("^Interface\\AddOns\\NodeRadar\\Media\\Sonar"), "part " .. i .. ": our own texture")
+    check(part.tex._vertex and part.tex._vertex[1] == 1.0 and part.tex._vertex[2] == 0.8, "part " .. i .. ": gold for ore")
+    check(part.anim and part.anim._playing, "part " .. i .. ": animating")
+end
+check(WoW.methodsCalled["Texture:SetBlendMode"], "drawn additively (no square around it)")
+for _, f in ipairs({ "Media/SonarRing.tga", "Media/SonarGlow.tga" }) do
+    check(io.open(f, "rb") ~= nil, f .. " ships")
+end
+
+-- Gathering a node, then another of its name comes into range: it alerts (not
+-- taken for the first one blinking at the edge).
+hideRings()
+WoW.advance(6)
+local herb = { "Peacebloom", 40, 40, kind = "herbs" }
+NR.db.learned.enUS.Peacebloom = { kind = "herbs", source = "gather" }
+table.insert(WoW.blips, herb)
+WoW.advance(0.6)
+before = sounds()
+WoW.advance(6)
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Peacebloom", "Cast-9", 2366)   -- gathered
+for i, b in ipairs(WoW.blips) do if b == herb then table.remove(WoW.blips, i) end end
+WoW.advance(1)
+table.insert(WoW.blips, { "Peacebloom", -70, -30, kind = "herbs" })     -- the next one, 1 s later
+WoW.advance(1)
+eq(sounds(), before + 1, "after gathering one, the next of its name alerts")
+-- Without the gather, the same sequence is a blink.
+WoW.advance(25)
+before = sounds()
+local edge = { "Peacebloom", 95, 0, kind = "herbs" }
+table.insert(WoW.blips, edge)
+WoW.advance(0.6)
+before = sounds()
+WoW.advance(6)
+for i, b in ipairs(WoW.blips) do if b == edge then table.remove(WoW.blips, i) end end
+WoW.advance(1)
+table.insert(WoW.blips, edge)
+WoW.advance(1)
+eq(sounds(), before, "...while one that left and came back by itself is a blink")
+
 -- /nr test.
 NR.db.sound = true
 before = sounds()

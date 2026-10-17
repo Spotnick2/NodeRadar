@@ -14,18 +14,18 @@ local ADDON_NAME = ...
 local DEFAULTS = {
     enabled  = true,
     sound    = true,    -- MAP_PING
-    ring     = true,    -- a ring on the new node's blip
+    ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
     learn    = false,   -- learn unknown names by turning tracking off and on: off, since
                         -- turning it back on costs a global cooldown (release check, 70450)
     cooldown = 5,       -- seconds between alerts
     interval = 2,       -- seconds between sweeps standing still; moving, NR.Interval adapts it
-    ringR = 0.2, ringG = 1.0, ringB = 0.4,
 }
--- v1's settings (it never worked on Forever): dropped.
+-- Settings no longer used: v1's (it never worked on Forever), and the ring's
+-- colour (the sonar is green for herbs, gold for ore). Dropped.
 local V1_KEYS = { "soundEnabled", "pingEnabled", "chatAlert", "mountedOnly", "scanInterval", "soundID",
-                  "pingColorR", "pingColorG", "pingColorB" }
+                  "pingColorR", "pingColorG", "pingColorB", "ringR", "ringG", "ringB" }
 
 NR.DEFAULTS = DEFAULTS
 
@@ -132,6 +132,11 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.OnTrackingChanged()
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
+        local unit, target, _, spellID = ...
+        if unit == "player" and type(target) == "string" and not API.IsSecret(target)
+            and not API.IsSecret(spellID) and Learn.CastKind(spellID) then
+            Alert.Gathered(target, now)
+        end
     end
 end)
 
@@ -141,7 +146,7 @@ end)
 
 local function onOff(v) return v and "|cff00ff00on|r" or "|cffff4444off|r" end
 
-local TOGGLES = { sound = "sound", ring = "ring on the map", chat = "chat line",
+local TOGGLES = { sound = "sound", ring = "sonar on the node", chat = "chat line",
                   ping = "Blizzard's ping (solo only)", learn = "learning by turning tracking off and on" }
 
 local function status()

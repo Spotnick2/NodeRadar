@@ -109,6 +109,12 @@ local function castKind(spellID)
     return n and castNames[n] or nil
 end
 
+-- Whether a spell is a gathering cast (by ID, or another rank by name): its kind.
+function Learn.CastKind(spellID)
+    if API.IsSecret(spellID) or type(spellID) ~= "number" then return nil end
+    return castKind(spellID)
+end
+
 function Learn.OnCastSent(unit, target, _, spellID)
     if unit ~= "player" or API.IsSecret(spellID) or type(spellID) ~= "number" then return end
     if API.IsSecret(target) or type(target) ~= "string" or target == "" then return end
