@@ -315,6 +315,17 @@ end
 -- The radar: a sweep every SWEEP_EVERY seconds from one OnUpdate
 --------------------------------------------------------------------------------
 
+-- The step our procedure is on, or nil when it isn't the one running. Read
+-- from the host's internals until it says so itself (Spotnick2/ForeverProbe#17).
+local function procedureStep()
+    local steps = ForeverProbe.Steps
+    if type(steps) ~= "table" or type(steps.Active) ~= "function" then return nil end
+    local ok, proc, rec = pcall(steps.Active)
+    if ok and type(proc) == "table" and proc.module == Probe and proc.name == "blips" and type(rec) == "table" then
+        return rec.at
+    end
+end
+
 local job
 local ticker = CreateFrame("Frame")
 ticker:SetScript("OnUpdate", function()
@@ -322,6 +333,11 @@ ticker:SetScript("OnUpdate", function()
     local now = GetTime()
     if job.last and now - job.last < SWEEP_EVERY then return end
     job.last = now
+    -- A radar a step started ends with the step: Stop, Back, or another procedure.
+    if job.owned and procedureStep() ~= job.ownerStep then
+        job.finish("its step was left")
+        return
+    end
     if job.untilT and now >= job.untilT then
         local j = job
         job = nil
@@ -343,20 +359,22 @@ end
 -- Sweeps until stopped (or for `seconds`), logging each name the first time
 -- it's found. Without hoverNames it skips while the cursor is on the map, as
 -- NodeRadar would; with them it sweeps anyway and, after each sweep, checks
--- the mouseover still reads the hovered blip.
-local function startRadar(seconds, hoverNames)
+-- the mouseover still reads the hovered blip. An `owned` radar belongs to the
+-- procedure step that started it and stops when that step is left.
+local function startRadar(seconds, hoverNames, owned)
     if job then job.finish() end
     local conv = chosen()[1]
     local now = GetTime()
     local r = { conv = conv.name, sweeps = 0, skipped = 0, totalMs = 0, maxMs = 0, seen = {}, order = {},
                 started = now, hoverNames = hoverNames, flicker = 0 }
-    local function finish()
+    local function finish(why)
         if r.done then return end
         r.done = true
         if job and job.r == r then job = nil end
-        say("radar " .. radarText(r))
+        say("radar " .. (why and ("stopped, " .. why .. ": ") or "") .. radarText(r))
     end
-    job = { r = r, untilT = seconds and (now + seconds), finish = finish, fn = function()
+    job = { r = r, untilT = seconds and (now + seconds), finish = finish, owned = owned,
+            ownerStep = owned and procedureStep() or nil, fn = function()
         if not hoverNames and overMap() then r.skipped = r.skipped + 1; return end
         local s = sweep(conv)
         if not s then return end
@@ -454,7 +472,7 @@ Probe:Command("sweep", function(args)
     local name, step = (args or ""):match("^(%a*)%s*(%d*)")
     sweepAll(name ~= "" and name or nil, tonumber(step))
 end, "[conv] [step]: sample the whole map")
-Probe:Command("radar", function(args) startRadar(tonumber(args)) end, "[seconds]: sweep 3 times a second")
+Probe:Command("radar", function(args) state.radar = startRadar(tonumber(args)) end, "[seconds]: sweep 3 times a second")
 Probe:Command("stop", function() stopRadar() end, "stop the radar")
 Probe:Command("vignettes", function() vignettes() end, "every vignette the client lists")
 Probe:Command("sound", function(args) sound(tonumber(args) or MAP_PING) end, "[kit]: PlaySound, MAP_PING by default")
@@ -522,7 +540,7 @@ Probe:Steps("blips", {
               if not overMap() then return false, "put the cursor on the blip" end
               local names = mouseover()
               if not names then return false, "nothing under the cursor yet" end
-              r = startRadar(HOVER_SECONDS, names)
+              r = startRadar(HOVER_SECONDS, names, true)
               state.hoverJob = r
           end
           if not r.done then return false, ("sweeping, %d so far"):format(r.sweeps) end
@@ -543,7 +561,7 @@ Probe:Steps("blips", {
       wait = function()
           local r = state.ride
           if not r or r.done then
-              r = startRadar()
+              r = startRadar(nil, nil, true)
               state.ride = r
           end
           return false, #r.order > 0 and table.concat(r.order, ", ") or "nothing yet"

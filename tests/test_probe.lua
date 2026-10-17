@@ -124,6 +124,19 @@ check(logged("PLAYER_MOUNT_DISPLAY_CHANGED; IsMounted true"), "...the event logg
 WoW.cursorOnMap, WoW.mouseoverAt = false, nil              -- 11 ride
 poll()
 check(T.state.ride ~= nil, "the radar started")
+-- Back leaves the step: its radar stops by itself, no /fp nr stop.
+local first = T.state.ride
+S.Back()
+eq(record().at, 10, "Back to the mount step")
+WoW.advance(1)
+check(first.done, "Back stopped the ride's radar")
+local frozen = first.sweeps
+WoW.advance(2)
+eq(first.sweeps, frozen, "...and it sweeps no more")
+check(logged("radar stopped, its step was left: "), "...saying why")
+WoW.fire("PLAYER_MOUNT_DISPLAY_CHANGED")                   -- 10 again
+poll()
+check(T.state.ride ~= first and not T.state.ride.done, "back on the ride step, a new radar")
 table.insert(WoW.blips, { "Copper Vein", -50, 40 })
 WoW.advance(1)
 check(logged("radar %+[%d.]+ s: Copper Vein at %(%-55, 41%)"), "a node coming into range logged")
@@ -153,6 +166,27 @@ eq(record().at, 20, "at the reload step")
 eq(errors(), 0, "no step threw")
 eq(#WoW.chat, 0, "still nothing in chat")
 fp("steps stop")
+
+-- Stop during the ride: the radar stops with the procedure (Codex on #5).
+fp("steps nr blips")
+for _ = 1, 20 do if record().at < 11 then S.Skip() end end
+eq(record().at, 11, "skipped to the ride")
+poll()
+local ride = T.state.ride
+check(ride and not ride.done, "the ride's radar runs")
+fp("steps stop")
+eq(record().status, "stopped", "procedure stopped")
+WoW.advance(1)
+check(ride.done, "Stop stopped the radar")
+frozen = ride.sweeps
+WoW.advance(2)
+eq(ride.sweeps, frozen, "...and it sweeps no more")
+-- A radar from the command isn't the procedure's: it runs with none active.
+fp("nr radar")
+WoW.advance(2)
+check(T.state.radar.sweeps >= 5 and not T.state.radar.done, "the command's radar keeps sweeping")
+fp("nr stop")
+check(T.state.radar.done, "...until /fp nr stop")
 
 --------------------------------------------------------------------------------
 -- A client that ignores UpdateMouseoverAtPoint: the hover stays readable from
