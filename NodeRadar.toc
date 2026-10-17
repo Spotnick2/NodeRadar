@@ -1,8 +1,9 @@
-## Interface: 20504
+## Interface: 16001
 ## Title: NodeRadar
-## Notes: Plays a radar ping sound and flashes the minimap when a gathering node is detected while mounted. Requires Find Herbs, Find Minerals, or Find Gas Clouds to be active.
-## Author: NodeRadar
-## Version: 1.0.0
+## Notes: Pings and flashes the minimap when a gathering node comes into range while you ride. Needs Find Herbs or Find Minerals.
+## Author: Spotnick
+## Version: @project-version@
+## X-License: MIT
 ## SavedVariables: NodeRadarDB
 
 NodeRadar.lua

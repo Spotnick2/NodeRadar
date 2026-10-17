@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: NodeRadarProbe
+## Notes: Throwaway probe for NodeRadar: can an addon read the minimap's gathering blips (#2)? A ForeverProbe module: /fp nr
+## Author: Spotnick
+## Version: dev
+## Dependencies: ForeverProbe
+## OptionalDeps: NodeRadar
+## SavedVariables: NodeRadarProbeDB
+
+NodeRadarProbe.lua

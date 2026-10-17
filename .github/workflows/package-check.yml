@@ -1,0 +1,146 @@
+name: Package check
+
+# GlassMail's workflow without the embedded library.
+#
+# The packager runs as a dry run here. CurseForge builds its releases with its
+# own packager from the tag webhook, against the same .pkgmeta - `check` exists
+# so a packaging mistake surfaces on a pull request instead of in a published
+# zip. On a tag, the `release` job then PUBLISHES a GitHub Release.
+#
+# -d is the real no-upload switch: merely leaving CF_API_KEY out still lets the
+# packager cut a GitHub release - with the WHOLE CHANGELOG.md as its notes.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  # Release a tag whose release failed: `check` against the tag's tree, the
+  # notes from main's CHANGELOG.md (so a fixed heading needs no moved tag).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and release (e.g. v1.1.0)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1
+
+      # WoW runs Lua 5.1, so the tests do too. tests/run.ps1 is the Windows
+      # entry point for the same files.
+      - name: Syntax-check every Lua file
+        run: |
+          count=$(find . -name '*.lua' -not -path './.git/*' | wc -l)
+          test "$count" -gt 0 || { echo "no Lua files found - the check would prove nothing"; exit 1; }
+          echo "checking $count files"
+          find . -name '*.lua' -not -path './.git/*' -print0 | xargs -0 luac5.1 -p
+
+      # Without the API dump (local only), events are checked against
+      # tests/events-70450.txt and the method check skips. NodeRadarProbe is a
+      # ForeverProbe module, and ForeverProbe is private and local
+      # (..\ForeverProbe): the probe tests skip here and run locally.
+      - name: Unit tests
+        env:
+          FOREVERPROBE_OPTIONAL: "1"
+        run: |
+          for f in tests/test_*.lua; do
+            echo "-- $f"
+            lua5.1 "$f" || exit 1
+          done
+
+      # Pinned to a SHA, not the moving v2 tag (the siblings pin the same one).
+      - name: Package (dry run)
+        uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0
+        with:
+          args: -d
+
+      # The zip is what players install, so assert its SHAPE: the TOC, every
+      # Lua file it loads and LICENSE. NOTHING else (no probe, no tests).
+      - name: The package is exactly the addon
+        run: |
+          zip=$(ls .release/*.zip | head -1)
+          rm -rf unpacked && mkdir unpacked && unzip -q "$zip" -d unpacked
+          {
+            echo NodeRadar/NodeRadar.toc
+            echo NodeRadar/LICENSE
+            tr -d '\r' < NodeRadar.toc | grep -v '^#' | grep '\.lua$' | tr '\\' '/' | sed 's|^|NodeRadar/|'
+          } | sort > expected.txt
+          (cd unpacked && find . -type f | sed 's|^\./||' | sort) > actual.txt
+          if ! diff -u expected.txt actual.txt; then
+            echo "the package differs from the addon (- missing, + extra)"
+            exit 1
+          fi
+
+      # The packager must have replaced @project-version@.
+      - name: The packaged TOC carries a real version
+        run: |
+          v=$(tr -d '\r' < unpacked/NodeRadar/NodeRadar.toc | sed -n 's/^## Version: *//p')
+          echo "packaged version: '$v'"
+          case "$v" in ''|'@project-version@'|dev) echo "version not substituted"; exit 1 ;; esac
+
+      # .release is hidden, and upload-artifact@v4 skips hidden content by default.
+      - name: Keep the zip for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: noderadar-package
+          path: .release/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # A GitHub Release for every tag: the zip `check` built and checked above,
+  # with that tag's CHANGELOG.md section as the notes. The only job allowed to write.
+  release:
+    needs: check
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: noderadar-package
+          path: dist
+
+      - name: The zip is the tag's
+        run: |
+          ls dist
+          zip="dist/NodeRadar-$TAG-forever.zip"
+          test -f "$zip" || { echo "no $zip"; exit 1; }
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+
+      # From the tag's "## vX.Y.Z" heading up to the next "## " heading.
+      - name: Release notes from the tag's changelog section
+        run: |
+          tr -d '\r' < CHANGELOG.md |
+            awk -v h="## $TAG" '$0 == h { on = 1; next } on && /^## / { exit } on' > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "CHANGELOG.md has no '## $TAG' section"; exit 1; }
+          cat notes.md
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=
+          case "${TAG,,}" in *alpha*|*beta*) pre=--prerelease ;; esac
+          gh release create "$TAG" "$ZIP" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "NodeRadar ${TAG#v}" --notes-file notes.md $pre
