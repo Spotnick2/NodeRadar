@@ -62,7 +62,7 @@ Reviewed by Codex (round 1: revise first; the changes are marked "Codex").
 | `Scan.lua` | the sweep |
 | `Learn.lua` | which names are nodes |
 | `Alert.lua` | new nodes, the alert |
-| `NodeRadar.lua` | bootstrap, saved settings, `/nr` |
+| `NodeRadar.lua` | bootstrap, saved settings (`NodeRadarDB`, account-wide: settings and learned names; `NodeRadarCharDB`, per character: a pending tracking restore), `/nr` |
 
 ### The sweep (`Scan.lua`)
 
@@ -100,27 +100,31 @@ evidence: it overrides a toggle's `false`, and a toggle never overrides it (Code
    `UnitChannelInfo`), alive (`UnitIsDeadOrGhost`), standing still (`GetUnitSpeed("player") == 0`),
    not in a loading screen, the gamepad off, the last experiment ≥ 10 s ago, and the tracking's
    spell not on cooldown. Then: a sweep (**before**), `C_Minimap.SetTracking(i, false)`, and
-   `NodeRadarDB.pendingRestore = spellID` **saved before the call**.
+   `NodeRadarCharDB.pendingRestore = spellID` (per character, Codex) **saved before the call**.
 2. **Middle**, 1.5 s later: tracking must read off; a sweep.
-3. **Restore:** `SetTracking(i, true)` only when not casting or channelling and alive (Codex: a
-   cast started meanwhile); else retry every 0.5 s. Combat doesn't wait: the client cast Find Herbs
-   in round 3 and an instant tracking cast isn't refused in combat as far as measured; if it is,
-   the retries continue after combat.
+3. **Restore:** `SetTracking(i, true)` only when out of combat, not casting or channelling, alive
+   and not in a loading screen (Codex: round 3 measured the restore's cast out of combat only); else
+   retry every 0.5 s, and at `PLAYER_REGEN_ENABLED`.
 4. **After**, 2.5 s after tracking reads on again: a sweep; then `pendingRestore` is cleared.
 
-**The experiment is void** (nothing learned, the restore still runs) when: the player moved
-(`GetUnitSpeed` > 0 at any step), the zone changed, a loading screen came, the player died, the
-minimap's zoom or size changed, a sweep failed, tracking didn't read off in the middle, or tracking
-changed in a way we didn't cause (Codex). **A tracking change by the player wins:** if they turned
-it back on themselves, we're done; if they turned off another tracking, we don't touch it.
+Every diagnostic sweep (before, middle, after) first rechecks the gamepad guard (Codex); a gamepad
+turned on mid-experiment voids it (the restore still runs).
+
+**The experiment is void** (nothing learned, the restore still runs) when: the player moved at any
+moment (`GetUnitSpeed("player") > 0`, latched every frame from start to after, Codex), the zone
+changed, a loading screen came, the player died, the gamepad came on, the minimap's zoom or size
+changed, a sweep failed, tracking didn't read off in the middle, or tracking changed in a way we
+didn't cause (Codex). **A tracking change by the player wins:** if they turned it back on
+themselves, we're done; if they turned off another tracking, we don't touch it.
 
 **The verdict**, on a valid experiment, per name: that kind when it was there before, gone in the
 middle and back after; `false` when **every** blip of that name stayed through the middle, **and**
 it also stayed through the other gathering tracking's toggle when both are on; anything mixed
 (one blip of the name gone, another stayed, or gone and never back) stays unknown (Codex).
 
-**Tracking must come back, even across a reload.** At login and after every loading screen, a
-`pendingRestore` whose tracking is off is restored (out of combat, not casting), then cleared. If
+**Tracking must come back, even across a reload.** At login and after every loading screen, this
+character's `pendingRestore` whose tracking is off is restored (with step 3's conditions), then
+cleared. If
 tracking is still off 10 s after the first restore attempt, **say so in chat**: "NodeRadar turned
 Find Herbs off to learn a node and couldn't turn it back on: please turn it on." Never silent.
 
@@ -136,12 +140,16 @@ collision.
 
 Matching blips across sweeps by their position fails while the player moves: the offsets are the
 player's, not the world's (Codex). So v1 counts instead, which no movement or turn changes:
-- per node name, the number of its blips now vs the last radar sweep. A **rise** is a new node; the
-  new blip is the one farthest from every blip of that name last time (where the ring goes);
+- per node name, the number of its blips now vs the last successful radar sweep. A **rise** is a
+  new node. Which blip is new can't be told after the player moved (Codex), so the ring goes on
+  **every** blip of that name: one ring when the name was absent before, all of them otherwise;
 - a rise right after a drop of that name (within 20 s) is the same node blinking at the map's edge,
   not new;
-- the history resets, silently, when the zoom or the map's size changes and when tracking changes;
-  after a zone change it starts from zero (a new area's nodes alert);
+- a failed or skipped sweep changes nothing: no alert, the history kept (Codex). The history
+  resets, and the next successful sweep is a **silent** baseline, when: the zoom or the map's size
+  changes, tracking changes (so after every toggle experiment, during which the radar pauses), the
+  radar is turned on, or 5 s pass without a successful sweep. After a zone change the history starts
+  from zero instead, so a new area's nodes alert;
 - at most one alert per `cooldown` seconds (5): `PlaySound(3175, "Master")` (MAP_PING, `willPlay`
   checked), a ring on the map at the blip's drawn position (our unnamed frame on `Minimap`, `HIGH`
   strata, `Interface\Cooldown\ping4`), an optional chat line.
@@ -181,7 +189,8 @@ Offline:
 - learning from gathering (by ID, by rank name), and its precedence over the toggle;
 - the toggle: each Codex case (a name that never comes back, a failed sweep, tracking that stays on);
   a cast, combat, death, movement, a zone change or a loading screen between off and on; the player
-  changing tracking mid-test; a `/reload` between off and on (`pendingRestore`); a restore that
+  changing tracking mid-test; moving and stopping between steps; the gamepad turned on mid-test; a
+  `/reload` between off and on (`pendingRestore`, another character not touching it); a restore that
   never succeeds (the chat line); the middle sweep with the only tracking off;
 - the alerts: a rise, a blink at the edge, a reset on zoom, the cooldown;
 - the export: merge, conflicts with inputs and the library, a re-run that changes nothing.
