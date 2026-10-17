@@ -46,16 +46,107 @@ ready for turn-in, group members, the player), so the port must keep only nodes.
 outdoors, porting guide, 70374) and alert near a known spawn. Weaker: it says where a node *can*
 be, not that one is up.
 
-## The port (#3), after #2
+## The port (#3)
 
-- Detection: what #2 measures, or the fallback.
-- Tracking from `C_Minimap.GetTrackingInfo` by **spell ID** (2383/8387 Find Herbs, 2580/8388 Find
-  Minerals), never English names. No Find Gas Clouds: Forever is Vanilla content.
-- `PlaySound(SOUNDKIT.MAP_PING)` is 3175; v1's 8332 was a wrong guess.
-- Mounted: `IsMounted()`, `PLAYER_MOUNT_DISPLAY_CHANGED`. No unfiltered `UNIT_AURA`.
-- Events through a `RegisterEvents` that reports failures; an options page; offline tests.
-- Never move, reparent or resize `Minimap` or `MinimapCluster` (Edit Mode systems). The ring is
-  our own unnamed frame on the map.
+What the three probe rounds measured (70450, docs/FOREVER-PROBE.md and PR #8) decides the design:
+the soft sweep reads every named blip with the cursor anywhere, and a node is a name that vanishes
+when its gathering tracking goes off. v1's code is replaced, not patched; its slash commands stay.
+
+### Files (TOC order)
+
+| File | What |
+|---|---|
+| `Compat.lua` | `NodeRadar.API`: `RegisterEvents` (reports a throw or a `false`), `IsSecret`, `Fail` (the one failure recorder, `/nr failures`), `MEASURED_ON_BUILD = "1.60.1.70450"` (and the same literal in a test) |
+| `Data/Nodes.lua` | the shipped library: `NodeRadar.LIBRARY[locale][name] = "herbs" \| "ore"`. Starts with what's been measured (enUS: Wilted Peacebloom, Stunted Silverleaf, Silverleaf) |
+| `Scan.lua` | the sweep |
+| `Learn.lua` | which names are nodes |
+| `Alert.lua` | new nodes, the alert |
+| `NodeRadar.lua` | bootstrap, saved settings, `/nr` |
+
+### The sweep (`Scan.lua`)
+
+Every `interval` seconds (0.5 by default; round 3: 3.6 ms average, 12 ms worst):
+- skipped when disabled, when no gathering tracking is on, when `Minimap` isn't visible, or when
+  the geometry reads secret or missing;
+- `Minimap:SetUsingSoftCursor(true)`, then `Minimap:UpdateMouseoverAtPoint(px, py)` over a grid 8
+  of the map's units apart, in `GetCursorPosition`'s space (`(left + ox) * effectiveScale`), reading
+  `C_TooltipInfo.GetMinimapMouseover()` at each point; then the point back on the cursor, and
+  `SetUsingSoftCursor(false)`. The whole sweep is one function call inside a `pcall`; the soft cursor
+  is turned off on every path, errors included;
+- hits are grouped into **blips**: per name, grid cells that touch (8-neighbour) are one blip, at the
+  centre of its cells, in the map's units from its centre (round 2: several nodes share a name; a
+  blip covers 4–16 cells);
+- with `rotateMinimap` on, offsets are turned to north-up with `GetPlayerFacing()` (plain outdoors,
+  porting guide), so a blip's position doesn't jump when the player turns.
+
+The sweep doesn't stop while the player hovers the map: round 2's soft sweeps 3 times a second
+under the player's cursor never disturbed their tooltip.
+
+### Which names are nodes (`Learn.lua`)
+
+`kind(name)` answers `"herbs"`, `"ore"`, `false` (not a node) or `nil` (unknown), from, in order:
+1. this account's learned names, `NodeRadarDB.learned[locale][name]` (`kind` or `false`, with the
+   build and the source: `gather` or `toggle`);
+2. the shipped library, `NodeRadar.LIBRARY[GetLocale()]` (nodes only).
+
+Learning:
+- **From gathering:** `UNIT_SPELLCAST_SENT` for the player whose spell is a gathering spell: Herb
+  Gathering (2366) → herbs, Mining (2575) → ore, matched by ID and, for other ranks, by the name
+  `C_Spell.GetSpellInfo(2366/2575)` returns. The target is the node's name (round 3).
+- **From the toggle**, for an unknown name a sweep sees. Out of combat, not casting or channelling
+  (`UnitCastingInfo` / `UnitChannelInfo`), not dead, at most one every 10 s, and only when the
+  gathering tracking's spell isn't on cooldown (`C_Spell.GetSpellCooldown`). It turns that tracking
+  off (`C_Minimap.SetTracking(i, false)`), sweeps 1.5 s later, turns it back on (a cast of the
+  spell, round 3), sweeps 2.5 s later. A name is that kind only when it was there before, gone with
+  the tracking confirmed off, and back after (Codex on #8); it's `false` when it stayed while off;
+  anything else stays unknown, to try again later. A failed sweep makes the whole run inconclusive.
+  With both Find Herbs and Find Minerals on, a name is `false` only once it survived both toggles.
+- **Tracking must come back.** If it isn't on 2.5 s after re-enabling (a cast that failed, combat
+  that started), retry once out of combat; if it's still off, **say so in chat**: "NodeRadar turned
+  Find Herbs off to learn a node and couldn't turn it back on: turn it on again." Never silent.
+- `/nr learn on|off` (on by default) turns the toggle off for players who'd rather learn only by
+  gathering.
+
+### New nodes and the alert (`Alert.lua`)
+
+- Each sweep's node blips are matched to the previous sweep's (same name, within 10 units); an
+  unmatched one is new. A new blip within 15 units of one that disappeared less than 20 s ago is the
+  same node coming back (the map's edge), not new.
+- A new node, at most one alert per `cooldown` seconds (5): `PlaySound(3175, "Master")` (MAP_PING,
+  checked `willPlay`), a ring on the map at the node's position (our unnamed frame on `Minimap`,
+  `HIGH` strata, `Interface\Cooldown\ping4`), and an optional chat line.
+- Blizzard's ping (`Minimap:PingLocation`, centre offsets in the map's units) is optional and
+  **solo only**: it's sent to the group (round 2). Off by default.
+- No mounted-only mode: there are no mounts on the beta.
+
+### The library (`Tools/export_nodes.lua`)
+
+`lua5.1 Tools/export_nodes.lua <SavedVariables/NodeRadar.lua>` merges every account's learned nodes
+(`kind`, never `false`) into `Data/Nodes.lua`, sorted by locale and name, keeping what's there; a
+name learned as two kinds is reported and left out. `pwsh Tools/export_nodes.ps1` finds the
+SavedVariables files. A test pins the merge and the data file's shape.
+
+### Commands
+
+`/nr` (on/off), `/nr sound|ring|chat|ping|learn`, `/nr cd <1-60>`, `/nr test`, `/nr status`,
+`/nr known` (the learned names), `/nr forget <name>`, `/nr failures`, `/nr reset`. An options page
+is a follow-up issue.
+
+### Tests
+
+The probe's stubbed minimap (screen-space points, soft cursor, tracking that hides its blips,
+`SetTracking`) moves into the shared stubs. Offline: grouping into blips, matching and the "came
+back" rule, learning from gathering and from the toggle (each Codex case: a name that never comes
+back, a failed sweep, tracking that stays on or won't come back), the soft cursor off on every path,
+the alert's cooldown, the export's merge.
+
+### Risks to check in game (a short procedure in the probe, after the port)
+
+- Does re-enabling tracking cost a global cooldown, or interrupt a cast? (Guarded: never while
+  casting; measured here.)
+- Does a sweep every 0.5 s show in the frame time with a large map or a high zoom?
+- A gamepad player using the soft cursor: we turn it off after every sweep. Skip sweeps while
+  `GetCVarBool("GamePadEnable")`, until measured.
 
 ## A public API (#4), after #3
 
