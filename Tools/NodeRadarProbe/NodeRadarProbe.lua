@@ -6,10 +6,12 @@
 -- Minimap:UpdateMouseoverAtPoint(x, y) moves the minimap's mouseover to a
 -- point, and C_TooltipInfo.GetMinimapMouseover() reads what is there, the data
 -- Blizzard's hover tooltip shows (Blizzard_Minimap/Mainline/Minimap.lua:271).
--- Round 1 (70450, docs/FOREVER-PROBE.md): it works, but only while the
--- hardware cursor is on the map. Round 2 measures Minimap:SetUsingSoftCursor
--- (the gamepad soft cursor's switch), which conventions place the point right,
--- and Minimap:PingLocation to mark a node.
+-- Rounds 1 and 2 (70450, docs/FOREVER-PROBE.md): it works with the point in
+-- GetCursorPosition's space, with the cursor anywhere once
+-- Minimap:SetUsingSoftCursor(true). But a sweep reads every named blip. Round 3
+-- (#7) measures three ways to tell nodes from the rest: object IDs from
+-- OBJECT_ENTERED_AOI, the owner's idea (turn gathering tracking off and see
+-- what vanishes), and each line's colour.
 --
 --   /fp nr state                        build, the map's geometry, zoom, rotation, tracking
 --   /fp nr under                        what the minimap's mouseover reads now (hover a blip first)
@@ -23,9 +25,11 @@
 --   /fp nr vignettes                    every vignette the client lists
 --   /fp nr sound [kit]                  PlaySound: MAP_PING (3175), or a kit
 --   /fp nr ring                         v1's ring on the minimap (Interface\Cooldown\ping4)
+--   /fp nr toggle                       gathering tracking off and on, sweeping each time
+--   /fp nr pairs                        names paired with the game-object IDs in range
 --   /fp nr clear                        empty the saved log
 --
--- Procedure: /fp steps nr soft (round 2 of #2, in order).
+-- Procedure: /fp steps nr ids (round 3, #7).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -46,7 +50,6 @@ local MAP_PING = 3175                     -- SoundKitConstants.lua:73
 local RING = "Interface\\Cooldown\\ping4"
 local SWEEP_STEP = 8                      -- the map's own units between samples
 local SWEEP_EVERY = 0.3                   -- seconds between radar sweeps
-local HOVER_SECONDS = 10
 local NEAR = 12                           -- the map's units: a sweep found the blip where it is
 
 -- This session's measurements: hover (the kept blip), points and softPoints
@@ -80,8 +83,9 @@ local function geometry()
 end
 
 -- Ways UpdateMouseoverAtPoint might read its point, each made from a screen
--- position in pixels (GetCursorPosition's space). `center` is what Blizzard
--- hands PingLocation (Minimap.lua:133-143), so it's the radar's default.
+-- position in pixels (GetCursorPosition's space). Round 2 measured `screen`
+-- (MEASURED, the radar's default); `center` is what PingLocation takes.
+local MEASURED = "screen"
 local CONVENTIONS = {
     { name = "center",     to = function(px, py, g) return px / g.es - g.cx, py / g.es - g.cy end },
     { name = "screen",     to = function(px, py) return px, py end },
@@ -103,8 +107,18 @@ end
 -- answer can't pass for a new one.
 local function farPixels(g) return (g.l - 3 * g.w) * g.es, (g.b - 3 * g.h) * g.es end
 
+-- A line's colour as "rrggbb", or what it is instead (missing, secret).
+local function colour(c)
+    if secret(c) then return "<secret>" end
+    if type(c) ~= "table" then return str(c) end
+    local r, g, b = num(c.r), num(c.g), num(c.b)
+    if not (r and g and b) then return "<unreadable>" end
+    return ("%02x%02x%02x"):format(math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+
 -- The minimap's mouseover: the names on its lines (one per row), or nil and
--- why. A secret line reads "<secret>" and never matches a name.
+-- why; then the data, and each name's line colour (round 3, #7). A secret line
+-- reads "<secret>" and never matches a name.
 local function mouseover()
     local fn = C_TooltipInfo and C_TooltipInfo.GetMinimapMouseover
     if type(fn) ~= "function" then return nil, "MISSING" end
@@ -114,17 +128,21 @@ local function mouseover()
     if type(data) ~= "table" then return nil, str(data) end
     local lines = data.lines
     if secret(lines) or type(lines) ~= "table" then return nil, "lines " .. Probe.Shape(lines), data end
-    local names = {}
+    local names, colours = {}, {}
     for _, line in ipairs(lines) do
         local t = type(line) == "table" and line.leftText or nil
+        local c = type(line) == "table" and colour(line.leftColor) or "?"
         if secret(t) then
             names[#names + 1] = "<secret>"
         elseif type(t) == "string" then
-            for row in Probe.Plain(t):gmatch("[^\n]+") do names[#names + 1] = row end
+            for row in Probe.Plain(t):gmatch("[^\n]+") do
+                names[#names + 1] = row
+                colours[row] = c
+            end
         end
     end
     if #names == 0 then return nil, "no text", data end
-    return names, nil, data
+    return names, nil, data, colours
 end
 
 -- Moves the mouseover to a point (pixels, through a convention) and reads it.
@@ -132,10 +150,11 @@ local function sample(conv, g, px, py)
     local x, y = conv.to(px, py, g)
     local ok, err = pcall(Minimap.UpdateMouseoverAtPoint, Minimap, x, y)
     if not ok then return nil, "ERROR " .. str(err) end
-    return mouseover()
+    local names, why, _, colours = mouseover()
+    return names, why, colours
 end
 
-local function join(names) return names and table.concat(names, ", ") or "nothing" end
+local function join(names) return names and #names > 0 and table.concat(names, ", ") or "nothing" end
 
 local function shares(a, b)
     if not (a and b) then return false end
@@ -292,12 +311,12 @@ local function sweep(conv, step, soft)
     for oy = step / 2, g.h, step do
         for ox = step / 2, g.w, step do
             points = points + 1
-            local names, whyNot = sample(conv, g, (g.l + ox) * g.es, (g.b + oy) * g.es)
+            local names, whyNot, colours = sample(conv, g, (g.l + ox) * g.es, (g.b + oy) * g.es)
             if names then
                 for _, n in ipairs(names) do
                     local f = found[n]
                     if not f then
-                        f = { sx = 0, sy = 0, hits = 0 }
+                        f = { sx = 0, sy = 0, hits = 0, colour = colours and colours[n] }
                         found[n] = f
                         list[#list + 1] = n
                     end
@@ -320,7 +339,7 @@ local function sweepText(r)
     local parts = {}
     for _, n in ipairs(r.list) do
         local f = r.found[n]
-        parts[#parts + 1] = ("%s (%.0f, %.0f) x%d"):format(n, f.x, f.y, f.hits)
+        parts[#parts + 1] = ("%s (%.0f, %.0f) x%d #%s"):format(n, f.x, f.y, f.hits, tostring(f.colour))
     end
     return ("%s%s: %d names in %d points, %.1f ms%s: %s"):format(r.conv, r.soft and " soft" or "", #r.list, r.points,
         r.ms, r.errors > 0 and (", " .. r.errors .. " errors") or "", #parts > 0 and table.concat(parts, ", ") or "nothing")
@@ -358,15 +377,98 @@ end
 -- The radar: a sweep every SWEEP_EVERY seconds from one OnUpdate
 --------------------------------------------------------------------------------
 
--- The step our procedure is on, or nil when it isn't the one running. Read
+-- The procedure of ours that is running and its step ("ids:6"), or nil. Read
 -- from the host's internals until it says so itself (Spotnick2/ForeverProbe#17).
 local function procedureStep()
     local steps = ForeverProbe.Steps
     if type(steps) ~= "table" or type(steps.Active) ~= "function" then return nil end
     local ok, proc, rec = pcall(steps.Active)
-    if ok and type(proc) == "table" and proc.module == Probe and proc.name == "soft" and type(rec) == "table" then
-        return rec.at
+    if ok and type(proc) == "table" and proc.module == Probe and type(rec) == "table" then
+        return proc.name .. ":" .. tostring(rec.at)
     end
+end
+
+--------------------------------------------------------------------------------
+-- Objects in range (round 3, #7): OBJECT_ENTERED_AOI / OBJECT_LEFT_AOI carry a
+-- GUID; a game object's ("GameObject-0-server-instance-zone-ID-spawn") holds its
+-- object ID, the same in every language. state.inRange[guid] = ID while it's in
+-- range; state.pairs[name] = the IDs in range every time a sweep saw the name.
+--------------------------------------------------------------------------------
+
+state.inRange, state.pairs, state.aoiCounts = {}, {}, {}
+
+-- A GUID's kind and, for a game object or a creature, its ID; nil for a secret.
+local function guidParts(guid)
+    if secret(guid) or type(guid) ~= "string" then return nil end
+    local f = {}
+    for part in guid:gmatch("[^%-]+") do f[#f + 1] = part end
+    local kind = f[1]
+    local id = (kind == "GameObject" or kind == "Creature" or kind == "Vehicle") and tonumber(f[6]) or nil
+    return kind, id
+end
+
+local function aoi(event, guid)
+    local kind, id = guidParts(guid)
+    local key = (kind or "<secret>") .. (event == "OBJECT_ENTERED_AOI" and "+" or "-")
+    state.aoiCounts[key] = (state.aoiCounts[key] or 0) + 1
+    if kind ~= "GameObject" then return end
+    if event == "OBJECT_ENTERED_AOI" then
+        state.inRange[guid] = id
+        say(("AOI+ GameObject %s (%s)"):format(str(id), guid))
+    else
+        state.inRange[guid] = nil
+        say(("AOI- GameObject %s"):format(str(id)))
+    end
+end
+
+-- Pairs each name a sweep saw with the game-object IDs in range now: the
+-- intersection over every sweep that saw it. Skipped while nothing is in range.
+local function pairNames(list)
+    local ids = {}
+    for _, id in pairs(state.inRange) do if id then ids[id] = true end end
+    if not next(ids) then return end
+    for _, n in ipairs(list) do
+        local cand = state.pairs[n]
+        if not cand then
+            cand = {}
+            for id in pairs(ids) do cand[id] = true end
+            state.pairs[n] = cand
+        else
+            for id in pairs(cand) do if not ids[id] then cand[id] = nil end end
+        end
+    end
+end
+
+local function idList(set)
+    local list = {}
+    for id in pairs(set) do list[#list + 1] = id end
+    table.sort(list)
+    return table.concat(list, " ")
+end
+
+-- ClosestGameObjectPosition for every game-object ID in range: documented with
+-- secret returns (UnitDocumentation.lua:34); logs what comes back.
+local function closest()
+    local seen, out = {}, {}
+    for _, id in pairs(state.inRange) do
+        if id and not seen[id] then
+            seen[id] = true
+            local p = Probe.Pack(pcall(ClosestGameObjectPosition, id))
+            local line = ("ClosestGameObjectPosition(%d): %s n=%d %s, %s, %s"):format(id, p[1] and "returned" or "ERROR",
+                p.n - 1, str(p[2]), str(p[3]), str(p[4]))
+            say(line)
+            out[#out + 1] = line
+        end
+    end
+    return #out .. " IDs asked"
+end
+
+local function pairsText()
+    local names, parts = {}, {}
+    for n in pairs(state.pairs) do names[#names + 1] = n end
+    table.sort(names)
+    for _, n in ipairs(names) do parts[#parts + 1] = n .. " = [" .. idList(state.pairs[n]) .. "]" end
+    return #parts > 0 and table.concat(parts, "; ") or "no pairs"
 end
 
 local job
@@ -407,7 +509,7 @@ end
 local function startRadar(seconds, hoverNames, owned, soft)
     if job then job.finish() end
     local conv = chosen(nil, soft)
-    conv = #conv == 1 and conv[1] or convention("center")
+    conv = #conv == 1 and conv[1] or convention(MEASURED)
     local now = GetTime()
     local r = { conv = conv.name, soft = soft, sweeps = 0, skipped = 0, totalMs = 0, maxMs = 0, seen = {}, order = {},
                 started = now, hoverNames = hoverNames, flicker = 0 }
@@ -422,12 +524,14 @@ local function startRadar(seconds, hoverNames, owned, soft)
         if not hoverNames and overMap() then r.skipped = r.skipped + 1; return end
         local s = sweep(conv, nil, soft)
         if not s then return end
+        pairNames(s.list)
         r.sweeps, r.totalMs, r.maxMs = r.sweeps + 1, r.totalMs + s.ms, math.max(r.maxMs, s.ms)
         for _, n in ipairs(s.list) do
             if not r.seen[n] then
                 r.seen[n] = GetTime() - r.started
                 r.order[#r.order + 1] = n
-                say(("radar +%.1f s: %s at (%.0f, %.0f)"):format(r.seen[n], n, s.found[n].x, s.found[n].y))
+                say(("radar +%.1f s: %s at (%.0f, %.0f) #%s"):format(r.seen[n], n, s.found[n].x, s.found[n].y,
+                    tostring(s.found[n].colour)))
             end
         end
         if hoverNames and not shares(mouseover(), hoverNames) then r.flicker = r.flicker + 1 end
@@ -568,135 +672,171 @@ Probe:Command("ring", function() showRing() end, "v1's ring on the minimap")
 Probe:Command("clear", function() Probe:ClearLog(); say("log cleared") end, "empty the saved log")
 
 --------------------------------------------------------------------------------
--- The procedure: round 2 of #2
+-- The owner's idea (#7): the blips that vanish while gathering tracking is off
+-- are the nodes. Sweeps, turns the active gathering tracking off, sweeps 1.5 s
+-- later, turns it back on, sweeps 2.5 s after that. Logs what each call
+-- returned and the tracking's state; the host logs a blocked call.
 --------------------------------------------------------------------------------
 
-local function conventionsCheck(jobName)
-    return function()
-        local j = state[jobName]
-        local w = j and j.working or {}
-        return #w > 0, #w > 0 and ("read the blip: " .. table.concat(w, ", ")) or "no convention read the blip"
+local function gatherIndex()
+    for i = 1, C_Minimap.GetNumTrackingTypes() do
+        local info = C_Minimap.GetTrackingInfo(i) or {}
+        local spell = num(info.spellID)
+        if spell and GATHER_SPELLS[spell] and yes(info.active) then return i, info end
     end
 end
 
-local function sweepCheck()
-    return state.sweepHit == true, state.sweepHit and "found the kept blip where it is" or "didn't find the kept blip where it is"
+local function trackingOn(i)
+    local info = C_Minimap.GetTrackingInfo(i)
+    return info ~= nil and yes(info.active)
 end
 
-Probe:Steps("soft", {
+-- One of the toggle's sweeps: its names, or nil and why. A failed sweep, or
+-- one where any point failed to read, must never read as "nothing there", or
+-- everything would seem to vanish (Codex on #8).
+local function toggleSweep(conv, t, label)
+    local r, why = sweep(conv, nil, true)
+    if not r then
+        t.failed = t.failed or (label .. " sweep failed: " .. str(why))
+        return nil
+    end
+    if r.errors > 0 then
+        t.failed = t.failed or (("%s sweep had %d point errors in %d"):format(label, r.errors, r.points))
+        return nil
+    end
+    return r.list
+end
+
+local function set(list)
+    local s = {}
+    for _, n in ipairs(list or {}) do s[n] = true end
+    return s
+end
+
+-- A name is a node of this tracking only when it was there before, gone with
+-- the tracking confirmed off, and back once it's on again (Codex on #8: a herb
+-- someone else gathers mid-test vanishes too, but never comes back: `gone`).
+local function toggleVerdict(t)
+    t.vanished, t.gone = {}, {}
+    if t.failed then return end
+    local during, after = set(t.during), set(t.after)
+    for _, n in ipairs(t.before) do
+        if not during[n] then
+            if after[n] then t.vanished[#t.vanished + 1] = n else t.gone[#t.gone + 1] = n end
+        end
+    end
+    if t.offState ~= false then t.failed = "tracking never went off" end
+end
+
+local function toggleTracking()
+    local i, info = gatherIndex()
+    if not i then
+        say("toggle: no gathering tracking on")
+        return nil
+    end
+    local conv = convention(MEASURED)
+    local t = { index = i, name = info.name }
+    state.toggle = t
+    t.before = toggleSweep(conv, t, "before") or {}
+    local ok, err = pcall(C_Minimap.SetTracking, i, false)
+    t.offCall = ok and "returned" or ("ERROR " .. str(err))
+    say(("toggle %s: %s before; SetTracking(%d, false) %s"):format(str(t.name), join(t.before), i, t.offCall))
+    C_Timer.After(1.5, function()
+        t.offState = trackingOn(i)
+        t.during = toggleSweep(conv, t, "middle")
+        local ok2, err2 = pcall(C_Minimap.SetTracking, i, true)
+        t.onCall = ok2 and "returned" or ("ERROR " .. str(err2))
+        say(("toggle: tracking on %s after off; %s while off; SetTracking(%d, true) %s"):format(str(t.offState),
+            t.during and join(t.during) or "NO SWEEP", i, t.onCall))
+        C_Timer.After(2.5, function()
+            t.back = trackingOn(i)
+            t.after = toggleSweep(conv, t, "after")
+            toggleVerdict(t)
+            t.done = true
+            say(("toggle: back on %s; %s after; vanished while off and back: %s; gone and not back: %s%s"):format(
+                str(t.back), t.after and join(t.after) or "NO SWEEP", join(t.vanished), join(t.gone),
+                t.failed and ("; INCONCLUSIVE: " .. t.failed) or ""))
+        end)
+    end)
+    return t
+end
+
+Probe:Command("toggle", function() toggleTracking() end, "gathering tracking off and on, sweeping each time")
+Probe:Command("pairs", function()
+    closest()
+    say("pairs: " .. pairsText())
+end, "names paired with the game-object IDs in range; ClosestGameObjectPosition")
+
+--------------------------------------------------------------------------------
+-- The procedure: round 3 (#7)
+--------------------------------------------------------------------------------
+
+local function aoiCounts()
+    local counts = {}
+    for k, v in pairs(state.aoiCounts) do counts[#counts + 1] = k .. "=" .. v end
+    table.sort(counts)
+    return #counts > 0 and table.concat(counts, " ") or "no AOI events"
+end
+
+Probe:Steps("ids", {
     rev = 1,
-    title = "The minimap's blips, round 2: the soft cursor and the ping (#2)",
-    { text = "Stand near a herb or ore, out of combat, and turn on Find Herbs or Find Minerals. "
-          .. "From the next step until the ping, don't move or turn.",
+    title = "Telling nodes from other blips, round 3 (#7)",
+    { text = "Stand near a herb or ore, out of combat, and turn on Find Herbs or Find Minerals.",
       wait = function()
           local on = tracking(true)
           if #on > 0 then return true, table.concat(on, ", ") end
           return false, "no gathering tracking on yet"
       end },
-    { text = "Reading the minimap and the tracking.", auto = true, run = function()
-          local _, g = report()
-          return g and ("%.0fx%.0f, scale %.3f"):format(g.w, g.h, g.es) or "geometry unreadable"
+    { text = "Reading the minimap: every blip's name and colour.", auto = true, run = function()
+          report()
+          return (sweepAll(MEASURED, nil, true))
       end },
-    { text = "Put the cursor on a herb or ore blip on the minimap and hold it there until this step completes.",
-      screenshot = "hovering a blip",
-      wait = function()
-          local h, why = captureHover()
-          if h then return true, join(h.names), ("(%.1f, %.1f)"):format(h.dx, h.dy) end
-          return false, why
+    { text = "Stand still, out of combat. Press Toggle: your gathering tracking goes off for a moment, then back "
+          .. "on (about 4 seconds).",
+      button = "Toggle", run = function()
+          if not toggleTracking() then
+              error("no gathering tracking on: turn Find Herbs or Find Minerals on, then Retry", 0)
+          end
+          return "started"
       end },
-    { text = "Now move the cursor to an EMPTY part of the minimap, away from any blip, and hold it there. "
-          .. "Each way of pointing at the blip is tried, about a second.",
+    { text = "Toggling, about 4 seconds.",
       wait = function()
-          local j = state.points
-          if not j then
-              if not overMap() then return false, "put the cursor on an empty part of the minimap" end
-              if mouseover() then return false, "there's a blip under the cursor: move to an empty spot" end
-              j = tryConventions(false)
-              if not j then return false, "no blip kept: go Back a step" end
-          end
-          if not j.done then return false, ("trying %d of %d"):format(j.i, #CONVENTIONS) end
-          return true, #j.working > 0 and table.concat(j.working, ", ") or "none"
-      end,
-      check = conventionsCheck("points") },
-    { text = "Keep the cursor on that empty spot: the whole map is swept once.",
-      wait = function()
-          if not overMap() then return false, "put the cursor back on an empty part of the minimap" end
-          local text, hit = sweepAll(nil, nil, false)
-          state.sweepHit = hit
-          return true, text
-      end,
-      check = sweepCheck },
-    { text = "Take the cursor off the minimap, onto the game world. The soft cursor goes on and each way of "
-          .. "pointing at the blip is tried again, about a second.",
-      wait = function()
-          local j = state.softPoints
-          if not j then
-              if overMap() then return false, "the cursor is still on the minimap" end
-              j = tryConventions(true)
-              if not j then return false, "no blip kept: go Back three steps" end
-          end
-          if not j.done then return false, ("trying %d of %d"):format(j.i, #CONVENTIONS) end
-          return true, #j.working > 0 and table.concat(j.working, ", ") or "none"
-      end,
-      check = conventionsCheck("softPoints") },
-    { text = "Sweeping the whole map with the soft cursor, the cursor still off the minimap.", auto = true,
-      run = function()
-          state.hoverJob = nil
-          local text, hit = sweepAll(nil, nil, true)
-          state.sweepHit = hit
-          return text
-      end,
-      check = sweepCheck },
-    { text = "Put the cursor on the blip again (does your own hover still work after the soft cursor?).",
-      timeout = 20,
-      wait = function()
-          local names, why = mouseover()
-          if overMap() and shares(names, state.hover and state.hover.names) then return true, join(names) end
-          return false, overMap() and ("the mouseover reads " .. (names and join(names) or why)) or "put the cursor on the blip"
-      end },
-    { text = "Keep hovering the blip: it sweeps with the soft cursor 3 times a second for " .. HOVER_SECONDS .. " s.",
-      wait = function()
-          local r = state.hoverJob
-          if not r then
-              if not overMap() then return false, "put the cursor on the blip" end
-              local names = mouseover()
-              if not names then return false, "nothing under the cursor yet" end
-              r = startRadar(HOVER_SECONDS, names, true, true)
-              state.hoverJob = r
-          end
-          if not r.done then return false, ("sweeping, %d so far"):format(r.sweeps) end
-          return true, radarText(r)
+          local t = state.toggle
+          if not t then return false, "no toggle ran: go Back a step" end
+          if not t.done then return false, "toggling" end
+          return true, "vanished while off: " .. join(t.vanished), "back on: " .. str(t.back)
       end,
       check = function()
-          local r = state.hoverJob
-          if not r then return false, "didn't run" end
-          return r.flicker == 0, ("the mouseover read wrong after %d of %d sweeps"):format(r.flicker, r.sweeps)
+          local t = state.toggle
+          if not (t and t.done) then return false, "didn't finish" end
+          if t.failed then return false, "inconclusive: " .. t.failed end
+          return #t.vanished > 0 and t.back == true,
+              ("vanished while off and back: %s; gone and not back: %s; tracking back on %s"):format(join(t.vanished),
+                  join(t.gone), str(t.back))
       end },
-    { text = "Did the blip's tooltip flicker, vanish or change name during those seconds?", ask = true },
-    { text = "Ping the blip with Blizzard's minimap ping (Minimap:PingLocation).", button = "Ping",
-      screenshot = "the ping", run = function() return ping() end },
-    { text = "Did a ping appear on the blip (and play the ping sound)?", ask = true },
-    { text = "Only if a second character is grouped with you: did the ping show on ITS minimap too? Otherwise "
-          .. "press Not sure.", ask = true },
-    { text = "Now walk past a few nodes for a minute or two, the cursor off the minimap. The radar sweeps with "
-          .. "the soft cursor; the names it finds show in the panel line below this text. Press Done when "
-          .. "you've passed a few.",
+    { text = "Is your gathering tracking back on? (If not, turn it on again before going on.) Did anything else "
+          .. "happen: a cast, an error, a cooldown? Say what in the note.", ask = true },
+    { text = "Walk among nodes for two or three minutes, the cursor off the minimap. Pass several kinds of herb "
+          .. "or ore if you can, and gather one or two on the way. The panel line shows the names seen and the "
+          .. "game objects in range. Press Done when you've passed a few.",
       wait = function()
           local r = state.walk
           if not r or r.done then
               r = startRadar(nil, nil, true, true)
               state.walk = r
           end
-          return false, #r.order > 0 and table.concat(r.order, ", ") or "nothing yet"
+          local n = 0
+          for _ in pairs(state.inRange) do n = n + 1 end
+          return false, ("%d names, %d game objects in range"):format(#r.order, n)
       end },
-    { text = "Stopping the radar.", auto = true, run = function()
+    { text = "Stopping the radar; pairing names with object IDs.", auto = true, run = function()
           stopRadar()
-          return state.walk and radarText(state.walk) or "no radar ran"
+          closest()
+          say("AOI events: " .. aoiCounts())
+          local text = pairsText()
+          say("pairs: " .. text)
+          return text, aoiCounts()
       end },
-    { text = "Did those names match the nodes that came up on your minimap?", ask = true },
-    { text = "Show v1's ring on the minimap (a real strata now).", button = "Show", screenshot = "v1's ring",
-      run = showRing },
-    { text = "Did a green ring grow from the centre of the minimap and fade?", ask = true },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
 
@@ -705,8 +845,13 @@ Probe:Steps("soft", {
 --------------------------------------------------------------------------------
 
 local boot = CreateFrame("Frame")
-Probe:RegisterEvents(boot, { "ADDON_LOADED", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING", "VIGNETTE_MINIMAP_UPDATED" })
-boot:SetScript("OnEvent", function(_, event, a1, a2, a3)
+Probe:RegisterEvents(boot, { "ADDON_LOADED", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING", "VIGNETTE_MINIMAP_UPDATED",
+    "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI" })
+-- The player's casts only: the target's name is what a gathering cast is
+-- aimed at (the name-learning fallback, #7).
+local okSent, errSent = pcall(boot.RegisterUnitEvent, boot, "UNIT_SPELLCAST_SENT", "player")
+if not okSent then say("UNIT_SPELLCAST_SENT: ERROR " .. str(errSent)) end
+boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     if event == "ADDON_LOADED" then
         if a1 ~= ADDON then return end
         Probe:Ready()
@@ -714,7 +859,11 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3)
         if type(NodeRadarProbeDB.log) ~= "table" then NodeRadarProbeDB.log = {} end
         Probe:UseLog(NodeRadarProbeDB.log, MAX_LOG)
         NodeRadarProbeDB.loads = (NodeRadarProbeDB.loads or 0) + 1
-        say("loaded (" .. NodeRadarProbeDB.loads .. " loads). /fp nr for the commands, /fp steps nr soft for #2")
+        say("loaded (" .. NodeRadarProbeDB.loads .. " loads). /fp nr for the commands, /fp steps nr ids for #7")
+    elseif event == "OBJECT_ENTERED_AOI" or event == "OBJECT_LEFT_AOI" then
+        aoi(event, a1)
+    elseif event == "UNIT_SPELLCAST_SENT" then
+        say(("UNIT_SPELLCAST_SENT spell=%s target=%s"):format(str(a4), str(a2)))
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         local on = tracking(true)
         say("MINIMAP_UPDATE_TRACKING; gathering on: " .. (#on > 0 and table.concat(on, ", ") or "none"))

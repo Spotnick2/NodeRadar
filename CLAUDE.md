@@ -32,7 +32,7 @@ skins is #4 (after #3).
 
 - `NodeRadar.lua`: v1 (see Status).
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
-  (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr soft` for #2 (round 2).
+  (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr ids` for #7 (round 3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
 - `tests/`: `wow_stubs.lua` (strict globals as an allowlist of APIs verified in the dump, secrets,
   event names checked against the dump or `events-70450.txt`, every widget method recorded, and a

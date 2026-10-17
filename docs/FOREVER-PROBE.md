@@ -9,7 +9,7 @@ the `/fp` console and `NodeRadarProbeDB.log`, never to chat.
 pwsh Tools\deploy.ps1 -ProbeOnly     # ForeverProbe, then NodeRadarProbe (not v1, until #3)
 ```
 
-In game: `/console scriptErrors 1`, `/reload`, then **`/fp steps nr soft`** (round 2) and follow
+In game: `/console scriptErrors 1`, `/reload`, then **`/fp steps nr ids`** (round 3, #7) and follow
 the panel. It needs a character with Herbalism or Mining, outdoors near nodes. End with `/reload`;
 the session reads the results from `SavedVariables\NodeRadarProbe.lua` and `ForeverProbe.lua`.
 
@@ -28,29 +28,28 @@ The commands, for one-offs (`/fp nr` lists them):
 | `vignettes` | every vignette the client lists |
 | `sound [kit]` | `PlaySound(kit, "Master")`, MAP_PING (3175) by default |
 | `ring` | v1's ring on the minimap, and `GetFileIDFromPath` of its texture |
+| `toggle` | gathering tracking off and on, sweeping each time; what vanished |
+| `pairs` | names paired with the game-object IDs in range; `ClosestGameObjectPosition` for each |
 
-## The `soft` procedure (round 2 of #2)
+## The `ids` procedure (round 3, #7)
+
+A sweep reads every named blip, so this measures three ways to tell gathering nodes from the rest.
 
 | Step | Measures |
 |---|---|
-| 1–2 | Find Herbs or Find Minerals on (by spell ID); the map's geometry |
-| 3 | the owner hovers a blip: its names, the cursor, its offset; a screenshot |
-| 4 | cursor on an **empty** part of the map: each convention, after a far point that must read nothing (check: one reads the blip) |
-| 5 | still there: a whole-map sweep (check: it finds the blip **where it is**, within 12 units) |
-| 6 | cursor off the map, **soft cursor on**: each convention again (check) |
-| 7 | a whole-map sweep with the soft cursor (check: the blip where it is) |
-| 8 | does the owner's own hover still work after the soft cursor? (20 s, else FAIL) |
-| 9–10 | soft sweeps for 10 s while the owner hovers (check: the mouseover reads the blip after each); flicker? |
-| 11–13 | `Minimap:PingLocation` at the blip: screenshot, `MINIMAP_PING`; seen on the blip? seen by a grouped second character? |
-| 14–16 | a walk with the soft radar (no mounts on the beta): names as they appear; did they match? |
-| 17–18 | v1's ring with a real strata: seen? |
+| 1–2 | Find Herbs or Find Minerals on; a soft sweep: every blip's name, position and **line colour** |
+| 3–4 | **the owner's idea:** `C_Minimap.SetTracking(i, false)`, sweep, `SetTracking(i, true)`, sweep. Check: something vanished while off, and tracking came back on |
+| 5 | is tracking back on; did anything else happen (a cast, an error, a cooldown)? |
+| 6 | a 2–3 min walk with the soft radar: every `OBJECT_ENTERED_AOI` / `OBJECT_LEFT_AOI`, with a game object's ID from its GUID; each name paired with the IDs in range every time it was seen; `UNIT_SPELLCAST_SENT`'s target when gathering |
+| 7 | the pairs, the AOI events by kind, `ClosestGameObjectPosition` for each ID in range |
 
-Round 1's procedure (`blips`) is gone from the probe; its results are below.
+Rounds 1 (`blips`) and 2 (`soft`) are gone from the probe; their results are below.
 
-The conventions (`NodeRadarProbe.lua`, `CONVENTIONS`), each from the cursor's pixels: `center`
-(offsets from the map's centre in its units, what Blizzard hands `PingLocation`), `screen` (as is),
-`ui` (÷ the map's effective scale), `uiparent`, `centerpx` (centre offsets in pixels),
-`bottomleft`, `topleft`, `unit` and `unittop` (0-1 across the map), `radius` (-1..1 from the centre).
+The conventions (`NodeRadarProbe.lua`, `CONVENTIONS`), each from the cursor's pixels: **`screen`**
+(as is: measured in round 2), `center` (offsets from the map's centre in its units, what
+`PingLocation` takes), `ui` (÷ the map's effective scale), `uiparent`, `centerpx` (centre offsets in
+pixels), `bottomleft`, `topleft`, `unit` and `unittop` (0-1 across the map), `radius` (-1..1 from
+the centre).
 
 ## Measured
 
@@ -107,3 +106,23 @@ an addon reads the minimap's blips with the cursor anywhere, at about 4 ms a swe
 disturbing the player's own hover. **For the port (#3):** turn the soft cursor on only for the
 sweep; cluster hits into nodes; keep only gathering nodes; never ping by default in a group (it
 goes to the group), or mark the node with our own ring at its position instead.
+
+### Round 3: `ids`, 1.60.1.70450 (owner's run, 2026-10-17, Valley of Trials to Sen'jin, Find Herbs) (#7)
+
+| Way to tell nodes from other blips | Result |
+|---|---|
+| **Turning gathering tracking off and on** (the owner's idea) | **Works.** From addon code, out of combat: `C_Minimap.SetTracking(1, false)` turned Find Herbs off (`MINIMAP_UPDATE_TRACKING` at once); a sweep 1.5 s later had lost **exactly the two herbs** (Stunted Silverleaf, Wilted Peacebloom) and kept the three quest lines. `SetTracking(1, true)` **casts Find Herbs** (`UNIT_SPELLCAST_SENT` spell 2383) and tracking was back on 0.1 s later; the herbs were back in the next sweep. No blocked action; the owner noticed nothing else |
+| **Line colour** | **Useless:** every blip is `#ffd200` (gold): herbs, quest lines, town NPCs |
+| **Object IDs** (`OBJECT_ENTERED_AOI` / `OBJECT_LEFT_AOI`) | **Nothing:** 0 events in a 4-minute walk past herbs, NPCs and boars. Whether the registration was refused isn't known: the probe registered before its saved log was bound, so a refusal only reached the console. So no pairs, and `ClosestGameObjectPosition` had no ID to try |
+| **Learning names from gathering** (`UNIT_SPELLCAST_SENT`) | **Works:** Herb Gathering (2366) reports the node as its target, as the client names it: "Silverleaf", "Wilted Peacebloom" |
+
+What a sweep reads, besides nodes: quest titles **and their objective lines** ("Carry Your Weight",
+"- 0/8 Canvas Scraps", "Report to Sen'jin Village"), and **town NPCs** shown by the town trackers
+("Lar Prowltusk", "Xar'Ti", "Vel'rin Fang", "Master Vornal"). The walk: 768 sweeps over 4 minutes,
+3.6 ms average, 12 ms max, **in and out of combat** (boars), with no blocked action. Several names
+can share one spot (a quest and its objective line).
+
+**So (#7 answered):** a node is a name that vanishes when its gathering tracking goes off. The port
+learns names, per name and once each: from gathering casts for free, and by turning the tracking off
+and on when a sweep sees a name it doesn't know yet, out of combat. A name is the client's own,
+localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-coded.

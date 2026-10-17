@@ -196,6 +196,11 @@ function Methods.RegisterEvent(w, e)
     w._events[e] = true
     return true
 end
+function Methods.RegisterUnitEvent(w, e, ...)
+    if not WoW.KNOWN_EVENTS[e] then error("Attempt to register unknown event \"" .. e .. "\"", 2) end
+    w._events[e] = true
+    return true
+end
 function Methods.UnregisterEvent(w, e) w._events[e] = nil end
 function Methods.IsEventRegistered(w, e) return w._events[e] == true end
 
@@ -356,7 +361,11 @@ end
 WoW.cursor = { 0, 0 }
 WoW.cursorOnMap = false
 WoW.blips = {}
-WoW.mouseoverConvention = function(x, y) return x, y end
+-- Round 2 (70450): the point is in GetCursorPosition's space, screen pixels.
+WoW.mouseoverConvention = function(x, y)
+    local r, s = Minimap._rect, Minimap._effScale
+    return x / s - (r[1] + r[3] / 2), y / s - (r[2] + r[4] / 2)
+end
 function GetCursorPosition() return WoW.cursor[1], WoW.cursor[2] end
 
 -- A blip's pixels, as the cursor would be on it.
@@ -379,17 +388,32 @@ function WoW.leaveMap()
     WoW.cursorOnMap, WoW.cursorAt = false, nil
 end
 
+-- A blip's optional kind ("herbs", "ore") shows it only while that tracking
+-- is on; its optional colour is its line's leftColor ({ r, g, b }).
+local TRACKING_KIND = { [2383] = "herbs", [2580] = "ore" }
+local function kindOn(kind)
+    for _, t in ipairs(WoW.tracking) do
+        if t.spellID and TRACKING_KIND[t.spellID] == kind and t.active then return true end
+    end
+    return false
+end
+
 local function blipsAt(dx, dy)
     local lines = {}
     for _, b in ipairs(WoW.blips) do
-        if (b[2] - dx) ^ 2 + (b[3] - dy) ^ 2 <= 36 then lines[#lines + 1] = { leftText = b[1] } end
+        if (b[2] - dx) ^ 2 + (b[3] - dy) ^ 2 <= 36 and (not b.kind or kindOn(b.kind)) then
+            local c = b.colour or { 1, 1, 1 }
+            lines[#lines + 1] = { leftText = b[1], type = 0, leftColor = { r = c[1], g = c[2], b = c[3], a = 1 } }
+        end
     end
     return lines
 end
 
 C_TooltipInfo = {
-    -- MayReturnNothing (TooltipInfoDocumentation.lua:619).
+    -- MayReturnNothing (TooltipInfoDocumentation.lua:619). WoW.mouseoverThrows
+    -- makes every read throw.
     GetMinimapMouseover = function()
+        if WoW.mouseoverThrows then error("GetMinimapMouseover failed") end
         local dx, dy
         local pointCounts = WoW.cursorOnMap or (WoW.softCursor and not WoW.softIgnored)
         if WoW.mouseoverPoint and pointCounts then
@@ -418,7 +442,28 @@ C_Minimap = {
                            spellID = t.spellID } end
     end,
     GetViewRadius = function() return 150 end,
+    -- WoW.refuseTrackingOn / Off: turning a tracking on / off does nothing (a cast the
+    -- client refuses). Either way MINIMAP_UPDATE_TRACKING fires.
+    SetTracking = function(i, on)
+        assert(type(on) == "boolean", "SetTracking takes a bool")
+        local t = WoW.tracking[i]
+        if t and not (on and WoW.refuseTrackingOn) and not (not on and WoW.refuseTrackingOff) then t.active = on end
+        WoW.fire("MINIMAP_UPDATE_TRACKING")
+    end,
 }
+
+-- The closest game object of an ID: WoW.closest[id] = { x, y, distance }, or
+-- secrets when WoW.closestSecret (documented SecretReturns).
+WoW.closest = {}
+function ClosestGameObjectPosition(id)
+    local c = WoW.closest[id]
+    if not c then return end
+    if WoW.closestSecret then return WoW.Secret("x"), WoW.Secret("y"), WoW.Secret("distance") end
+    return c[1], c[2], c[3]
+end
+
+-- A game object's GUID, as the client shapes it.
+function WoW.objectGUID(id, spawn) return ("GameObject-0-4170-0-12-%d-%s"):format(id, spawn or "0000ABCDEF") end
 
 -- Vignettes: WoW.vignettes = { [guid] = info }.
 WoW.vignettes = {}
