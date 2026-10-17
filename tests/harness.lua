@@ -1,6 +1,5 @@
 -- harness.lua: assertions and loaders. dofile it after wow_stubs.lua.
--- GlassMail's harness, trimmed: no embedded library. The addon loader comes
--- with the port (#3); v1 reads globals Forever no longer has.
+-- GlassMail's harness, trimmed: no embedded library.
 
 local passed, failed = 0, 0
 
@@ -31,6 +30,36 @@ function tocFiles(toc)
         if line ~= "" and not line:match("^#") and line:match("%.lua$") then files[#files + 1] = line:gsub("\\", "/") end
     end
     return files
+end
+
+-- Load the addon the way the client does: every TOC file with (name, ns), its
+-- saved tables (opts.db, opts.charDb), then ADDON_LOADED, PLAYER_LOGIN,
+-- PLAYER_ENTERING_WORLD.
+function loadAddon(opts)
+    opts = opts or {}
+    local ns = {}
+    for _, f in ipairs(tocFiles()) do assert(loadfile(f))("NodeRadar", ns) end
+    NodeRadarDB, NodeRadarCharDB = opts.db, opts.charDb
+    WoW.fire("ADDON_LOADED", "NodeRadar")
+    WoW.fire("PLAYER_LOGIN")
+    WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+    return NodeRadar
+end
+
+-- Chat lines printed since the last call.
+local seenChat = 0
+function newChat()
+    local lines = {}
+    for i = seenChat + 1, #WoW.chat do lines[#lines + 1] = WoW.chat[i] end
+    seenChat = #WoW.chat
+    return lines
+end
+
+function chatHas(pattern)
+    for _, line in ipairs(WoW.chat) do
+        if line:find(pattern) then return true end
+    end
+    return false
 end
 
 -- ForeverProbe, the probe host (..\ForeverProbe, or $FOREVERPROBE), loaded

@@ -13,11 +13,11 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** `NodeRadar.lua` is v1, an abandoned TBC Anniversary draft. **Its detection can't work**
-(it looks for blips as Minimap child frames; the engine draws them), and it reads globals Forever
-no longer has, so don't deploy it: `Tools\deploy.ps1 -ProbeOnly`. The repo setup is #1, the probe
-that decides how detection can work is #2, the port is #3 (after #2), the public API for minimap
-skins is #4 (after #3).
+**Status:** the port (#3) is written: the soft sweep, learning which names are nodes, the alert,
+the library and its export tool, as `docs/PLAN.md` "The port (#3)" (reviewed by Codex to
+consensus). Its in-game release check comes next; until it passes, `learn`'s default is
+provisional. Done: the repo setup (#1), the probe rounds that decided detection (#2) and
+classification (#7). Next after the port: the public API for minimap skins (#4), an options page.
 
 ## The UI contract (non-negotiable)
 
@@ -25,12 +25,33 @@ skins is #4 (after #3).
   and a taint minefield (porting guide, "Edit Mode systems"). Our frames are unnamed children of
   `Minimap`.
 - Never reassign a Blizzard global or method; `hooksecurefunc` and our own frames only.
-- Reading the minimap's mouseover moves it: don't sweep while the player's cursor is on the map,
-  unless #2 measured that it doesn't matter.
+- The sweep drives the minimap's mouseover and the soft cursor: the soft cursor is turned off after
+  every sweep, on every path, and no sweep runs with the gamepad on (its soft cursor isn't ours).
+- **Gathering tracking is the player's.** The toggle turns it off only to learn, restores it always
+  (across a reload too), and never overrides a change the player made.
 
 ## Layout
 
-- `NodeRadar.lua`: v1 (see Status).
+TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
+`NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+
+- `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
+  failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
+  state (`Speed`, `Casting`, `Dead`, `Gamepad`); `MEASURED_ON_BUILD`.
+- `Data/Nodes.lua`: the shipped library, `NodeRadar.LIBRARY[locale][name] = "herbs" | "ore"`.
+  **Generated**: change it with `Tools/export_nodes.lua`, never by hand.
+- `Scan.lua`: `Scan.Sweep()`, one read of the map's blips (soft cursor on, a grid in
+  `GetCursorPosition`'s space, same-name hits grouped into separate blips; the soft cursor turned
+  off on every path).
+- `Learn.lua`: `Learn.Kind(name)`; learning from gathering casts and from the toggle experiment
+  (every guard in PLAN.md: the experiment is voided by movement, zone, loading, death, the gamepad,
+  a zoom, a failed sweep or the player's own tracking change; tracking is always restored, across a
+  reload through `NodeRadarCharDB.pendingRestore`, and the player's own choice wins).
+- `Alert.lua`: new nodes by a rise in a name's count; the sound, rings, chat line, solo-only ping.
+- `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
+  events, `/nr`.
+- `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
+  prints additions with their provenance for review, writes with `--write`.
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
   (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr ids` for #7 (round 3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).

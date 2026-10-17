@@ -1,9 +1,15 @@
 ## Interface: 16001
 ## Title: NodeRadar
-## Notes: Pings and flashes the minimap when a gathering node comes into range while you ride. Needs Find Herbs or Find Minerals.
+## Notes: Pings the minimap when a herb or ore node comes into range. Needs Find Herbs or Find Minerals. /nr
 ## Author: Spotnick
 ## Version: @project-version@
 ## X-License: MIT
 ## SavedVariables: NodeRadarDB
+## SavedVariablesPerCharacter: NodeRadarCharDB
 
+Compat.lua
+Data\Nodes.lua
+Scan.lua
+Learn.lua
+Alert.lua
 NodeRadar.lua
