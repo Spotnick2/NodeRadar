@@ -299,6 +299,31 @@ end
 -- The player, sounds, files
 --------------------------------------------------------------------------------
 
+-- The player: speed (WoW.speed), a cast (WoW.casting, a spell name), death,
+-- a group, the locale.
+WoW.speed, WoW.casting, WoW.dead, WoW.group, WoW.locale = 0, nil, false, false, "enUS"
+function GetUnitSpeed(unit) return WoW.speed, 7, 7, 4.72 end
+function UnitCastingInfo(unit) if unit == "player" and WoW.casting then return WoW.casting, WoW.casting end end
+function UnitChannelInfo(unit) return nil end
+function UnitIsDeadOrGhost(unit) return WoW.dead end
+function IsInGroup() return WoW.group end
+function GetLocale() return WoW.locale end
+
+-- Spells: names by ID (C_Spell.GetSpellInfo); WoW.cooling[id] puts one on cooldown.
+WoW.spellNames = { [2366] = "Herb Gathering", [2368] = "Herb Gathering", [2575] = "Mining", [2576] = "Mining",
+                   [2383] = "Find Herbs", [2580] = "Find Minerals" }
+WoW.cooling = {}
+C_Spell = {
+    GetSpellInfo = function(id)
+        local n = WoW.spellNames[id]
+        if n then return { name = n, spellID = id, iconID = 1, originalIconID = 1, castTime = 0, minRange = 0, maxRange = 0 } end
+    end,
+    GetSpellCooldown = function(id)
+        local on = WoW.cooling[id] == true
+        return { startTime = on and 1 or 0, duration = on and 1.5 or 0, isEnabled = true, isActive = on, modRate = 1 }
+    end,
+}
+
 WoW.mounted = false
 function IsMounted() return WoW.mounted end
 WoW.sounds = {}
@@ -403,7 +428,8 @@ local function blipsAt(dx, dy)
     for _, b in ipairs(WoW.blips) do
         if (b[2] - dx) ^ 2 + (b[3] - dy) ^ 2 <= 36 and (not b.kind or kindOn(b.kind)) then
             local c = b.colour or { 1, 1, 1 }
-            lines[#lines + 1] = { leftText = b[1], type = 0, leftColor = { r = c[1], g = c[2], b = c[3], a = 1 } }
+            local text = WoW.secretNames and WoW.Secret("name") or b[1]
+            lines[#lines + 1] = { leftText = text, type = 0, leftColor = { r = c[1], g = c[2], b = c[3], a = 1 } }
         end
     end
     return lines
@@ -511,7 +537,7 @@ end
 
 -- Strict globals: any read of an undefined global is an error, except the
 -- addon's own globals that are legitimately nil before first assignment.
-local allowNil = { NodeRadar = true, NodeRadarDB = true, NodeRadarProbeDB = true }
+local allowNil = { NodeRadar = true, NodeRadarDB = true, NodeRadarCharDB = true, NodeRadarProbeDB = true }
 strmatch = string.match
 setmetatable(_G, { __index = function(_, k)
     if allowNil[k] then return nil end
