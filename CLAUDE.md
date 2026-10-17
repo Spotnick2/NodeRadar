@@ -90,7 +90,7 @@ Lua 5.1 at `C:\Program Files (x86)\Lua\5.1\` (`lua.exe`, `luac.exe`). No build s
 ```powershell
 pwsh tests\run.ps1                                                   # luac -p on the TOC files + probe, then every tests\test_*.lua (needs ..\ForeverProbe)
 & 'C:\Program Files (x86)\Lua\5.1\lua.exe' tests\test_probe.lua     # one test, from the repo root
-pwsh Toolsdeploy.ps1 -Probe                                         # NodeRadar + ForeverProbe + NodeRadarProbe into AddOns
+pwsh Tools\deploy.ps1 -Probe                                        # NodeRadar + ForeverProbe + NodeRadarProbe into AddOns
 ```
 
 - Default AddOns path: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns`
