@@ -1,15 +1,24 @@
 -- NodeRadarProbe: a ForeverProbe module (the host loaded from its checkout,
 -- harness.lua's loadForeverProbe). Its commands run on the stubbed client and
--- log what they read, never to chat; the blips procedure runs end to end on a
--- client whose UpdateMouseoverAtPoint takes centre offsets, finds exactly
--- that convention, and finds none on a client that ignores the call. Every
--- widget method it calls exists on 70450. Runs locally only (CI skips it).
+-- log what they read, never to chat. The soft procedure (round 2 of #2) runs
+-- end to end on a client modelled on round 1: a point counts only with the
+-- cursor on the map or the soft cursor on, in centre offsets. It finds that
+-- convention both ways, finds none where the soft cursor does nothing or the
+-- mouseover never moves, and its radars stop with their step. Every widget
+-- method it calls exists on 70450. Runs locally only (CI skips it).
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
 -- What the host touches beyond the shared stub (all in the 70450 dump).
 rawset(_G, "Screenshot", function() WoW.shots = (WoW.shots or 0) + 1 end)
 rawset(_G, "EnumerateFrames", function() return nil end)
+-- Frame stratas, as measured: "HIGHLIGHT" is a draw layer and throws (round 1).
+local STRATAS = { BACKGROUND = true, LOW = true, MEDIUM = true, HIGH = true, DIALOG = true, FULLSCREEN = true,
+                  FULLSCREEN_DIALOG = true, TOOLTIP = true }
+function WoW.Methods.SetFrameStrata(w, s)
+    if not STRATAS[s] then error("bad argument #1 to 'SetFrameStrata' (Usage: self:SetFrameStrata(strata))", 2) end
+    w._strata = s
+end
 
 local FP = loadForeverProbe()
 local T = loadProbe()._test
@@ -35,7 +44,7 @@ local function settle()
         WoW.fire("SCREENSHOT_SUCCEEDED")
     end
 end
-local function record() return FP.db.steps.records["NodeRadarProbe/blips"] end
+local function record() return FP.db.steps.records["NodeRadarProbe/soft"] end
 local function result(i) return record().results[i] or {} end
 
 check(T.Probe.log == db.log, "its ForeverProbe log is NodeRadarProbeDB.log, bound at ADDON_LOADED")
@@ -46,20 +55,27 @@ check(logged("loaded %(1 loads%)"), "loaded")
 --------------------------------------------------------------------------------
 
 WoW.blips = { { "Peacebloom", 30, -20 } }
-for _, cmd in ipairs({ "state", "under", "vignettes", "sound", "ring", "point", "sweep", "radar 1", "stop" }) do
+for _, cmd in ipairs({ "state", "under", "vignettes", "sound", "ring", "point", "sweep", "sweep soft", "radar 1",
+                       "stop", "soft on", "soft off", "ping 5 5" }) do
     fp("nr " .. cmd)
 end
 check(logged("minimap 198%.0x198%.0 at %(800%.0, 500%.0%) in its units; effective scale 1%.200"), "state: the map's rect")
 check(logged("2 tracking types; gathering on: none"), "state: Find Herbs listed, off")
-check(logged("UpdateMouseoverAtPoint function, GetMinimapMouseover function"), "state: the candidate APIs")
+check(logged("UpdateMouseoverAtPoint function, SetUsingSoftCursor function, PingLocation function, GetMinimapMouseover function"),
+    "state: the APIs measured")
 check(logged("mouseover: nil; cursor 0, 0; on the minimap false"), "under: nothing")
 check(logged("0 vignettes"), "vignettes")
 check(logged("PlaySound%(3175, Master%): returned willPlay=true"), "sound: MAP_PING")
 check(logged("GetFileIDFromPath%(Interface\\Cooldown\\ping4%) = nil"), "ring: the texture looked up")
 check(logged("point: no blip kept"), "point needs a kept blip")
-check(logged("sweep center: 1 names in 625 points, [%d.]+ ms: Peacebloom %(25, %-23%)"), "sweep: centre offsets find the blip")
-check(logged("sweep screen: 0 names"), "...pixels don't, on this client")
-check(logged("radar screen: 0 sweeps"), "radar ran (the first convention: no blip kept yet) and stopped")
+check(logged("sweep center: 0 names in 625 points"), "sweep, cursor off the map: nothing (round 1)")
+check(logged("sweep center soft: 1 names in 625 points, [%d.]+ ms: Peacebloom %(30, %-20%) x3"),
+    "sweep soft: the blip, at the centre of its hits")
+check(logged("radar started with center for 1 s"), "radar: centre offsets by default")
+check(logged("SetUsingSoftCursor%(true%)") and logged("SetUsingSoftCursor%(false%)"), "soft on and off")
+check(logged("PingLocation%(5%.0, 5%.0%): returned; GetPingPosition 5, 5"), "ping: an offset")
+check(logged("MINIMAP_PING unit=player x=5 y=5"), "...and its event, x and y in the right order")
+eq(WoW.softCursor, false, "the soft cursor is left off")
 eq(errors(), 0, "no command threw")
 eq(#WoW.chat, 0, "nothing in chat")
 
@@ -67,133 +83,157 @@ eq(#WoW.chat, 0, "nothing in chat")
 -- The procedure
 --------------------------------------------------------------------------------
 
-fp("steps nr blips")
-eq(record().status, "active", "blips: started")
-S.Next()                                                   -- 1 go outdoors
+fp("steps nr soft")
+eq(record().status, "active", "soft: started")
 poll()
-eq(record().at, 2, "waits for gathering tracking")
+eq(record().at, 1, "waits for gathering tracking")
 WoW.tracking[1].active = true
 poll()
-eq(result(2).status, "done", "Find Herbs on")
-eq(result(3).status, "done", "the state read on arrival")
-eq(record().at, 4, "then waits for a hovered blip")
-poll()
-eq(record().at, 4, "...still, with nothing hovered")
+eq(result(1).status, "done", "Find Herbs on")
+eq(result(2).status, "done", "the state read on arrival")
+eq(record().at, 3, "then waits for a hovered blip")
 
-WoW.hover(31, -19)                                         -- 4 hover
+WoW.hover(31, -19)                                         -- 3 hover
 poll()
 settle()
-eq(result(4).status, "done", "the hovered blip kept")
-check(result(4).screenshots and #result(4).screenshots == 1, "...with a screenshot")
+eq(result(3).status, "done", "the hovered blip kept")
+check(result(3).screenshots and #result(3).screenshots == 1, "...with a screenshot")
 check(logged("hovered Peacebloom at cursor %(1116%.0, 696%.0%) px, %(31%.0, %-19%.0%) from the map's centre"),
     "...its pixels and centre offset logged")
 
-poll()                                                     -- 5 conventions
-eq(record().at, 5, "waits while the cursor is on the map")
+poll()                                                     -- 4 conventions, cursor on the map
+eq(record().at, 4, "waits while the cursor is on the blip")
 eq(T.state.points, nil, "...trying nothing yet")
-WoW.cursorOnMap, WoW.mouseoverAt = false, nil              -- the client's hover goes with the cursor
+WoW.hover(-60, 50)                                         -- an empty spot
 poll()
 WoW.drainTimers()
 poll()
-eq(result(5).check, "PASS", "a convention read the blip")
+eq(result(4).check, "PASS", "a convention read the blip, the cursor on an empty spot")
 eq(#T.state.points.working, 1, "...exactly one")
 eq(T.state.points.working[1], "center", "...centre offsets")
 check(logged("point center %(31%.000, %-19%.000%): far nothing; at once Peacebloom; 0%.1 s later Peacebloom HIT"),
     "...logged with its arguments")
-check(logged("point screen %(1116%.000, 696%.000%): far nothing; at once nil"), "...pixels read nothing")
 
-S.Run()                                                    -- 6 sweep
-eq(result(6).check, "PASS", "the sweep found the hovered blip")
-S.Answer(false)                                            -- 7
+poll()
+eq(result(5).check, "PASS", "the sweep found the blip where it is")
+check(logged("sweep center: 1 names .*%(the kept blip, where it is%)"), "...said so")
 
-poll()                                                     -- 8 sweeps while hovering
+WoW.leaveMap()                                             -- 6 conventions, soft cursor
+poll()
+check(T.state.softPoints ~= nil, "soft conventions started")
+eq(WoW.softCursor, true, "...with the soft cursor on")
+WoW.drainTimers()
+poll()
+eq(result(6).check, "PASS", "a convention read the blip with the soft cursor, the cursor off the map")
+eq(T.state.softPoints.working[1], "center", "...centre offsets")
+eq(WoW.softCursor, false, "...then the soft cursor off")
+check(logged("point %(soft%): the blip read back with center; cursor on the map false"), "...logged")
+
+eq(result(7).check, "PASS", "the soft sweep found the blip where it is")   -- 7 ran on arrival
+eq(WoW.softCursor, false, "...and turned the soft cursor off")
+
+poll()                                                     -- 8 own hover after soft
 eq(record().at, 8, "waits for the cursor on the blip")
 WoW.hover(31, -19)
 poll()
-check(T.state.hoverJob ~= nil, "hovered sweeps started")
+eq(result(8).status, "done", "the player's own hover reads the blip again")
+
+poll()                                                     -- 9 soft sweeps while hovering
+check(T.state.hoverJob ~= nil, "hovered soft sweeps started")
 WoW.advance(11)
-eq(result(8).check, "PASS", "the mouseover read the blip after every sweep (put back on the cursor)")
-check(T.state.hoverJob.sweeps >= 30, "...about 3 sweeps a second: " .. T.state.hoverJob.sweeps)
-S.Answer(false)                                            -- 9
+eq(result(9).check, "PASS", "the mouseover read the blip after every sweep")
+check(T.state.hoverJob.soft and T.state.hoverJob.sweeps >= 30, "...about 3 soft sweeps a second: " .. T.state.hoverJob.sweeps)
+S.Answer(false)                                            -- 10
 
-WoW.mounted = true                                         -- 10 mount
-WoW.fire("PLAYER_MOUNT_DISPLAY_CHANGED")
-eq(result(10).check, "PASS", "mounted")
-check(logged("PLAYER_MOUNT_DISPLAY_CHANGED; IsMounted true"), "...the event logged")
+S.Run()                                                    -- 11 ping
+settle()
+eq(#WoW.pings, 2, "the kept blip pinged")
+eq(WoW.pings[2][1], 31, "...at its offset x")
+eq(WoW.pings[2][2], -19, "...and y")
+check(result(11).screenshots and #result(11).screenshots == 1, "...with a screenshot")
+S.Answer(true)                                             -- 12
+S.Unsure()                                                 -- 13
 
-WoW.cursorOnMap, WoW.mouseoverAt = false, nil              -- 11 ride
+WoW.leaveMap()                                             -- 14 walk
 poll()
-check(T.state.ride ~= nil, "the radar started")
+check(T.state.walk ~= nil and T.state.walk.soft, "the walk's radar started, soft")
 -- Back leaves the step: its radar stops by itself, no /fp nr stop.
-local first = T.state.ride
+local first = T.state.walk
 S.Back()
-eq(record().at, 10, "Back to the mount step")
+eq(record().at, 13, "Back")
 WoW.advance(1)
-check(first.done, "Back stopped the ride's radar")
+check(first.done, "Back stopped the walk's radar")
 local frozen = first.sweeps
 WoW.advance(2)
 eq(first.sweeps, frozen, "...and it sweeps no more")
 check(logged("radar stopped, its step was left: "), "...saying why")
-WoW.fire("PLAYER_MOUNT_DISPLAY_CHANGED")                   -- 10 again
+S.Unsure()                                                 -- 13 again
 poll()
-check(T.state.ride ~= first and not T.state.ride.done, "back on the ride step, a new radar")
+check(T.state.walk ~= first and not T.state.walk.done, "back on the walk step, a new radar")
 table.insert(WoW.blips, { "Copper Vein", -50, 40 })
 WoW.advance(1)
-check(logged("radar %+[%d.]+ s: Copper Vein at %(%-55, 41%)"), "a node coming into range logged")
-WoW.cursorOnMap = true
+check(logged("radar %+[%d.]+ s: Copper Vein at %(%-51, 41%)"), "a node coming into range logged, where it is")
+WoW.hover(-60, 50)
 WoW.advance(1)
-WoW.cursorOnMap = false
+WoW.leaveMap()
 S.DoneByHand()
-eq(result(12).status, "done", "the radar stopped on arrival")
-check(T.state.ride.done, "...really stopped")
-check(T.state.ride.skipped >= 3, "...it skipped while the cursor was on the map")
-check(logged("radar center: %d+ sweeps, %d+ skipped with the cursor on the map"), "...its summary logged")
-S.Answer(true)                                             -- 13
-
-S.Run()                                                    -- 14 MAP_PING
-S.Answer(true)                                             -- 15
-WoW.refusedSounds[8332] = true
-S.Run()                                                    -- 16 v1's sound
-check(logged("PlaySound%(8332, Master%): returned willPlay=false"), "a refused kit logged as willPlay=false")
-S.Answer(false)                                            -- 17
-WoW.files = { ["Interface\\Cooldown\\ping4"] = 130843 }
-S.Run()                                                    -- 18 ring
+eq(result(15).status, "done", "the radar stopped on arrival")
+check(T.state.walk.done, "...really stopped")
+check(T.state.walk.skipped >= 3, "...it skipped while the cursor was on the map")
+check(logged("radar center soft: %d+ sweeps, %d+ skipped with the cursor on the map"), "...its summary logged")
+S.Answer(true)                                             -- 16
+WoW.files = { ["Interface\\Cooldown\\ping4"] = 131009 }
+S.Run()                                                    -- 17 ring
 settle()
-check(result(18).screenshots and #result(18).screenshots == 1, "the ring screenshot")
-check(logged("= 130843"), "...its file ID logged")
-S.Answer(true)                                             -- 19
-eq(record().at, 20, "at the reload step")
+eq(result(17).status, "done", "the ring shows (a real strata)")
+check(result(17).screenshots and #result(17).screenshots == 1, "...with a screenshot")
+S.Answer(true)                                             -- 18
+eq(record().at, 19, "at the reload step")
 eq(errors(), 0, "no step threw")
 eq(#WoW.chat, 0, "still nothing in chat")
+eq(WoW.softCursor, false, "the soft cursor is off at the end")
 fp("steps stop")
 
--- Stop during the ride: the radar stops with the procedure (Codex on #5).
-fp("steps nr blips")
-for _ = 1, 20 do if record().at < 11 then S.Skip() end end
-eq(record().at, 11, "skipped to the ride")
+-- Stop during the walk: the radar stops with the procedure (Codex on #5).
+fp("steps nr soft")
+for _ = 1, 30 do if record().at < 14 then S.Skip() end end
+eq(record().at, 14, "skipped to the walk")
+WoW.leaveMap()
 poll()
-local ride = T.state.ride
-check(ride and not ride.done, "the ride's radar runs")
+local walk = T.state.walk
+check(walk and not walk.done, "the walk's radar runs")
 fp("steps stop")
 eq(record().status, "stopped", "procedure stopped")
 WoW.advance(1)
-check(ride.done, "Stop stopped the radar")
-frozen = ride.sweeps
+check(walk.done, "Stop stopped the radar")
+frozen = walk.sweeps
 WoW.advance(2)
-eq(ride.sweeps, frozen, "...and it sweeps no more")
+eq(walk.sweeps, frozen, "...and it sweeps no more")
 -- A radar from the command isn't the procedure's: it runs with none active.
-fp("nr radar")
+fp("nr radar soft")
 WoW.advance(2)
 check(T.state.radar.sweeps >= 5 and not T.state.radar.done, "the command's radar keeps sweeping")
 fp("nr stop")
 check(T.state.radar.done, "...until /fp nr stop")
 
 --------------------------------------------------------------------------------
--- A client that ignores UpdateMouseoverAtPoint: the hover stays readable from
--- anywhere, so the far point reads it too and no convention may pass.
+-- Clients where it doesn't work must not pass
 --------------------------------------------------------------------------------
 
-WoW.mouseoverStuck, WoW.mouseoverPoint = true, nil
+-- The soft cursor does nothing: with the cursor off the map, no convention.
+WoW.softIgnored = true
+WoW.hover(31, -19)
+fp("nr hover")
+WoW.leaveMap()
+fp("nr point soft")
+WoW.drainTimers()
+eq(#T.state.softPoints.working, 0, "a soft cursor that does nothing passes no convention")
+eq(WoW.softCursor, false, "point soft turns the soft cursor off when it's done")
+WoW.softIgnored = false
+
+-- The mouseover never moves: the hover stays readable from anywhere, so the
+-- far point reads it too and no convention may pass.
+WoW.mouseoverStuck = true
 WoW.hover(31, -19)
 fp("nr hover")
 WoW.cursorOnMap = false                                    -- the stuck client still reads the hover
@@ -223,7 +263,9 @@ if f then
         n = n + 1
         check(widget[name] or documented[name:match(":(%a+)$")], "method exists on Forever: " .. name)
     end
-    check(WoW.methodsCalled["Minimap:UpdateMouseoverAtPoint"], "the candidate was called on the Minimap")
+    for _, m in ipairs({ "UpdateMouseoverAtPoint", "SetUsingSoftCursor", "PingLocation", "GetPingPosition" }) do
+        check(WoW.methodsCalled["Minimap:" .. m], "called on the Minimap: " .. m)
+    end
     check(n >= 10, "recorded the method calls (" .. n .. ")")
 else
     io.write("  method check SKIPPED (no API dump at " .. WoW.DUMP .. ")\n")

@@ -311,9 +311,13 @@ function GetFileIDFromPath(path) return WoW.files and WoW.files[path] or nil end
 -- (its units times 1.2 are screen pixels). The cursor is in pixels:
 -- WoW.cursor = { x, y }; WoW.cursorOnMap says whether it's over the map.
 -- Blips: WoW.blips = { { name, dx, dy } }, offsets from the map's centre in
--- its units. The mouseover reads every blip within 6 units of the last point
--- UpdateMouseoverAtPoint got, as WoW.mouseoverConvention(x, y) turns it into
--- a centre offset. WoW.mouseoverStuck makes UpdateMouseoverAtPoint do nothing.
+-- its units. The mouseover reads every blip within 6 units of:
+-- - the last point UpdateMouseoverAtPoint got (as WoW.mouseoverConvention(x, y)
+--   turns it into a centre offset), but only while the cursor is on the map
+--   (round 1, 70450) or the soft cursor is on (SetUsingSoftCursor; what round 2
+--   measures; WoW.softIgnored makes it do nothing);
+-- - else the cursor, while it's on the map.
+-- WoW.mouseoverStuck makes UpdateMouseoverAtPoint do nothing.
 --------------------------------------------------------------------------------
 
 Minimap = CreateFrame("Frame", "Minimap", UIParent)
@@ -332,6 +336,22 @@ function Methods.UpdateMouseoverAtPoint(w, x, y)
     if WoW.mouseoverStuck then return end
     WoW.mouseoverPoint = { x, y }
 end
+function Methods.SetUsingSoftCursor(w, on)
+    assert(type(on) == "boolean", "SetUsingSoftCursor takes a bool")
+    WoW.softCursor = on
+end
+-- The ping: recorded, then MINIMAP_PING (unitTarget, y, x), as documented.
+WoW.pings = {}
+function Methods.PingLocation(w, x, y)
+    assert(type(x) == "number" and type(y) == "number", "PingLocation takes two numbers")
+    table.insert(WoW.pings, { x, y })
+    WoW.pingAt = { x, y }
+    WoW.fire("MINIMAP_PING", "player", y, x)
+end
+function Methods.GetPingPosition(w)
+    local p = WoW.pingAt or { 0, 0 }
+    return p[1], p[2]
+end
 
 WoW.cursor = { 0, 0 }
 WoW.cursorOnMap = false
@@ -345,11 +365,18 @@ function WoW.blipPixels(dx, dy)
     return (r[1] + r[3] / 2 + dx) * s, (r[2] + r[4] / 2 + dy) * s
 end
 
--- The real cursor resting on a blip: the client's own mouseover follows it.
+-- The real cursor resting on the map (a blip or not): the client's own
+-- mouseover follows it.
 function WoW.hover(dx, dy)
     WoW.cursor = { WoW.blipPixels(dx, dy) }
     WoW.cursorOnMap = true
-    WoW.mouseoverPoint, WoW.mouseoverAt = nil, { dx, dy }
+    WoW.mouseoverPoint, WoW.cursorAt = nil, { dx, dy }
+end
+
+-- The cursor leaves the map, onto the game world.
+function WoW.leaveMap()
+    WoW.cursor = { 10, 10 }
+    WoW.cursorOnMap, WoW.cursorAt = false, nil
 end
 
 local function blipsAt(dx, dy)
@@ -364,10 +391,11 @@ C_TooltipInfo = {
     -- MayReturnNothing (TooltipInfoDocumentation.lua:619).
     GetMinimapMouseover = function()
         local dx, dy
-        if WoW.mouseoverPoint then
+        local pointCounts = WoW.cursorOnMap or (WoW.softCursor and not WoW.softIgnored)
+        if WoW.mouseoverPoint and pointCounts then
             dx, dy = WoW.mouseoverConvention(WoW.mouseoverPoint[1], WoW.mouseoverPoint[2])
-        elseif WoW.mouseoverAt then
-            dx, dy = WoW.mouseoverAt[1], WoW.mouseoverAt[2]
+        elseif WoW.cursorAt then
+            dx, dy = WoW.cursorAt[1], WoW.cursorAt[2]
         else
             return nil
         end
