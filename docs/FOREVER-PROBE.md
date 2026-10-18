@@ -236,3 +236,23 @@ without Herbalism.
 So Forever keeps Classic's per-node requirements (type 291 with the level; type 290 without the
 profession), the skill filter can read the skill plainly, and Cultivation's state is readable everywhere as
 "on cooldown" = `isActive` and not `isOnGCD` (both plain in combat, where the durations are secret).
+
+### A blip's map coordinates: `coords`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#27)
+
+The conversion is HereBeDragons-Pins' minimap drawing inverted (`HereBeDragons-Pins-2.0.lua`): the
+blip's offset in the map's own units x `C_Minimap.GetViewRadius()` / the map's half-width = yards,
+up is north and right is east, the zone map's y grows southward, each axis over its own side of
+`C_Map.GetMapWorldSize`.
+
+| What | Measured |
+|---|---|
+| `GetViewRadius()` outdoors | zoom 0 **233.3**, 3 **133.3**, 5 **66.7** yards (HereBeDragons' table: 466.7, 266.7, 133.3 across) |
+| indoors | zoom 0 **150**, 2 **90**, 5 **25** (HereBeDragons: 300, 180, 50 across) |
+| The map's half-width | 99 units (a 198-unit map), at every zoom |
+| North-up, Earthroot seen 60 yd away | predicted (46.76, 45.77), the player stood at (46.82, 45.96) to gather it: **7.5 yd** |
+| North-up, Peacebloom seen 136 yd away | predicted (44.28, 45.33), stood at (44.34, 45.26): **4.0 yd** |
+| Rotate Minimap | **Forever's Options have no such setting** (owner); `rotateMinimap` read `"0"` throughout. The rotating case wasn't measured |
+| The map | Durotar (1411, 5287 x 3525 yd) outdoors and inside a building alike |
+
+Within reach of the node both times (a gather is cast from about 5 yards), from a sweep whose grid
+is 14 units (33 yards at zoom 0): the conversion is right.
