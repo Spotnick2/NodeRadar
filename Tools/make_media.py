@@ -1,4 +1,4 @@
-"""Generate NodeRadar's own textures and sound into Media/ (never hand-edit the outputs).
+"""Generate NodeRadar's own textures into Media/ (never hand-edit the outputs).
 
     python Tools/make_media.py
 
@@ -8,20 +8,14 @@ additively, so they glow on any minimap skin with no square around them.
 
   SonarRing   a thin ring with a soft halo, scaled out from the node
   SonarGlow   a round soft glow that stays on the node a moment
-  Sonar.ogg   the sonar sound (#13): a ping with two fading echoes and a short
-              tail, synthesised here and encoded by ffmpeg (libvorbis); only
-              this script needs ffmpeg, the .ogg is committed
+The sounds come from Tools/import_sounds.py.
 
-Plain Python otherwise: 32-bit uncompressed TGA, top-left origin.
+Plain Python, no dependencies: 32-bit uncompressed TGA, top-left origin.
 """
 
 import math
 import os
-import shutil
 import struct
-import subprocess
-import tempfile
-import wave
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MEDIA = os.path.join(ROOT, "Media")
@@ -68,68 +62,12 @@ def glow(d):
     return math.exp(-(d / 11.0) ** 2) if d < SIZE / 2 else 0.0
 
 
-RATE = 44100
-
-
-def ping(t):
-    """One ping at time t (s): a bright attack, a ringing decay, a slight drop in pitch."""
-    if t < 0:
-        return 0.0
-    attack = min(1.0, t / 0.004)
-    decay = math.exp(-t / 0.28)
-    f = 1250.0 * (1.0 - 0.03 * min(1.0, t / 0.6))
-    phase = 2 * math.pi * f * t
-    return attack * decay * (math.sin(phase) + 0.18 * math.sin(2 * phase) + 0.06 * math.sin(3.01 * phase))
-
-
-def sonar_samples():
-    """The ping, two softer echoes (as if back from the node), and a short tail."""
-    length = 1.8
-    out = []
-    for i in range(int(RATE * length)):
-        t = i / RATE
-        v = ping(t) + 0.32 * ping(t - 0.34) + 0.11 * ping(t - 0.68)
-        out.append(v)
-    # The tail: a few feedback delays, mixed in quietly.
-    for delay, gain in ((0.043, 0.30), (0.067, 0.24), (0.089, 0.18)):
-        d = int(RATE * delay)
-        tail = [0.0] * len(out)
-        for i in range(d, len(out)):
-            tail[i] = out[i - d] * gain + tail[i - d] * gain
-        out = [a + 0.5 * b for a, b in zip(out, tail)]
-    # Fade the last 0.2 s, then normalise to -6 dBFS.
-    fade = int(RATE * 0.2)
-    for k in range(fade):
-        out[-fade + k] *= 1 - k / fade
-    peak = max(abs(v) for v in out)
-    return [v / peak * 0.5 for v in out]
-
-
-def write_sonar():
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        print("skipped Sonar.ogg: ffmpeg not found")
-        return
-    path = os.path.join(MEDIA, "Sonar.ogg")
-    with tempfile.TemporaryDirectory() as tmp:
-        wav = os.path.join(tmp, "sonar.wav")
-        with wave.open(wav, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(RATE)
-            w.writeframes(b"".join(struct.pack("<h", int(v * 32767)) for v in sonar_samples()))
-        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", wav, "-c:a", "libvorbis", "-q:a", "5",
-                        "-map_metadata", "-1", path], check=True)
-    print("wrote", os.path.relpath(path, ROOT))
-
-
 def main():
     os.makedirs(MEDIA, exist_ok=True)
     for name, fn in (("SonarRing", ring), ("SonarGlow", glow)):
         path = os.path.join(MEDIA, name + ".tga")
         write_tga(path, field(fn))
         print("wrote", os.path.relpath(path, ROOT))
-    write_sonar()
 
 
 if __name__ == "__main__":

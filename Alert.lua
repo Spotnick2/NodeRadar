@@ -164,15 +164,17 @@ function Alert.Sonar(x, y, kind)
     end
 end
 
--- The sounds (#13): Blizzard's minimap ping, our own sonar (Tools/make_media.py),
--- and two of the client's files by FileDataID, the owner's picks, both heard on
--- 70450: Spell_Uni_SonarPing_01 and 12.0_UI_Alert_Tonal_Radar_Ping (a 12.0
--- file, in this client too).
+-- The sounds (#13), the owner's picks: Blizzard's minimap ping; two of the
+-- client's files by FileDataID, both heard on 70450 (Spell_Uni_SonarPing_01,
+-- and 12.0_UI_Alert_Tonal_Radar_Ping, a 12.0 file in this client too); three
+-- of ours from Pixabay (Tools/import_sounds.py, README "Sounds").
 Alert.SOUNDS = {
     ping      = { kit = Alert.MAP_PING },
-    sonar     = { file = Alert.MEDIA .. "Sonar.ogg" },
     sonarping = { file = 569006 },
     radar     = { file = 7466154 },
+    sonar     = { file = Alert.MEDIA .. "Sonar.ogg" },
+    radarblip = { file = Alert.MEDIA .. "RadarBlip.ogg" },
+    deepsea   = { file = Alert.MEDIA .. "DeepSea.ogg" },
 }
 
 -- The chosen sound, whatever db.sound says (the Options page's choice plays it).

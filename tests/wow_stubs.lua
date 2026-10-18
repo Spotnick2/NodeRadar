@@ -138,6 +138,22 @@ function CreateFrame(ftype, name, parent, template)
 end
 function Methods.GetChildren(w) return unpack(w._children or {}) end
 
+-- A WowStyle1DropdownTemplate's menu (GuildSpy's stub): the generator, which
+-- WoW.menu(dd) runs with a recording root; GenerateMenu counts refreshes.
+-- DoesTemplateExist says no to WoW.missingTemplates[name].
+WoW.missingTemplates = {}
+function DoesTemplateExist(name) return not WoW.missingTemplates[name] end
+function Methods.SetupMenu(w, fn) w._menu = fn end
+function Methods.GenerateMenu(w) w._generated = (w._generated or 0) + 1 end
+-- The menu's items: { label, selected = bool, pick = fn }.
+function WoW.menu(dd)
+    local items = {}
+    dd._menu(dd, { CreateRadio = function(_, label, isSelected, onSelect)
+        items[#items + 1] = { label = label, selected = isSelected() == true, pick = onSelect }
+    end })
+    return items
+end
+
 -- Check buttons: a click toggles the check, then runs OnClick (as the client).
 function Methods.SetChecked(w, on) w._checked = on and true or false end
 function Methods.GetChecked(w) return w._checked == true end

@@ -29,7 +29,8 @@ alert.
 
 **Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; how often it looks,
 standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
-for the game to clean up); the sound (the minimap ping, a sonar ping, a radar ping or NodeRadar's own sonar), the sonar on the node, a chat
+for the game to clean up); the sound (a dropdown: the minimap ping, a sonar or radar ping from the game, or a sonar, radar
+blip or deep-sea sonar shipped with NodeRadar), the sonar on the node, a chat
 line, Blizzard's ping, the time between alerts, a test button; learning by toggling tracking.
 
 ## Commands
@@ -45,4 +46,13 @@ line, Blizzard's ping, the time between alerts, a test button; learning by toggl
 
 ## License
 
-MIT
+MIT, except the three alert sounds below.
+
+## Sounds
+
+`Media/Sonar.ogg`, `Media/RadarBlip.ogg` and `Media/DeepSea.ogg` are royalty-free sound effects from
+[Pixabay](https://pixabay.com), under the
+[Pixabay Content License](https://pixabay.com/service/terms/), not MIT: "sonar ping"
+(freesound_community, #95840), "radar ping" (#306440) and "deepsea sonar" (Dragon Studio, #386156).
+Trimmed, made mono and evened in loudness by `Tools/import_sounds.py`. They ship inside NodeRadar
+only, never as files of their own.

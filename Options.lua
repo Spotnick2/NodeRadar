@@ -3,7 +3,7 @@
 -- page"), as GlassMail's: a plain Frame with .name, hidden at creation (or the
 -- first visit is blank), controls built on the first OnShow, every value
 -- re-read on every OnShow, registered once at PLAYER_LOGIN from NodeRadar.lua.
--- Choices are radio groups, not dropdowns.
+-- Choices are radio groups; the sound, a dropdown (the owner).
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
@@ -62,10 +62,11 @@ local function checkbox(parent, anchor, text, key)
     return cb
 end
 
--- Choices side by side under `title`: { {value, text}, ... }; onPick runs after
--- a click. A value set some other way (/nr cd 7) checks none of them, is named
--- after the title, and is kept: refreshing only reads (Codex, #13).
-local function radios(parent, anchor, title, key, choices, unit, onPick)
+-- Choices side by side under `title`, perRow to a row (all by default):
+-- { {value, text}, ... }; onPick runs after a click. A value set some other way
+-- (/nr cd 7) checks none of them, is named after the title, and is kept:
+-- refreshing only reads (Codex, #13). Returns the first button of the last row.
+local function radios(parent, anchor, title, key, choices, unit, onPick, perRow)
     local head = label(parent, title)
     head:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
     local group, prev = {}, nil
@@ -77,10 +78,13 @@ local function radios(parent, anchor, title, key, choices, unit, onPick)
         end
         head:SetText(matched and title or ("%s (now %s %s)"):format(title, tostring(current), unit))
     end
-    for _, c in ipairs(choices) do
+    for i, c in ipairs(choices) do
         local rb = radioButton(parent, c[2])
         rb.value = c[1]
-        if prev then
+        if perRow then                                 -- in columns, so the rows line up
+            local col, row = (i - 1) % perRow, math.floor((i - 1) / perRow)
+            rb:SetPoint("TOPLEFT", head, "BOTTOMLEFT", col * 170, -4 - row * 22)
+        elseif prev then
             rb:SetPoint("LEFT", prev.text, "RIGHT", 16, 0)
         else
             rb:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -4)
@@ -95,7 +99,34 @@ local function radios(parent, anchor, title, key, choices, unit, onPick)
     end
     refreshers[#refreshers + 1] = sync
     Options._test.radios[key] = group
-    return group[1]
+    return group[perRow and (math.ceil(#group / perRow) - 1) * perRow + 1 or 1]
+end
+
+-- A dropdown of choices (the owner, #13): radio items in Retail's
+-- WowStyle1DropdownTemplate, as Blizzard's AddOns list draws one on this build
+-- (Blizzard_AddOnList/AddonList.xml:126) and GuildSpy uses it. Where the client
+-- lacks the template, the radio group, three to a row.
+local function dropdown(parent, anchor, title, key, choices, onPick)
+    local exists = rawget(_G, "DoesTemplateExist")
+    if not (exists and exists("WowStyle1DropdownTemplate")) then
+        return radios(parent, anchor, title, key, choices, "", onPick, 3)
+    end
+    local head = label(parent, title)
+    head:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+    local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+    dd:SetWidth(200)
+    dd:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -6)
+    dd:SetupMenu(function(_, root)
+        for _, c in ipairs(choices) do
+            root:CreateRadio(c[2], function() return NR.db[key] == c[1] end, function()
+                NR.Set(key, c[1])
+                if onPick then onPick() end
+            end)
+        end
+    end)
+    refreshers[#refreshers + 1] = function() dd:GenerateMenu() end   -- a change by /nr shows
+    Options._test.dropdowns[key] = dd
+    return dd
 end
 
 local function heading(parent, anchor, text)
@@ -134,10 +165,10 @@ local function build()
 
     local alert = heading(panel, cost, "The alert")
     local sound = checkbox(panel, alert, "A sound", "sound")
-    local which = radios(panel, sound, "Which sound", "soundKind",
+    local which = dropdown(panel, sound, "Which sound (it plays when chosen)", "soundKind",
         { { "ping", "The minimap ping" }, { "sonarping", "Sonar ping" }, { "radar", "Radar ping" },
-          { "sonar", "NodeRadar's sonar" } },
-        "", function() NR.Alert.PlaySound() end)
+          { "sonar", "Sonar" }, { "radarblip", "Radar blip" }, { "deepsea", "Deep-sea sonar" } },
+        function() NR.Alert.PlaySound() end)
     local sonar = checkbox(panel, which, "The sonar on the node (green for herbs, gold for ore)", "ring")
     local chat = checkbox(panel, sonar, "A line in chat", "chat")
     local ping = checkbox(panel, chat, "Blizzard's ping on the node too (solo only: in a group it shows on everyone's map)", "ping")
@@ -179,4 +210,4 @@ function Options.Open()
     return pcall(Settings.OpenToCategory, category:GetID()) and true or false
 end
 
-Options._test = { panel = panel, refreshers = refreshers, radios = {} }
+Options._test = { panel = panel, refreshers = refreshers, radios = {}, dropdowns = {} }

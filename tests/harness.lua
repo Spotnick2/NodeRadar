@@ -114,10 +114,22 @@ function checkMethods(required)
         if fn then documented[fn] = true end
     end
     f:close()
+    -- Methods a template's Lua mixin adds aren't in the dump: found in the
+    -- client's own FrameXML instead (wow-ui-source, 70450).
+    local MIXINS = { ["DropdownButton:SetupMenu"] = "Blizzard_Menu/DropdownButton.lua",
+                     ["DropdownButton:GenerateMenu"] = "Blizzard_Menu/DropdownButton.lua" }
+    local function inFrameXML(name)
+        local file = MIXINS[name]
+        local src = file and io.open("../wow-ui-source/Interface/AddOns/" .. file, "r")
+        if not src then return false end
+        local body = src:read("*a")
+        src:close()
+        return body:find("function %a+Mixin:" .. name:match(":(%a+)$") .. "%(") ~= nil
+    end
     local n = 0
     for name in pairs(WoW.methodsCalled) do
         n = n + 1
-        check(widget[name] or documented[name:match(":(%a+)$")], "method exists on Forever: " .. name)
+        check(widget[name] or documented[name:match(":(%a+)$")] or inFrameXML(name), "method exists on Forever: " .. name)
     end
     for _, m in ipairs(required or {}) do check(WoW.methodsCalled[m], "called: " .. m) end
     check(n >= 10, "recorded the method calls (" .. n .. ")")

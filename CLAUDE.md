@@ -49,8 +49,9 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   (every guard in PLAN.md: the experiment is voided by movement, zone, loading, death, the gamepad,
   a zoom, a failed sweep or the player's own tracking change; tracking is always restored, across a
   reload through `NodeRadarCharDB.pendingRestore`, and the player's own choice wins).
-- `Alert.lua`: new nodes by a rise in a name's count; the sound (the map ping or `Media\Sonar.ogg`),
-  the sonar, chat line, solo-only ping.
+- `Alert.lua`: new nodes by a rise in a name's count; the sound (`Alert.SOUNDS`: the map ping, two of
+  the client's files by FileDataID, three `Media\*.ogg` from Pixabay made by `Tools/import_sounds.py`,
+  README "Sounds"), the sonar, chat line, solo-only ping.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

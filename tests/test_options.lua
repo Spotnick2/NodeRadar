@@ -31,7 +31,16 @@ local function checked(key)
 end
 eq(checked("interval"), 2, "standing still: 2 s checked")
 eq(checked("yards"), 4, "moving: 4 yards checked")
-eq(checked("soundKind"), "ping", "the minimap ping checked")
+-- The sound is a dropdown (the owner): radio items, the current one selected.
+local SOUND_LABELS = { ping = "The minimap ping", sonarping = "Sonar ping", radar = "Radar ping",
+                       sonar = "Sonar", radarblip = "Radar blip", deepsea = "Deep-sea sonar" }
+local dd = O.dropdowns.soundKind
+check(dd and dd._template == "WowStyle1DropdownTemplate", "the sound: Retail's dropdown")
+eq(O.radios.soundKind, nil, "...not a radio group")
+local function selected()
+    for _, item in ipairs(WoW.menu(dd)) do if item.selected then return item.label end end
+end
+eq(selected(), "The minimap ping", "the minimap ping selected")
 eq(checked("cooldown"), 5, "5 s between alerts checked")
 
 -- A click saves the choice, raw (only what the player sets is saved).
@@ -56,9 +65,9 @@ for _, child in ipairs({ O.panel:GetRegions() }) do
 end
 check(named, "...named after its title (now 7 s)")
 
--- The sound: choosing one plays it; the sonar is our own file.
-local function choose(key, value)
-    for _, rb in ipairs(O.radios[key]) do if rb.value == value then return WoW.click(rb) end end
+-- The sound: choosing one plays it; the sonar ships with the addon.
+local function choose(_, value)
+    for _, item in ipairs(WoW.menu(dd)) do if item.label == SOUND_LABELS[value] then return item.pick() end end
     error("no choice " .. tostring(value))
 end
 local before = #WoW.sounds
@@ -66,7 +75,7 @@ choose("soundKind", "sonar")
 eq(db.soundKind, "sonar", "Sonar chosen")
 local last = WoW.sounds[#WoW.sounds]
 eq(#WoW.sounds, before + 1, "...and played on the choice")
-eq(last and last[1], "Interface\\AddOns\\NodeRadar\\Media\\Sonar.ogg", "...our own Sonar.ogg")
+eq(last and last[1], "Interface\\AddOns\\NodeRadar\\Media\\Sonar.ogg", "...Media/Sonar.ogg")
 eq(next(NR.failures), nil, "...and it played (the file ships): " .. tostring(next(NR.failures)))
 check(io.open("Media/Sonar.ogg", "rb") ~= nil, "Media/Sonar.ogg ships")
 
@@ -100,7 +109,20 @@ WoW.refusedSounds = {}
 NR.failures.sound = nil
 SlashCmdList.NODERADAR("sound sonarping")
 eq(db.soundKind, "sonarping", "/nr sound sonarping")
-eq(#O.radios.soundKind, 4, "four sounds on the page")
+eq(#WoW.menu(dd), 6, "six sounds in the dropdown")
+eq(selected(), "Sonar ping", "...the one chosen by /nr selected")
+local generated = dd._generated or 0
+O.panel:Hide()
+O.panel:Show()
+check((dd._generated or 0) > generated, "...and the page refreshes the dropdown's text on show")
+
+-- Ours from Pixabay: each plays from the file that ships (the stub plays only
+-- a file that exists, so a typo in a name fails here).
+for key, file in pairs({ sonar = "Sonar.ogg", radarblip = "RadarBlip.ogg", deepsea = "DeepSea.ogg" }) do
+    choose("soundKind", key)
+    eq(WoW.sounds[#WoW.sounds][1], "Interface\\AddOns\\NodeRadar\\Media\\" .. file, key .. " plays " .. file)
+end
+eq(next(NR.failures), nil, "...all three play: " .. tostring(next(NR.failures)))
 
 -- /nr sound ping | sonar.
 SlashCmdList.NODERADAR("sound ping")
