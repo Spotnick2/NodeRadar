@@ -78,3 +78,21 @@ function API.Gamepad()
     local ok, on = pcall(f)
     return ok and on == true
 end
+
+-- The TOC's version; nil when unreadable.
+function API.AddOnVersion(addon)
+    local get = C_AddOns and C_AddOns.GetAddOnMetadata
+    if not get then return nil end
+    local ok, v = pcall(get, addon, "Version")
+    if not ok or API.IsSecret(v) or type(v) ~= "string" then return nil end
+    return v
+end
+
+-- A frame from a template, and whether the template really applied: a missing
+-- template doesn't throw, it returns a bare frame, so `proof` names a field
+-- the template makes (GlassMail's, from GlassUnitFrames).
+function API.SafeFrame(ftype, parent, template, proof)
+    local ok, f = pcall(CreateFrame, ftype, nil, parent, template)
+    if ok and f then return f, (proof == nil) or f[proof] ~= nil end
+    return CreateFrame(ftype, nil, parent), false
+end

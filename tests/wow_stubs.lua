@@ -126,6 +126,8 @@ WoW.newWidget = newWidget
 function CreateFrame(ftype, name, parent, template)
     local w = newWidget(ftype, parent, name)
     w._template = template
+    -- The radio template's own label (CheckButtonTemplates.xml: parentKey "text").
+    if template == "UIRadioButtonTemplate" then w.text = Methods.CreateFontString(w) end
     table.insert(WoW.frames, w)
     if parent then
         parent._children = parent._children or {}
@@ -135,6 +137,14 @@ function CreateFrame(ftype, name, parent, template)
     return w
 end
 function Methods.GetChildren(w) return unpack(w._children or {}) end
+
+-- Check buttons: a click toggles the check, then runs OnClick (as the client).
+function Methods.SetChecked(w, on) w._checked = on and true or false end
+function Methods.GetChecked(w) return w._checked == true end
+function WoW.click(w)
+    if w._type == "CheckButton" then w._checked = not w._checked end
+    if w._scripts.OnClick then w._scripts.OnClick(w, "LeftButton") end
+end
 
 function Methods.Show(w) w._shown = true; if w._scripts.OnShow then w._scripts.OnShow(w) end end
 function Methods.Hide(w)
@@ -337,6 +347,30 @@ function PlaySound(kit, channel)
     if WoW.refusedSounds[kit] then return false, nil end
     return true, #WoW.sounds
 end
+-- An addon's own file plays when it's there (the porting guide: PlaySoundFile
+-- refuses game-file paths, plays an addon's); here "there" is the repo's copy.
+function PlaySoundFile(path, channel)
+    table.insert(WoW.sounds, { path, channel })
+    local rel = type(path) == "string" and path:match("^Interface\\AddOns\\NodeRadar\\(.+)$")
+    local f = rel and io.open((rel:gsub("\\", "/")), "rb")
+    if not f or WoW.refusedSounds[path] then return nil, nil end
+    f:close()
+    return true, #WoW.sounds
+end
+
+-- The Settings framework (Blizzard_Settings): canvas categories, recorded.
+WoW.categories = {}
+Settings = {
+    RegisterCanvasLayoutCategory = function(frame, name)
+        local c = { frame = frame, name = name, id = #WoW.categories + 1 }
+        function c:GetID() return self.id end
+        table.insert(WoW.categories, c)
+        return c
+    end,
+    RegisterAddOnCategory = function(c) c.registered = true end,
+    OpenToCategory = function(id) WoW.openedCategory = id end,
+}
+
 function GetFileIDFromPath(path) return WoW.files and WoW.files[path] or nil end
 
 --------------------------------------------------------------------------------

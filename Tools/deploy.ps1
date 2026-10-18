@@ -37,9 +37,9 @@ function Deploy-Addon {
     # The TOC is the list of what ships.
     $lua = @(Get-Content -LiteralPath (Join-Path $RepoRoot "NodeRadar.toc") | ForEach-Object { $_.Trim() } |
         Where-Object { $_ -notmatch "^#" -and $_ -match "[.]lua$" })
-    # Our own textures ship too (Media\*.tga, Tools\make_media.py's).
-    $media = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot "Media") -Filter *.tga -File -ErrorAction SilentlyContinue |
-        ForEach-Object { "Media\" + $_.Name })
+    # Our own textures and sound ship too (Media\*.tga, *.ogg: Tools\make_media.py's).
+    $media = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot "Media") -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in ".tga", ".ogg" } | ForEach-Object { "Media\" + $_.Name })
     $files = @("NodeRadar.toc", "LICENSE") + $lua + $media
     foreach ($f in $files) {
         $src = Join-Path $RepoRoot $f

@@ -97,3 +97,28 @@ function loadProbe()
     WoW.fire("PLAYER_LOGIN")
     return ns
 end
+
+-- Every widget method the test called exists on Forever (the API dump), and
+-- the `required` ones ("Type:Method") were called. Skipped without the dump (CI).
+function checkMethods(required)
+    local f = io.open(WoW.DUMP, "r")
+    if not f then
+        io.write("  method check SKIPPED (no API dump at " .. WoW.DUMP .. ")\n")
+        return
+    end
+    local widget, documented = {}, {}
+    for line in f:lines() do
+        local wm = line:match("^(%a+:%a+)%s*$")
+        if wm then widget[wm] = true end
+        local fn = line:match("^([%a_]+)%(")
+        if fn then documented[fn] = true end
+    end
+    f:close()
+    local n = 0
+    for name in pairs(WoW.methodsCalled) do
+        n = n + 1
+        check(widget[name] or documented[name:match(":(%a+)$")], "method exists on Forever: " .. name)
+    end
+    for _, m in ipairs(required or {}) do check(WoW.methodsCalled[m], "called: " .. m) end
+    check(n >= 10, "recorded the method calls (" .. n .. ")")
+end

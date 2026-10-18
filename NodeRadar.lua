@@ -13,7 +13,8 @@ local ADDON_NAME = ...
 
 local DEFAULTS = {
     enabled  = true,
-    sound    = true,    -- MAP_PING
+    sound    = true,    -- a sound with the alert
+    soundKind = "ping", -- which: "ping" (MAP_PING) or "sonar" (Media\Sonar.ogg)
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -21,6 +22,7 @@ local DEFAULTS = {
                         -- turning it back on costs a global cooldown (release check, 70450)
     cooldown = 5,       -- seconds between alerts
     interval = 2,       -- seconds between sweeps standing still; moving, NR.Interval adapts it
+    yards    = 4,       -- moving: about this many yards between sweeps
 }
 -- Settings no longer used: v1's (it never worked on Forever), and the ring's
 -- colour (the sonar is green for herbs, gold for ore). Dropped.
@@ -83,16 +85,30 @@ function NR.Step(now)
 end
 
 -- Seconds until the next sweep, from the movement speed (the owner, release
--- check): about YARDS of movement between sweeps, so 0.57 s at 100% (7 yd/s),
--- 0.95 s at 60%, 1.43 s at 40%; never faster than FASTEST; standing still,
--- db.interval (nothing on the map moves but a spawn). 4 yards, not 2: a sweep
--- is garbage to collect (#11), and a node comes in at the map's edge, far off.
-NR.YARDS, NR.FASTEST = 4, 0.5
+-- check): about db.yards of movement between sweeps, by default 4, so 0.57 s
+-- at 100% (7 yd/s), 0.95 s at 60%, 1.43 s at 40%; never faster than FASTEST
+-- nor slower than standing still; standing still, db.interval (nothing on the
+-- map moves but a spawn). 4 yards, not 2: a sweep is garbage to collect (#11),
+-- and a node comes in at the map's edge, far off.
+NR.FASTEST = 0.5
 function NR.Interval()
     local idle = NR.db.interval
     local speed = API.Speed()
     if not speed or speed <= 0 then return idle end
-    return math.max(NR.FASTEST, math.min(idle, NR.YARDS / speed))
+    return math.max(NR.FASTEST, math.min(idle, NR.db.yards / speed))
+end
+
+-- A setting changed by the player (the Options page, /nr): saved, and what
+-- follows from it done.
+function NR.Set(key, value)
+    NR.db[key] = value
+    if key == "enabled" then Alert.Reset() end
+end
+
+function NR.VersionText()
+    local v = API.AddOnVersion(ADDON_NAME or "NodeRadar")
+    if v == nil or v == "" or v == "dev" or v:find("@project%-version@") then return "dev" end
+    return v
 end
 
 local radar = CreateFrame("Frame")
@@ -111,7 +127,7 @@ end)
 --------------------------------------------------------------------------------
 
 local events = CreateFrame("Frame")
-API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
+API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_DEAD", "MINIMAP_UPDATE_ZOOM",
     "MINIMAP_UPDATE_TRACKING" })
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
@@ -124,7 +140,9 @@ events:SetScript("OnEvent", function(_, event, ...)
         return
     end
     if not NR.db then return end
-    if event == "PLAYER_ENTERING_WORLD" then
+    if event == "PLAYER_LOGIN" then
+        NR.Options.Register()
+    elseif event == "PLAYER_ENTERING_WORLD" then
         Learn.loading = false
         Alert.NewArea(now)
         Learn.Resume(now)
@@ -205,10 +223,10 @@ local function known()
 end
 
 local function help()
-    API.Say("/nr: radar on or off")
+    API.Say("/nr: radar on or off. /nr options: the Options page")
     API.Say("/nr sound | ring | chat | ping | learn: toggle the sound, the ring, a chat line, Blizzard's ping "
         .. "(solo only), learning by turning tracking off and on")
-    API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
+    API.Say("/nr sound ping | sonar: which sound. /nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
 
@@ -221,9 +239,15 @@ SlashCmdList.NODERADAR = function(msg)
     local cmd, rest = msg:match("^%s*(%S*)%s*(.-)%s*$")
     cmd = (cmd or ""):lower()
     if cmd == "" then
-        db.enabled = not db.enabled
-        Alert.Reset()
+        NR.Set("enabled", not db.enabled)
         API.Say("radar " .. onOff(db.enabled))
+    elseif cmd == "options" or cmd == "config" then
+        if not NR.Options.Open() then API.Say("the Options page can't open here: Esc > Options > AddOns") end
+    elseif cmd == "sound" and Alert.SOUNDS[rest:lower()] then
+        NR.Set("soundKind", rest:lower())
+        NR.Set("sound", true)
+        API.Say("sound: " .. rest:lower())
+        Alert.PlaySound()
     elseif TOGGLES[cmd] then
         db[cmd] = not db[cmd]
         API.Say(TOGGLES[cmd] .. " " .. onOff(db[cmd]))
