@@ -4,6 +4,8 @@
 ## Author: Spotnick
 ## Version: @project-version@
 ## X-License: MIT
+## X-Curse-Project-ID: 1751109
+## X-Wago-ID: mNwwoLNo
 ## SavedVariables: NodeRadarDB
 ## SavedVariablesPerCharacter: NodeRadarCharDB
 

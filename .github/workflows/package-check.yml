@@ -5,7 +5,9 @@ name: Package check
 # The packager runs as a dry run here. CurseForge builds its releases with its
 # own packager from the tag webhook, against the same .pkgmeta - `check` exists
 # so a packaging mistake surfaces on a pull request instead of in a published
-# zip. On a tag, the `release` job then PUBLISHES a GitHub Release.
+# zip. On a tag, the zip `check` built and checked is published twice more,
+# never rebuilt (Priestly's way, #15): `release` makes the GitHub Release,
+# `wago` uploads it to Wago Addons.
 #
 # -d is the real no-upload switch: merely leaving CF_API_KEY out still lets the
 # packager cut a GitHub release - with the WHOLE CHANGELOG.md as its notes.
@@ -14,13 +16,18 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
-  # Release a tag whose release failed: `check` against the tag's tree, the
+  # Publish a tag again where it failed: `check` against the tag's tree, the
   # notes from main's CHANGELOG.md (so a fixed heading needs no moved tag).
   workflow_dispatch:
     inputs:
       tag:
         description: Existing tag to build and release (e.g. v1.1.0)
         required: true
+      publish:
+        description: Where to publish it
+        type: choice
+        options: [both, github, wago]
+        default: both
 
 permissions:
   contents: read
@@ -92,6 +99,11 @@ jobs:
           v=$(tr -d '\r' < unpacked/NodeRadar/NodeRadar.toc | sed -n 's/^## Version: *//p')
           echo "packaged version: '$v'"
           case "$v" in ''|'@project-version@'|dev) echo "version not substituted"; exit 1 ;; esac
+          # And the store IDs: CurseForge's, and Wago's, which the `wago` job reads (#15).
+          for field in X-Curse-Project-ID X-Wago-ID; do
+            tr -d '\r' < unpacked/NodeRadar/NodeRadar.toc | grep -q "^## $field: ." ||
+              { echo "the packaged TOC has no $field"; exit 1; }
+          done
 
       # .release is hidden, and upload-artifact@v4 skips hidden content by default.
       - name: Keep the zip for inspection
@@ -106,7 +118,9 @@ jobs:
   # with that tag's CHANGELOG.md section as the notes. The only job allowed to write.
   release:
     needs: check
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: >-
+      (github.event_name == 'push' && github.ref_type == 'tag') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish != 'wago')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -146,3 +160,77 @@ jobs:
           case "${TAG,,}" in *alpha*|*beta*) pre=--prerelease ;; esac
           gh release create "$TAG" "$ZIP" --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "NodeRadar ${TAG#v}" --notes-file notes.md $pre
+
+  # The same zip on Wago Addons, through its upload API (Priestly's job): the
+  # project is the packaged TOC's X-Wago-ID, the notes the tag's CHANGELOG.md
+  # section. Only this job sees WAGO_API_TOKEN.
+  wago:
+    needs: check
+    if: >-
+      (github.event_name == 'push' && github.ref_type == 'tag') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish != 'github')
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: noderadar-package
+          path: dist
+
+      - name: The zip is the tag's, and its notes
+        run: |
+          zip="dist/NodeRadar-$TAG-forever.zip"
+          test -f "$zip" || { echo "no $zip"; exit 1; }
+          echo "ZIP=$zip" >> "$GITHUB_ENV"
+          tr -d '\r' < CHANGELOG.md |
+            awk -v h="## $TAG" '$0 == h { on = 1; next } on && /^## / { exit } on' > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "CHANGELOG.md has no '## $TAG' section"; exit 1; }
+
+      # Each interface becomes the patch Wago names it by (16001 -> 1.60.1),
+      # which must be one Wago lists for Forever: a new client build Wago
+      # doesn't know yet stops here. Run the tag again (workflow_dispatch,
+      # wago) once Wago lists it.
+      - name: The Wago upload metadata
+        run: |
+          toc=$(unzip -p "$ZIP" NodeRadar/NodeRadar.toc | tr -d '\r')
+          id=$(sed -n 's/^## X-Wago-ID: *//p' <<< "$toc" | head -1)
+          test -n "$id" || { echo "the packaged TOC has no X-Wago-ID"; exit 1; }
+          echo "WAGO_ID=$id" >> "$GITHUB_ENV"
+          known=$(curl -sS --fail --retry 3 https://addons.wago.io/api/data/game | jq -c '.patches.forever // []')
+          echo "Wago's Forever patches: $known"
+          patches=()
+          for i in $(sed -n 's/^## Interface: *//p' <<< "$toc" | tr ',' ' '); do
+            p=$(printf '%d.%d.%d' $((i / 10000)) $((i / 100 % 100)) $((i % 100)))
+            jq -e --arg p "$p" 'index($p) != null' <<< "$known" > /dev/null ||
+              { echo "Wago lists no Forever patch $p (interface $i)"; exit 1; }
+            patches+=("$p")
+          done
+          case "${TAG,,}" in *alpha*) stability=alpha ;; *beta*) stability=beta ;; *) stability=stable ;; esac
+          jq -n --arg label "$TAG" --arg stability "$stability" --rawfile changelog notes.md \
+            --argjson patches "$(printf '%s\n' "${patches[@]}" | jq -R . | jq -s .)" \
+            '{label: $label, stability: $stability, changelog: $changelog,
+              supported_forever_patches: $patches}' > metadata.json
+          cat metadata.json
+
+      - name: Upload to Wago Addons
+        env:
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+        run: |
+          test -n "$WAGO_API_TOKEN" || { echo "the WAGO_API_TOKEN secret is not set"; exit 1; }
+          code=$(curl -sS --retry 3 --retry-delay 10 -o result.json -w '%{http_code}' \
+            -H "authorization: Bearer $WAGO_API_TOKEN" \
+            -H 'accept: application/json' \
+            -F 'metadata=<metadata.json' \
+            -F "file=@$ZIP" \
+            "https://addons.wago.io/api/projects/$WAGO_ID/version")
+          echo "HTTP $code"
+          case "$code" in
+            200|201) echo "uploaded: https://addons.wago.io/addons/$WAGO_ID" ;;
+            *) cat result.json 2>/dev/null; exit 1 ;;
+          esac

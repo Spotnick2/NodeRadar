@@ -4,6 +4,13 @@ A gathering-node alert for **World of Warcraft: Forever**: with Find Herbs or Fi
 ping and a sonar on the minimap the moment a herb or ore node comes into range: two rings ripple
 out from the node and a glow stays on it, green for herbs, gold for ore.
 
+## Install
+
+Install **NodeRadar** from [CurseForge](https://www.curseforge.com/wow/addons/node-radar) or
+[Wago](https://addons.wago.io/addons/noderadar), with their apps or by unzipping it into the
+`Interface\AddOns` folder inside your Forever game folder. Then `/reload`, or start the game, and
+turn on Find Herbs or Find Minerals.
+
 ## How it works
 
 - **It reads the minimap's blips.** About every 4 yards you move (every 2 s standing still) it
