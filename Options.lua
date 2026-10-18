@@ -190,7 +190,13 @@ local function build()
     test:SetScript("OnClick", function() NR.Alert.Test() end)
     Options._test.test = test
 
-    local learning = heading(panel, test, "Learning")
+    local map = heading(panel, test, "The minimap")
+    local icons = radios(panel, map, "Nodes on the minimap", "icons",
+        { { false, "Blizzard's dots" }, { true, "Each node's item icon" } }, "")
+    local iconsWhy = note(panel, icons, "An icon covers Blizzard's dot once NodeRadar has measured where the node "
+        .. "is; near the map's edge the dot shows. Dimmed: your skill can't gather it yet.")
+
+    local learning = heading(panel, iconsWhy, "Learning")
     local learn = checkbox(panel, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
     local why = note(panel, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
         .. "it's off by default; NodeRadar also learns every node you gather.")

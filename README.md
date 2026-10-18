@@ -43,6 +43,10 @@ turn on Find Herbs or Find Minerals.
   90. A Tauren herbalist still hears herbs above their skill while Cultivation is ready, since it
   grows a copy anyone can gather. A node whose requirement it doesn't know, or a skill it can't read,
   alerts as usual. `/nr skill` turns this off.
+- **Optionally, each node shows its item's icon** on the minimap (Peacebloom, Copper Ore) instead
+  of Blizzard's yellow dot, dimmed when your skill can't gather it yet (`/nr icons`, off by
+  default while it's tested). NodeRadar measures where each new node is once and keeps it in place
+  as you move; near the map's edge, and where nodes of one name crowd together, the dot shows.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not
@@ -57,7 +61,8 @@ the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sona
 notification, sci-fi HUD ping), the sonar on the node, a chat line (each node with its approximate
 map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
 can't be told), Blizzard's ping, the time
-between alerts, a test button; only nodes you can gather; learning by toggling tracking.
+between alerts, a test button; only nodes you can gather; Blizzard's dots or item icons on the
+minimap; learning by toggling tracking.
 
 ## Commands
 
@@ -67,6 +72,7 @@ between alerts, a test button; only nodes you can gather; learning by toggling t
 - `/nr ping`: Blizzard's minimap ping on the node too, solo only (in a group it would show on
   everyone's minimap)
 - `/nr skill`: alert only for nodes your skill can gather (on by default)
+- `/nr icons`: each node's item icon on the minimap instead of Blizzard's dot (off by default)
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`

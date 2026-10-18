@@ -280,7 +280,8 @@ After each successful radar sweep, in the same frame (the player hasn't moved):
    5 s skip alone didn't help at a 5 s idle interval), and a crowded one costs its reads once per
    5 s at most. A try not seen again for 30 s is forgotten; clears forget all.
 4. **Missed:** a record with no blip is hidden at once; two misses in a row in valid sweeps drop
-   it. A record projected beyond the rim band (half-width minus 18) is dropped.
+   it. A record whose icon has faded out past the rim (half-width minus half the icon) is dropped;
+   between the rim band and there it's still matched, so the icon fades rather than pops off.
 5. **Gathered:** the player's successful gather of a name (the cast `Alert.Gathered` already
    hears) drops that name's records within 15 yd of the player, so a node of that name appearing
    beside it gets measured, not matched to the gone one.

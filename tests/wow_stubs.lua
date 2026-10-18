@@ -252,6 +252,8 @@ function Methods.GetObjectType(w) return w._type end
 function Methods.SetTexture(t, file) t._file = file; return true end
 function Methods.SetColorTexture(t, r, g, b, a) t._color = { r, g, b, a } end
 function Methods.SetVertexColor(t, r, g, b, a) t._vertex = { r, g, b, a } end
+function Methods.SetTexCoord(t, ...) t._texCoord = { ... } end
+function Methods.SetDesaturated(t, v) t._desaturated = v end
 -- Animations: groups record whether they play.
 function Methods.CreateAnimationGroup(w) return newWidget("AnimationGroup", w) end
 function Methods.CreateAnimation(ag, atype) return newWidget(atype or "Animation", ag) end
@@ -335,6 +337,15 @@ function GetUnitSpeed(unit) return WoW.speed, 7, 7, 4.72 end
 function UnitCastingInfo(unit) if unit == "player" and WoW.casting then return WoW.casting, WoW.casting end end
 function UnitChannelInfo(unit) return nil end
 function UnitIsDeadOrGhost(unit) return WoW.dead end
+-- The player's world position (#28): WoW.pos = { north, west, instance } in
+-- UnitPosition's frame, its first value north and its second west
+-- (HereBeDragons-2.0); WoW.posSecret makes it secret.
+WoW.pos = { 0, 0, 1 }
+function UnitPosition(unit)
+    if unit ~= "player" or not WoW.pos then return nil end
+    if WoW.posSecret then return WoW.Secret("north"), WoW.Secret("west"), 0, WoW.pos[3] end
+    return WoW.pos[1], WoW.pos[2], 0, WoW.pos[3]
+end
 function IsInGroup() return WoW.group end
 function GetLocale() return WoW.locale end
 
@@ -343,6 +354,7 @@ WoW.spellNames = { [2366] = "Herb Gathering", [2368] = "Herb Gathering", [2575] 
                    [2383] = "Find Herbs", [2580] = "Find Minerals" }
 WoW.cooling = {}
 C_Spell = {
+    GetSpellTexture = function(id) if WoW.spellNames[id] then return 136000 + id, 136000 + id end end,
     GetSpellInfo = function(id)
         local n = WoW.spellNames[id]
         if n then return { name = n, spellID = id, iconID = 1, originalIconID = 1, castTime = 0, minRange = 0, maxRange = 0 } end
@@ -521,6 +533,7 @@ function Methods.GetZoom(w) return w._zoom or 0 end
 function Methods.IsMouseOver(w) return w == Minimap and WoW.cursorOnMap == true end
 function Methods.UpdateMouseoverAtPoint(w, x, y)
     assert(type(x) == "number" and type(y) == "number", "UpdateMouseoverAtPoint takes two numbers")
+    WoW.reads = WoW.reads + 1                      -- every point the mouseover is moved to
     if WoW.mouseoverStuck then return end
     WoW.mouseoverPoint = { x, y }
 end
@@ -541,6 +554,7 @@ function Methods.GetPingPosition(w)
     return p[1], p[2]
 end
 
+WoW.reads = 0
 WoW.cursor = { 0, 0 }
 WoW.cursorOnMap = false
 WoW.blips = {}

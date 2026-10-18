@@ -237,7 +237,10 @@ function Alert.Fire(names, blips, result)
         local kind = NR.Learn.Kind(name)
         for _, b in ipairs(blips and blips[name] or {}) do
             first = first or b
-            if db.ring then Alert.Sonar(b.x, b.y, kind) end
+            if db.ring then
+                local x, y = NR.Icons.At(b)            -- the node's measured centre, with icons on (#28)
+                Alert.Sonar(x, y, kind)
+            end
         end
     end
     if db.chat then API.Say(Alert.ChatLine(names, blips, result)) end
