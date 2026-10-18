@@ -57,8 +57,12 @@ end
 check(named, "...named after its title (now 7 s)")
 
 -- The sound: choosing one plays it; the sonar is our own file.
+local function choose(key, value)
+    for _, rb in ipairs(O.radios[key]) do if rb.value == value then return WoW.click(rb) end end
+    error("no choice " .. tostring(value))
+end
 local before = #WoW.sounds
-WoW.click(O.radios.soundKind[2])
+choose("soundKind", "sonar")
 eq(db.soundKind, "sonar", "Sonar chosen")
 local last = WoW.sounds[#WoW.sounds]
 eq(#WoW.sounds, before + 1, "...and played on the choice")
@@ -79,21 +83,24 @@ check(NR.failures.sound, "a refused sound is recorded in /nr failures")
 WoW.refusedSounds = {}
 NR.failures.sound = nil
 
--- The client's files by FileDataID, on trial: each plays when chosen, and one
--- this client lacks is a failure in /nr failures.
-for i, id in ipairs({ 569006, 7466154 }) do
-    WoW.click(O.radios.soundKind[2 + i])
-    eq(db.soundKind, tostring(id), id .. " chosen")
+-- The client's files by FileDataID (both heard on 70450): each plays when
+-- chosen, and one a client lacks is a failure in /nr failures.
+for key, id in pairs({ sonarping = 569006, radar = 7466154 }) do
+    choose("soundKind", key)
+    eq(db.soundKind, key, key .. " chosen")
     eq(WoW.sounds[#WoW.sounds][1], id, "...plays FileDataID " .. id)
 end
 eq(next(NR.failures), nil, "...both played here")
+choose("soundKind", "radar")
 WoW.refusedSounds[7466154] = true
+NR.failures.sound = nil
 NR.Alert.PlaySound()
 check(NR.failures.sound, "a FileDataID this client lacks: a failure")
 WoW.refusedSounds = {}
 NR.failures.sound = nil
-SlashCmdList.NODERADAR("sound 569006")
-eq(db.soundKind, "569006", "/nr sound 569006")
+SlashCmdList.NODERADAR("sound sonarping")
+eq(db.soundKind, "sonarping", "/nr sound sonarping")
+eq(#O.radios.soundKind, 4, "four sounds on the page")
 
 -- /nr sound ping | sonar.
 SlashCmdList.NODERADAR("sound ping")

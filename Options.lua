@@ -135,7 +135,8 @@ local function build()
     local alert = heading(panel, cost, "The alert")
     local sound = checkbox(panel, alert, "A sound", "sound")
     local which = radios(panel, sound, "Which sound", "soundKind",
-        { { "ping", "The minimap ping" }, { "sonar", "Sonar" }, { "569006", "569006" }, { "7466154", "7466154" } },
+        { { "ping", "The minimap ping" }, { "sonarping", "Sonar ping" }, { "radar", "Radar ping" },
+          { "sonar", "NodeRadar's sonar" } },
         "", function() NR.Alert.PlaySound() end)
     local sonar = checkbox(panel, which, "The sonar on the node (green for herbs, gold for ore)", "ring")
     local chat = checkbox(panel, sonar, "A line in chat", "chat")

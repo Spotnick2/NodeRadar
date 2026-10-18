@@ -197,3 +197,10 @@ So the cost is garbage for the shared collector, which the per-addon CPU figure 
 Fixed (#11): a step of 14 (196 reads on a 198-unit map, a third of 625; it never misses a 17-unit
 square at any offset) and about 4 yards between sweeps moving (0.57 s at 100%, 0.95 s at 60%,
 1.43 s at 40%, 0.5 s at most), 2 s standing still: about a sixth of the garbage while moving.
+
+### Sounds (owner, 2026-10-18, 1.60.1.70450) (#13)
+
+Played from the Options page with `PlaySoundFile`: FileDataID **569006** (`Spell_Uni_SonarPing_01`)
+and **7466154** (`12.0_UI_Alert_Tonal_Radar_Ping`, a 12.0 file) both play, as does NodeRadar's own
+`Media\Sonar.ogg`. They're the page's Sonar ping, Radar ping and NodeRadar's sonar, beside the
+minimap ping (kit 3175).

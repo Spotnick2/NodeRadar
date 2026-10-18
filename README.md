@@ -29,7 +29,7 @@ alert.
 
 **Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; how often it looks,
 standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
-for the game to clean up); the sound (the minimap ping or a sonar), the sonar on the node, a chat
+for the game to clean up); the sound (the minimap ping, a sonar ping, a radar ping or NodeRadar's own sonar), the sonar on the node, a chat
 line, Blizzard's ping, the time between alerts, a test button; learning by toggling tracking.
 
 ## Commands
