@@ -42,6 +42,13 @@ local function selected()
     for _, item in ipairs(WoW.menu(dd)) do if item.selected then return item.label end end
 end
 eq(selected(), "The minimap ping", "the minimap ping selected")
+eq(rawget(db, "soundKind"), nil, "...by default, nothing saved")
+-- A sound saved by the trial build, renamed since: the default shows, as it plays.
+db.soundKind = "569006"
+eq(selected(), "The minimap ping", "a sound no longer offered: the minimap ping selected")
+NR.Alert.PlaySound()
+eq(WoW.sounds[#WoW.sounds][1], 3175, "...and it's what plays")
+db.soundKind = nil
 eq(checked("cooldown"), 5, "5 s between alerts checked")
 
 -- A click saves the choice, raw (only what the player sets is saved).

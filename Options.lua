@@ -116,9 +116,15 @@ local function dropdown(parent, anchor, title, key, choices, onPick)
     local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
     dd:SetWidth(200)
     dd:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 0, -6)
+    -- A saved value that's no longer a choice (a sound renamed since) reads as
+    -- the default, as the alert plays it.
+    local function current()
+        for _, c in ipairs(choices) do if NR.db[key] == c[1] then return c[1] end end
+        return NR.DEFAULTS[key]
+    end
     dd:SetupMenu(function(_, root)
         for _, c in ipairs(choices) do
-            root:CreateRadio(c[2], function() return NR.db[key] == c[1] end, function()
+            root:CreateRadio(c[2], function() return current() == c[1] end, function()
                 NR.Set(key, c[1])
                 if onPick then onPick() end
             end)
