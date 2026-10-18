@@ -64,4 +64,4 @@ under the [Pixabay Content License](https://pixabay.com/service/terms/), not MIT
 | `HudPing.ogg` | "sci-fi HUD notification ping", #547867 | vadim_makes_sound |
 
 Trimmed, made mono and evened in loudness by `Tools/import_sounds.py`. They ship inside NodeRadar
-only, never as files of their own.
+only, never as files of their own. The `LICENSE` that ships with the addon says the same.
