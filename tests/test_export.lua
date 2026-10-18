@@ -17,7 +17,23 @@ for locale, names in pairs(lib) do
     for name, kind in pairs(names) do check(X.KINDS[kind], name .. " is herbs or ore") end
 end
 
--- Two accounts' learned names.
+-- What ships (#17): the classic names of Tools/Reference, all of them in, and
+-- the doubtful ones left out.
+local ref = X.load("Tools/Reference/classic-enUS.lua").NodeRadarDB.learned
+local _, missing = X.merge(lib, { { file = "reference", learned = ref } })
+eq(#missing, 0, "every reference name is in the shipped library")
+local count = 0
+for _ in pairs(lib.enUS) do count = count + 1 end
+check(count >= 50, "the shipped library knows the classic nodes (" .. count .. " enUS)")
+eq(lib.enUS["Copper Vein"], "ore", "...ore too")
+eq(lib.enUS["Black Lotus"], "herbs", "...to the end")
+eq(lib.enUS["Wilted Peacebloom"], "herbs", "...and the Forever starter herbs")
+for _, doubtful in ipairs({ "Beached Sea Creature", "Skeletal Sea Turtle", "Incendia Agave", "Violet Tragan" }) do
+    eq(lib.enUS[doubtful], nil, "left out as doubtful: " .. doubtful)
+end
+eq(lib.deDE, nil, "English only: the other languages learn as they go")
+
+-- Two accounts' learned names, against the small library behaviour tests use.
 local a = { file = "a.lua", learned = { enUS = {
     ["Earthroot"] = { kind = "herbs", source = "toggle", build = "70450" },
     ["Copper Vein"] = { kind = "ore", source = "gather", build = "70450" },
@@ -36,7 +52,7 @@ local b = { file = "b.lua", learned = {
     deDE = { ["Friedensblume"] = { kind = "herbs", source = "gather", build = "70450" } },
     xxXX = { ["Nope"] = { kind = "herbs" } },
 } }
-local merged, added, conflicts, problems = X.merge(lib, { a, b })
+local merged, added, conflicts, problems = X.merge(TEST_LIBRARY, { a, b })
 
 local addedNames = {}
 for _, x in ipairs(added) do addedNames[x.locale .. "/" .. x.name] = x.kind end

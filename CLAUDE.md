@@ -60,6 +60,10 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   events, `/nr`.
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
   prints additions with their provenance for review, writes with `--write`.
+- `Tools/Reference/classic-enUS.lua`: the classic herb and ore names (English, not measured: a
+  reference list, #17), an input to the export in the SavedVariables shape. Tests run on a small
+  fixed library (`TEST_LIBRARY`, harness), whatever `Data/Nodes.lua` ships; `test_export` pins
+  the real one.
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
   (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr release` for the release check (#3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).

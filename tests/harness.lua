@@ -20,6 +20,7 @@ function done(name)
 end
 
 TOC = "NodeRadar.toc"
+TEST_LIBRARY = { enUS = { ["Silverleaf"] = "herbs", ["Stunted Silverleaf"] = "herbs", ["Wilted Peacebloom"] = "herbs" } }
 PROBE_TOC = "Tools/NodeRadarProbe/NodeRadarProbe.toc"
 
 -- Lua files listed in a TOC, in load order.
@@ -39,6 +40,9 @@ function loadAddon(opts)
     opts = opts or {}
     local ns = {}
     for _, f in ipairs(tocFiles()) do assert(loadfile(f))("NodeRadar", ns) end
+    -- Behaviour tests run on a small fixed library, whatever Data/Nodes.lua
+    -- ships (#17): names like Earthroot stay unknown. test_export pins the real one.
+    if not opts.realLibrary then NodeRadar.LIBRARY = opts.library or TEST_LIBRARY end
     NodeRadarDB, NodeRadarCharDB = opts.db, opts.charDb
     WoW.fire("ADDON_LOADED", "NodeRadar")
     WoW.fire("PLAYER_LOGIN")
