@@ -144,10 +144,11 @@ the probe.
   `gpt-6-astra` at high effort, looping until consensus. Verify its claims; push back on complexity.
 - **Code reviews are manual** (by the owner) unless the owner asks for one.
 - CurseForge (project 1751109) builds releases from the tag webhook through `.pkgmeta`; the
-  `release` job publishes a GitHub Release from the tag's `## vX.Y.Z` section of `CHANGELOG.md`;
-  the `wago` job uploads the same checked zip to Wago (project `mNwwoLNo`, the TOC's `X-Wago-ID`)
-  with the `WAGO_API_TOKEN` secret (#15). Re-publish a tag with `workflow_dispatch`
-  (`publish: both | github | wago`).
+  `release` job publishes a GitHub Release from the tag's `## vX.Y.Z` section of `CHANGELOG.md`,
+  with `release.json` for WowUp (#35); the `wago` job uploads the same checked zip to Wago (project
+  `mNwwoLNo`, the TOC's `X-Wago-ID`) with the `WAGO_API_TOKEN` secret (#15). Both publish what
+  `check` built: the zip, and the notes and `release.json` from `tests/release_files.sh` (Priestly's).
+  Re-publish a tag with `workflow_dispatch` from `main` (`publish: both | github | wago`).
 
 ## Conventions
 
