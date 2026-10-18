@@ -4,6 +4,9 @@ A gathering-node alert for **World of Warcraft: Forever**: with Find Herbs or Fi
 ping and a sonar on the minimap the moment a herb or ore node comes into range: two rings ripple
 out from the node and a glow stays on it, green for herbs, gold for ore.
 
+![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
+![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)
+
 ## Install
 
 Install **NodeRadar** from [CurseForge](https://www.curseforge.com/wow/addons/node-radar) or
