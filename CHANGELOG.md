@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.0.1
+
+Released 2026-10-18.
 
 - **Only nodes you can gather alert** (#26): NodeRadar knows each classic node's required skill and
   reads yours, bonuses included, so a node above your Herbalism or Mining no longer pings. A Tauren

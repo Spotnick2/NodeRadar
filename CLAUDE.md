@@ -13,16 +13,18 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.0.1, after v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
 - the sweep's garbage (#11);
 - the Options page and sounds (#13);
 - publishing to CurseForge and Wago (#15);
-- the classic node names in 11 languages (#17, #19).
+- the classic node names in 11 languages (#17, #19);
+- v1.0.1: only nodes the player can gather alert (#26), and the chat line's map coordinates (#27).
 
-Next: the public API for minimap skins (#4).
+Next: item icons for the minimap's nodes (#28); then the experimental in-world marker (#29) and the
+public API for minimap skins (#4). On hold for the live game: fishing pools (#25), GatherMate2 (#30).
 
 ## The UI contract (non-negotiable)
 
