@@ -265,13 +265,14 @@ Our user waypoint on the nearest node (NodeRadar's `Scan.MapPosition`), then sup
 |---|---|
 | Setting it from addon code | `C_Map.CanSetUserWaypointOnMap(1411)` true, `C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(...))` **true**, `C_SuperTrack.SetSuperTrackedUserWaypoint(true)` took; no `ADDON_ACTION_*` |
 | The navigation frame | `C_Navigation.GetFrame()` present, `HasValidScreenPosition` true, `GetDistance` followed the player in (93, 66, 11 yd), `WasClampedToScreen` true when the node was behind |
-| **The on-screen marker** | **not drawn**: the screenshots and the owner see only the waypoint's pin on the minimap. Whether `SuperTrackedFrame` (Blizzard_QuestNavigation, loaded) is shown is **not measured yet**: this run's read said hidden whatever the frame's state (a Lua 5.1 `and` dropped `IsShown`'s value, Codex on #39); `/fp steps nr waypointframe` reads it again. Forever removes the In-Game Navigation option (`Blizzard_SettingsDefinitions_Frame/Camelot/InterfaceOverrides.lua`: `AdjustInGameNavigationSettings` is empty) |
+| **The on-screen marker** | **not drawn as Retail draws it**: the screenshots and the owner see the waypoint's pin on the minimap and no marker with a distance. Yet `SuperTrackedFrame` (Blizzard_QuestNavigation, loaded) **is shown** while the waypoint is super-tracked (`waypointframe`, 3 s after Set, the node 11 yd ahead). The first run's reads all said hidden whatever the state (a Lua 5.1 `and` dropped `IsShown`'s value, Codex on #39). That screenshot shows one small grey square, unexplained, right of the character. Forever removes the In-Game Navigation option (`Blizzard_SettingsDefinitions_Frame/Camelot/InterfaceOverrides.lua`: `AdjustInGameNavigationSettings` is empty) |
 | Arrival, standing on the node | nothing visible, no `NAVIGATION_DESTINATION_REACHED` |
 | The events, ours | `USER_WAYPOINT_UPDATED` inside `SetUserWaypoint` (synchronous); `SUPER_TRACKING_CHANGED` **after** our setter returned, or not at all (it's a `UniqueEvent`) |
 | The player's own waypoint (Ctrl-click on the world map) over ours | it replaced ours, `USER_WAYPOINT_UPDATED` and `SUPER_TRACKING_CHANGED`, and it was **not** super-tracked |
-| Clearing: the waypoint first | the waypoint gone, but `IsSuperTrackingUserWaypoint` and `IsSuperTrackingAnything` still **true** |
+| Clearing: the waypoint first | the waypoint gone, but `IsSuperTrackingUserWaypoint` and `IsSuperTrackingAnything` still **true** (twice in this run, and again by the old final cleanup after the reload) |
 | Clearing: the tracking first, then the waypoint | both false: the order to use |
-| Across a logout | pending: the procedure resumes at step 16 at the next login |
+| Across a `/reload` | the waypoint and its super-track both kept; right after the reload, no navigation frame yet (`GetFrame` nil), `HasValidScreenPosition` true, the distance from before |
+| Across a logout | not measured |
 
 `/console showInGameNavigation 1` (the hidden option's CVar) brought no marker back either (owner).
 
