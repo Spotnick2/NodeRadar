@@ -530,7 +530,8 @@ function Methods.GetRect(w)
     if r then return r[1], r[2], r[3], r[4] end
 end
 function Methods.GetZoom(w) return w._zoom or 0 end
-function Methods.IsMouseOver(w) return w == Minimap and WoW.cursorOnMap == true end
+-- WoW.mouseOver: another frame under the cursor (#28's icons).
+function Methods.IsMouseOver(w) return (w == Minimap and WoW.cursorOnMap == true) or (w == WoW.mouseOver) end
 function Methods.UpdateMouseoverAtPoint(w, x, y)
     assert(type(x) == "number" and type(y) == "number", "UpdateMouseoverAtPoint takes two numbers")
     WoW.reads = WoW.reads + 1                      -- every point the mouseover is moved to

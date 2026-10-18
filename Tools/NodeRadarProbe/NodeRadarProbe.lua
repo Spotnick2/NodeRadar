@@ -34,7 +34,8 @@
 -- /fp steps nr blipsize (how wide the grid can be); /fp steps nr skill and
 -- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
--- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28).
+-- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
+-- icons in game, #28).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -2269,6 +2270,257 @@ Probe:Steps("icons", {
 })
 
 --------------------------------------------------------------------------------
+-- Item icons, second round (#28): NodeRadar's own icons on, checked in game.
+-- Over the dots standing still, running, turning, after a zoom and indoors;
+-- the hover tooltip; the player's arrow; a node above (its arrow's text, and
+-- whether Blizzard's triangle still shows); a gathered node's record against
+-- UnitPosition at the cast (the axes); the cost, icons off then on along the
+-- same route; the stock map's square. The setting is put back at the end.
+--------------------------------------------------------------------------------
+
+local BELOW = "Interface\\Minimap\\Minimap-PositionArrows:0:0:0:0:16:32:0:16:16:32"   -- round 1
+
+local function iconRecords()
+    local n = nr()
+    return n and n.Icons and n.Icons._test.records() or {}
+end
+
+-- A widget method's answer, both of pcall's returns kept (not `w and pcall(...)`,
+-- which keeps one: Codex on #39); nil for no widget or a throw.
+local function ask(w, method)
+    if not w then return nil end
+    local ok, v = pcall(w[method], w)
+    if ok then return v end
+end
+
+local function shownIcons()
+    local list = {}
+    for _, r in ipairs(iconRecords()) do
+        if yes(ask(r.frame, "IsShown")) then list[#list + 1] = r end
+    end
+    return list
+end
+
+local function iconsText()
+    local parts = {}
+    for _, r in ipairs(shownIcons()) do
+        parts[#parts + 1] = ("%s at %+.1f %+.1f%s"):format(r.name, r.x or 0, r.y or 0, r.dim and " (dimmed)" or "")
+    end
+    return #parts .. " icons: " .. join(parts)
+end
+
+-- NodeRadar's icons setting, raw, put back by the last step.
+local function iconsOn(n, on)
+    if NodeRadarProbeDB.restoreIcons == nil then NodeRadarProbeDB.restoreIcons = { value = rawget(n.db, "icons") } end
+    if n.db.icons ~= on then n.Set("icons", on) end
+end
+
+local function iconsBack()
+    local n, saved = nr(), NodeRadarProbeDB.restoreIcons
+    if not (n and saved) then return "nothing to put back" end
+    n.Set("icons", saved.value)
+    NodeRadarProbeDB.restoreIcons = nil
+    return "icons setting put back: " .. str(saved.value)
+end
+
+local function moving()
+    local ok, speed = pcall(GetUnitSpeed, "player")
+    speed = ok and num(speed)
+    return speed and speed > 0
+end
+
+-- The cost: every mouseover read counted (our hook, after Blizzard's own),
+-- NodeRadar's sweep timed, the memory allocated per frame summed (all addons:
+-- compared off against on, on the same route).
+local cost = {}
+hooksecurefunc(Minimap, "UpdateMouseoverAtPoint", function() if cost.on then cost.reads = cost.reads + 1 end end)
+local costFrame = CreateFrame("Frame")
+
+local function costStart(n, label)
+    local orig = n.Step
+    cost = { label = label, reads = 0, kb = 0, last = collectgarbage("count"), steps = 0, worst = 0, t0 = GetTime(),
+             on = true, orig = orig }
+    n.Step = function(now)
+        local t = debugprofilestop()
+        local r = orig(now)
+        local ms = debugprofilestop() - t
+        if r then
+            cost.steps = cost.steps + 1
+            cost.worst = math.max(cost.worst, ms)
+        end
+        return r
+    end
+    costFrame:SetScript("OnUpdate", function()
+        local c = collectgarbage("count")
+        if c > cost.last then cost.kb = cost.kb + (c - cost.last) end
+        cost.last = c
+    end)
+end
+
+local function costStop(n)
+    if cost.orig then n.Step = cost.orig end
+    costFrame:SetScript("OnUpdate", nil)
+    cost.on = false
+    local secs = GetTime() - cost.t0
+    local out = { label = cost.label, secs = secs, reads = cost.reads, kb = cost.kb, sweeps = cost.steps,
+                  worst = cost.worst, icons = n.db.icons == true }
+    local db = iconsDB()
+    db.cost = db.cost or {}
+    db.cost[cost.label] = out
+    local text = ("%s: %.0f s, %d sweeps, %.0f reads/s, %.0f KB/s allocated (all addons), worst sweep %.1f ms"):format(
+        out.label, secs, out.sweeps, out.reads / secs, out.kb / secs, out.worst)
+    say("cost " .. text)
+    return text
+end
+
+local COST_SECONDS = 60
+local function costWait(label, on)
+    return function()
+        local n = nr()
+        if not n then return false, "NodeRadar isn't loaded" end
+        if not (cost.on and cost.label == label) then
+            if not moving() then return false, "start riding the loop" end
+            iconsOn(n, on)
+            costStart(n, label)
+        end
+        local left = COST_SECONDS - (GetTime() - cost.t0)
+        if left > 0 then return false, ("%.0f s left"):format(left) end
+        return true, costStop(n)
+    end
+end
+
+-- A gather's cast: the nearest icon record of its name, in yards from where
+-- the player stands (the gather's reach is about 5), before the gather drops it.
+local function gatherIcon(name)
+    local ok, pn, pw = pcall(UnitPosition, "player")
+    pn, pw = ok and num(pn), ok and num(pw)
+    if not (pn and pw) then return end
+    local best
+    for _, r in ipairs(iconRecords()) do
+        if r.name == name then
+            local d = math.sqrt((r.north - pn) ^ 2 + (r.west - pw) ^ 2)
+            if not best or d < best.yards then best = { name = name, yards = d, north = r.north - pn, west = r.west - pw } end
+        end
+    end
+    if best then
+        best.at = GetTime()
+        state.gatherIcon = best
+        say(("gather: the %s icon's record %.1f yd from the player (north %+.1f, west %+.1f)"):format(name, best.yards,
+            best.north, best.west))
+    end
+end
+
+Probe:Steps("iconcheck", {
+    rev = 1,
+    title = "Item icons, second round: NodeRadar's icons in game (#28)",
+    { text = "Have NodeRadar loaded and gathering tracking on. NodeRadar's icons go on now, and back as they were at "
+          .. "the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons) then return false, "NodeRadar (with icons) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          NodeRadarProbeDB.icons = nil
+          iconsOn(n, true)
+          return true, "icons on"
+      end },
+    { text = "Stand still where herbs or ore show on the minimap, until icons cover their dots.", wait = function()
+          local list = shownIcons()
+          if #list == 0 then return false, "no icon yet" end
+          return true, iconsText()
+      end, screenshot = "icons standing still" },
+    { text = "Is each icon on its node's dot? Type anything off in the Note box (an icon beside its dot, a dot "
+          .. "without one).", ask = true },
+    { text = "Put the mouse on an icon on the minimap and hold it there.", wait = function()
+          local over
+          for _, r in ipairs(shownIcons()) do
+              if yes(ask(r.frame, "IsMouseOver")) then over = r end
+          end
+          if not over then return false, "the mouse isn't on an icon" end
+          if not yes(ask(rawget(_G, "GameTooltip"), "IsShown")) then
+              return false, "on " .. over.name .. ", no tooltip yet"
+          end
+          return true, ("on %s: the tooltip shows %s"):format(over.name,
+              str(ask(rawget(_G, "GameTooltipTextLeft1"), "GetText")))
+      end, screenshot = "hovering an icon" },
+    { text = "Did Blizzard's tooltip show the node as it does without icons?", ask = true },
+    { text = "Walk onto a node with an icon and stand on it (don't gather it).", wait = function()
+          for _, r in ipairs(shownIcons()) do
+              if r.x and math.sqrt(r.x * r.x + r.y * r.y) < 4 then return true, "on " .. r.name end
+          end
+          return false, iconsText()
+      end, screenshot = "standing on a node" },
+    { text = "The icon now covers your arrow. Is that acceptable at this size? (Note box: smaller, or hide it near "
+          .. "you.)", ask = true },
+    { text = "Find a node above you (up a slope or on a ledge). Skip if there's none near.", wait = function()
+          local found, why = arrowFound(BELOW)
+          if not found then return false, why end
+          local arrows = iconsDB().arrows or {}
+          iconsDB().arrows = arrows
+          arrows.above = found
+          say(("arrow above: %s, raw %q"):format(found.name, found.raw))
+          return true, ("%s: %s"):format(found.name, found.tex)
+      end, screenshot = "a node above, with icons" },
+    { text = "Can you still see Blizzard's small arrow by that node's icon?", ask = true },
+    { text = "Zoom the minimap in or out, standing still.", wait = function()
+          local ok, zoom = pcall(Minimap.GetZoom, Minimap)
+          zoom = ok and num(zoom)
+          if zoom == nil then return false, "zoom unreadable" end
+          state.icZoom = state.icZoom or zoom
+          if zoom == state.icZoom then return false, "zoom " .. zoom end
+          state.icZoom = nil
+          return true, "zoom " .. zoom .. "; " .. iconsText()
+      end, screenshot = "right after the zoom" },
+    { text = "Right after the zoom, were the icons on their dots?", ask = true },
+    { text = "Run past nodes with icons, keeping some in view.", wait = function()
+          if not moving() then state.icRun = nil; return false, "not moving" end
+          if #shownIcons() == 0 then return false, "moving, no icon in view" end
+          state.icRun = (state.icRun or 0) + 1
+          if state.icRun < 3 then return false, "moving with icons" end
+          state.icRun = nil
+          return true, iconsText()
+      end, screenshot = "running" },
+    { text = "Now turn while running (a full circle).", wait = function()
+          local ok, facing = pcall(GetPlayerFacing)
+          facing = ok and num(facing)
+          if not (facing and moving()) then return false, "turn while running" end
+          state.icFacing = state.icFacing or facing
+          local d = math.abs(facing - state.icFacing)
+          d = math.min(d, 2 * math.pi - d)
+          if d < 2 then return false, ("turned %.1f rad"):format(d) end
+          state.icFacing = nil
+          return true, iconsText()
+      end, screenshot = "turning" },
+    { text = "Running and turning, did the icons stay on their dots? (Note box: lagging, jumping, blinking.)",
+      ask = true },
+    { text = "Optional: walk into a building or a cave with nodes in view. Skip if none is near.", wait = function()
+          local ok, v = pcall(IsIndoors)
+          if not (ok and yes(v)) then return false, "outdoors" end
+          return true, "indoors; " .. iconsText()
+      end, screenshot = "indoors" },
+    { text = "Gather a node that has an icon.", wait = function()
+          local g = state.gatherIcon
+          if not g or GetTime() - g.at > 30 then return false, "no gather of a node with an icon yet" end
+          state.gatherIcon = nil
+          return true, ("%s: its record %.1f yd from you at the cast (north %+.1f, west %+.1f)"):format(g.name,
+              g.yards, g.north, g.west)
+      end },
+    { text = "The cost, icons OFF: ride a loop past nodes for a minute (the step starts when you move).",
+      wait = costWait("icons off", false), timeout = 300 },
+    { text = "The cost, icons ON: ride the same loop again for a minute.", wait = costWait("icons on", true),
+      timeout = 300 },
+    { text = "Optional, Blizzard's own minimap: turn Glass MiniMap off in the AddOns list, then press Reload. "
+          .. "Skip this and the next three steps to keep it.", reload = true },
+    { text = "With a node in view on the stock minimap, stand still and press Measure.", button = "Measure",
+      run = function() return measureHitAreas("stock map") end },
+    { text = MARKS_ASK .. " And are the icons on their dots here too?", ask = true, screenshot = "the stock map" },
+    { text = "Turn Glass MiniMap back on in the AddOns list, then press Reload.", reload = true },
+    { text = "Putting NodeRadar's icons setting back.", auto = true, run = function()
+          hideMarks()
+          return iconsBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
@@ -2303,6 +2555,7 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         local n = nr()
         if n and not secret(a4) and n.Learn.CastKind(a4) and type(a2) == "string" and not secret(a2) then
             state.lastGather = { name = a2, at = GetTime(), pos = playerPos() }
+            gatherIcon(a2)                             -- #28: before the gather drops its record
         end
     elseif event == "UNIT_SPELLCAST_FAILED" then
         say(("UNIT_SPELLCAST_FAILED spell=%s"):format(str(a3)))
