@@ -12,11 +12,16 @@ NR.Alert = Alert
 
 Alert.BLINK = 20      -- seconds: a rise this soon after a drop is the same node at the map's edge
 Alert.STALE = 5       -- seconds without a successful sweep before the next is a silent baseline
+Alert.GATHERED = 15   -- seconds: a drop this soon after gathering that name is the gathered node
 Alert.MAP_PING = 3175 -- SOUNDKIT.MAP_PING (SoundKitConstants.lua:73)
-Alert.RING = "Interface\\Cooldown\\ping4"
 
 local hist            -- { counts, drops, at }; nil: the next sweep is a silent baseline
 local lastAlert = -math.huge
+local gathered = {}   -- [name] = when the player last gathered one
+
+-- The player gathered a node of that name: the drop that follows is that node
+-- gone, not one blinking at the edge, so the next of that name alerts.
+function Alert.Gathered(name, now) gathered[name] = now end
 
 -- The next successful sweep sets the counts without alerting.
 function Alert.Reset() hist = nil end
@@ -51,7 +56,15 @@ function Alert.Update(result, now)
         end
     end
     for name, before in pairs(hist.counts) do
-        if (counts[name] or 0) < before then hist.drops[name] = now end
+        if (counts[name] or 0) < before then
+            local g = gathered[name]
+            if g and now - g <= Alert.GATHERED then
+                gathered[name] = nil
+                hist.drops[name] = nil                 -- an earlier blink no longer holds (Codex, PR #10)
+            else
+                hist.drops[name] = now
+            end
+        end
     end
     hist.counts, hist.at = counts, now
     if #new == 0 or now - lastAlert < NR.db.cooldown then return nil end
@@ -62,47 +75,92 @@ function Alert.Update(result, now)
 end
 
 --------------------------------------------------------------------------------
--- The alert: the sound, a ring on each blip of the new names, a chat line,
+-- The alert: the sound, a sonar on each blip of the new names, a chat line,
 -- Blizzard's ping (solo only: it's sent to the group, round 2)
+--
+-- The sonar (the owner's pick): two thin rings ripple out from the node, the
+-- second 0.4 s after the first, and a soft glow stays on it, 3 s in all.
+-- Green for herbs, gold for ore. Our own art (Tools/make_media.py), drawn
+-- additively: Blizzard's ping4 drew in a black square (release check).
 --------------------------------------------------------------------------------
 
-local rings = {}
+Alert.MEDIA = "Interface\\AddOns\\NodeRadar\\Media\\"
+Alert.COLOURS = { herbs = { 0.3, 1.0, 0.4 }, ore = { 1.0, 0.8, 0.25 } }
+Alert.SIZE = 20       -- the ring at scale 1, in the map's units (it grows to 1.6)
 
-local function ring()
-    for _, r in ipairs(rings) do if not r:IsShown() then return r end end
-    local f = CreateFrame("Frame", nil, Minimap)
-    f:SetSize(12, 12)
-    f:SetFrameStrata("HIGH")   -- v1's "HIGHLIGHT" is a draw layer and throws (round 1)
-    local t = f:CreateTexture(nil, "OVERLAY")
-    t:SetTexture(Alert.RING)
+local sonars = {}
+
+local function part(parent, file, size, layer)
+    local f = CreateFrame("Frame", nil, parent)
+    f:SetSize(size, size)
+    f:SetPoint("CENTER", parent, "CENTER")
+    local t = f:CreateTexture(nil, layer)
+    t:SetTexture(Alert.MEDIA .. file)
+    t:SetBlendMode("ADD")
     t:SetAllPoints(f)
     f.tex = t
-    local anim = f:CreateAnimationGroup()
-    local scale = anim:CreateAnimation("Scale")
-    scale:SetScale(4, 4)
-    scale:SetDuration(1)
-    scale:SetSmoothing("OUT")
-    local alpha = anim:CreateAnimation("Alpha")
-    alpha:SetFromAlpha(0.9)
-    alpha:SetToAlpha(0)
-    alpha:SetDuration(1)
-    alpha:SetSmoothing("OUT")
-    anim:SetScript("OnFinished", function() f:Hide() end)
-    f.anim = anim
-    f:Hide()
-    rings[#rings + 1] = f
+    f:SetAlpha(0)                              -- seen only while its animation runs
     return f
 end
 
-function Alert.Ring(x, y)
-    local f = ring()
-    local db = NR.db
-    f.tex:SetVertexColor(db.ringR, db.ringG, db.ringB, 0.9)
-    f:ClearAllPoints()
-    f:SetPoint("CENTER", Minimap, "CENTER", x, y)
-    f:Show()
-    f.anim:Stop()
-    f.anim:Play()
+local function ripple(f, delay)
+    local anim = f:CreateAnimationGroup()
+    local scale = anim:CreateAnimation("Scale")
+    scale:SetScaleFrom(0.2, 0.2)
+    scale:SetScaleTo(1.6, 1.6)
+    scale:SetDuration(1)
+    scale:SetSmoothing("OUT")
+    scale:SetStartDelay(delay)
+    local alpha = anim:CreateAnimation("Alpha")
+    alpha:SetFromAlpha(1)
+    alpha:SetToAlpha(0)
+    alpha:SetDuration(1)
+    alpha:SetSmoothing("IN")
+    alpha:SetStartDelay(delay)
+    f.anim = anim
+end
+
+local function fade(anim, from, to, duration, order)
+    local a = anim:CreateAnimation("Alpha")
+    a:SetFromAlpha(from)
+    a:SetToAlpha(to)
+    a:SetDuration(duration)
+    a:SetOrder(order)
+end
+
+local function sonar()
+    for _, s in ipairs(sonars) do if not s:IsShown() then return s end end
+    local s = CreateFrame("Frame", nil, Minimap)
+    s:SetSize(Alert.SIZE, Alert.SIZE)
+    s:SetFrameStrata("HIGH")                   -- v1's "HIGHLIGHT" is a draw layer and throws (round 1)
+    s.rings = { part(s, "SonarRing", Alert.SIZE, "OVERLAY"), part(s, "SonarRing", Alert.SIZE, "OVERLAY") }
+    ripple(s.rings[1], 0)
+    ripple(s.rings[2], 0.4)
+    s.glow = part(s, "SonarGlow", Alert.SIZE * 0.8, "ARTWORK")
+    local g = s.glow:CreateAnimationGroup()
+    fade(g, 0, 0.9, 0.2, 1)                    -- in
+    fade(g, 0.9, 0.9, 1.3, 2)                  -- held
+    fade(g, 0.9, 0, 1.5, 3)                    -- out: 3 s in all
+    g:SetScript("OnFinished", function() s:Hide() end)
+    s.glow.anim = g
+    s:Hide()
+    sonars[#sonars + 1] = s
+    return s
+end
+
+function Alert.Sonar(x, y, kind)
+    local s = sonar()
+    local c = Alert.COLOURS[kind] or Alert.COLOURS.herbs
+    s:ClearAllPoints()
+    s:SetPoint("CENTER", Minimap, "CENTER", x, y)
+    s.kind = kind
+    s:Show()
+    for _, f in ipairs({ s.rings[1], s.rings[2], s.glow }) do
+        f.tex:SetVertexColor(c[1], c[2], c[3])
+        f:SetAlpha(0)
+        f.anim:Stop()
+        f.anim:Play()
+    end
 end
 
 function Alert.Fire(names, blips)
@@ -113,9 +171,10 @@ function Alert.Fire(names, blips)
     end
     local first
     for _, name in ipairs(names) do
+        local kind = NR.Learn.Kind(name)
         for _, b in ipairs(blips and blips[name] or {}) do
             first = first or b
-            if db.ring then Alert.Ring(b.x, b.y) end
+            if db.ring then Alert.Sonar(b.x, b.y, kind) end
         end
     end
     if db.chat then API.Say(table.concat(names, ", ")) end

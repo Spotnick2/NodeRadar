@@ -6,6 +6,7 @@ dofile("tests/harness.lua")
 
 WoW.tracking[1].active = true                              -- Find Herbs on before the login
 local NR = loadAddon()
+NR.db.interval = 0.5                                       -- a quick idle cadence: these test behaviour, not cadence
 local Alert, Learn = NR.Alert, NR.Learn
 NR.db.learn = false                                        -- no experiments here
 
@@ -138,13 +139,83 @@ WoW.fire("MINIMAP_UPDATE_TRACKING")
 WoW.advance(2)
 eq(reads, 0, "no gathering tracking on: no sweep")
 WoW.tracking[1].active = true
+-- GamePadEnable is on by default on a keyboard client (release check, 70450):
+-- it alone must not stop the radar.
 WoW.cvars.GamePadEnable = "1"
+WoW.advance(1)
+check(reads > 0, "GamePadEnable alone: the radar sweeps")
+reads = 0
+WoW.cvars.GamePadEnable = nil
+WoW.gamepadUI = true
 WoW.advance(2)
 eq(reads, 0, "the gamepad on: no sweep")
-WoW.cvars.GamePadEnable = nil
+WoW.gamepadUI = false
 WoW.advance(1)
 check(reads > 0, "...and sweeping again")
 C_TooltipInfo.GetMinimapMouseover = real
+
+-- The sonar: our own art, drawn additively, green for herbs and gold for ore.
+NR.db.sound, NR.db.ring, NR.db.chat, NR.db.ping = true, true, false, false
+hideRings()
+WoW.advance(6)
+table.insert(WoW.blips, { "Copper Vein", -50, 60, kind = "herbs" })     -- shown under Find Herbs here
+NR.db.learned.enUS["Copper Vein"] = { kind = "ore", source = "gather" }
+WoW.advance(0.6)
+local sonar
+for _, f in ipairs(WoW.frames) do
+    if f._parent == Minimap and f._strata == "HIGH" and f._shown and f.kind == "ore" then sonar = f end
+end
+check(sonar, "an ore's sonar")
+local parts = sonar and { sonar.rings[1], sonar.rings[2], sonar.glow } or {}
+for i, part in ipairs(parts) do
+    check(part.tex._file and part.tex._file:find("^Interface\\AddOns\\NodeRadar\\Media\\Sonar"), "part " .. i .. ": our own texture")
+    check(part.tex._vertex and part.tex._vertex[1] == 1.0 and part.tex._vertex[2] == 0.8, "part " .. i .. ": gold for ore")
+    check(part.anim and part.anim._playing, "part " .. i .. ": animating")
+end
+check(WoW.methodsCalled["Texture:SetBlendMode"], "drawn additively (no square around it)")
+for _, f in ipairs({ "Media/SonarRing.tga", "Media/SonarGlow.tga" }) do
+    check(io.open(f, "rb") ~= nil, f .. " ships")
+end
+
+-- Gathering a node, then another of its name comes into range: it alerts (not
+-- taken for the first one blinking at the edge), even right after a blink.
+local function drop(blip)
+    for i, b in ipairs(WoW.blips) do if b == blip then table.remove(WoW.blips, i) end end
+end
+hideRings()
+WoW.advance(6)
+local herb = { "Peacebloom", 40, 40, kind = "herbs" }
+NR.db.learned.enUS.Peacebloom = { kind = "herbs", source = "gather" }
+table.insert(WoW.blips, herb)
+WoW.advance(0.6)
+WoW.advance(6)
+drop(herb)                                                 -- it blinks at the edge
+WoW.advance(1)
+table.insert(WoW.blips, herb)
+WoW.advance(1)
+before = sounds()
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Peacebloom", "Cast-9", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-9", 2366)            -- gathered
+drop(herb)
+WoW.advance(1)
+table.insert(WoW.blips, { "Peacebloom", -70, -30, kind = "herbs" })     -- the next one, 1 s later
+WoW.advance(1)
+eq(sounds(), before + 1, "after gathering one, the next of its name alerts, a blink 3 s before or not")
+-- A gather that didn't go through (interrupted; another cast's success): the
+-- node is still there, and leaving the map's edge and coming back is a blink.
+WoW.advance(25)
+local edge = { "Peacebloom", 95, 0, kind = "herbs" }
+table.insert(WoW.blips, edge)
+WoW.advance(0.6)
+WoW.advance(6)
+before = sounds()
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Peacebloom", "Cast-10", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-11", 2366)
+drop(edge)
+WoW.advance(1)
+table.insert(WoW.blips, edge)
+WoW.advance(1)
+eq(sounds(), before, "an interrupted gather: the node that left and came back is a blink")
 
 -- /nr test.
 NR.db.sound = true

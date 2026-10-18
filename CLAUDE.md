@@ -15,8 +15,9 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 
 **Status:** the port (#3) is written: the soft sweep, learning which names are nodes, the alert,
 the library and its export tool, as `docs/PLAN.md` "The port (#3)" (reviewed by Codex to
-consensus). Its in-game release check comes next; until it passes, `learn`'s default is
-provisional. Done: the repo setup (#1), the probe rounds that decided detection (#2) and
+consensus). Release check run 1 (70450, docs/FOREVER-PROBE.md): the restore costs a global
+cooldown, so `learn` ships off; reload restore and persistence pass; the walk is re-run as
+`/fp steps nr walk` after the gamepad-guard fix. Done: the repo setup (#1), the probe rounds that decided detection (#2) and
 classification (#7). Next after the port: the public API for minimap skins (#4), an options page.
 
 ## The UI contract (non-negotiable)
@@ -26,7 +27,8 @@ classification (#7). Next after the port: the public API for minimap skins (#4),
   `Minimap`.
 - Never reassign a Blizzard global or method; `hooksecurefunc` and our own frames only.
 - The sweep drives the minimap's mouseover and the soft cursor: the soft cursor is turned off after
-  every sweep, on every path, and no sweep runs with the gamepad on (its soft cursor isn't ours).
+  every sweep, on every path, and no sweep runs with the Gamepad UI on (`InputUtil.IsGamepadUIEnabled()`,
+  never the `GamePadEnable` CVar: it's on for keyboard players too).
 - **Gathering tracking is the player's.** The toggle turns it off only to learn, restores it always
   (across a reload too), and never overrides a change the player made.
 
@@ -53,7 +55,7 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
   prints additions with their provenance for review, writes with `--write`.
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
-  (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr ids` for #7 (round 3).
+  (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr release` for the release check (#3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
 - `tests/`: `wow_stubs.lua` (strict globals as an allowlist of APIs verified in the dump, secrets,
   event names checked against the dump or `events-70450.txt`, every widget method recorded, and a
@@ -90,7 +92,7 @@ Lua 5.1 at `C:\Program Files (x86)\Lua\5.1\` (`lua.exe`, `luac.exe`). No build s
 ```powershell
 pwsh tests\run.ps1                                                   # luac -p on the TOC files + probe, then every tests\test_*.lua (needs ..\ForeverProbe)
 & 'C:\Program Files (x86)\Lua\5.1\lua.exe' tests\test_probe.lua     # one test, from the repo root
-pwsh Tools\deploy.ps1 -ProbeOnly                                     # ForeverProbe + NodeRadarProbe into AddOns
+pwsh Tools\deploy.ps1 -Probe                                        # NodeRadar + ForeverProbe + NodeRadarProbe into AddOns
 ```
 
 - Default AddOns path: `C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns`

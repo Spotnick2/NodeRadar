@@ -6,12 +6,32 @@ the `/fp` console and `NodeRadarProbeDB.log`, never to chat.
 ## Running it
 
 ```powershell
-pwsh Tools\deploy.ps1 -ProbeOnly     # ForeverProbe, then NodeRadarProbe (not v1, until #3)
+pwsh Tools\deploy.ps1 -Probe         # NodeRadar, ForeverProbe, then NodeRadarProbe
 ```
 
-In game: `/console scriptErrors 1`, `/reload`, then **`/fp steps nr ids`** (round 3, #7) and follow
-the panel. It needs a character with Herbalism or Mining, outdoors near nodes. End with `/reload`;
-the session reads the results from `SavedVariables\NodeRadarProbe.lua` and `ForeverProbe.lua`.
+In game: `/console scriptErrors 1`, `/reload`, then **`/fp steps nr release`** (NodeRadar's
+release check, #3) and follow the panel. It needs a character with Herbalism or Mining, outdoors
+near nodes, one full client exit along the way. End with `/reload`; the session reads the results
+from `SavedVariables\NodeRadarProbe.lua`, `ForeverProbe.lua` and `NodeRadar.lua`.
+
+## The `release` procedure (#3)
+
+NodeRadar itself, end to end (docs/PLAN.md, "Release check, in game"):
+
+| Step | Measures |
+|---|---|
+| 1–2 | NodeRadar on, a gathering tracking on; its settings, learned counts, the minimap skin, the gamepad |
+| 3–5 | **Does the restore cost a global cooldown?** The probe's own toggle (NodeRadar's learning paused meanwhile, put back after, or at the next login): for 2 s after `SetTracking(i, true)`, Retail's GCD spell (61304), the tracking spell's cooldown, and action slots 1–12 that start a ≤ 1.6 s cooldown. Then: did you see a sweep? Decides `learn`'s default |
+| 6 | NodeRadar learns an unknown name **by itself** (the line lists the unknown names it sees) |
+| 7 | it learns one **by gathering** |
+| 8–9 | a walk: NodeRadar's alerts counted (a secure hook on `Alert.Fire`); one per new node? |
+| 10–11 | `/nr test`: the ring at the centre, with a screenshot; the skin named in the note |
+| 12–14 | tracking off with a restore pending, as mid-experiment; `/reload`; NodeRadar restores it by itself (20 s) |
+| 15–17 | cooldown set to 7 and the learned count noted; **a full client exit**; both read back, then the cooldown put back |
+
+`/fp steps nr walk` is steps 1–2, 6 and 8–9 alone: NodeRadar learning a name by itself (learning on
+for that step, the player's own setting put back after, a default kept a default) and the walk's
+alerts.
 
 The commands, for one-offs (`/fp nr` lists them):
 
@@ -28,7 +48,7 @@ The commands, for one-offs (`/fp nr` lists them):
 | `vignettes` | every vignette the client lists |
 | `sound [kit]` | `PlaySound(kit, "Master")`, MAP_PING (3175) by default |
 | `ring` | v1's ring on the minimap, and `GetFileIDFromPath` of its texture |
-| `toggle` | gathering tracking off and on, sweeping each time; what vanished |
+| `toggle [gcd]` | gathering tracking off and on, sweeping each time; what vanished (`gcd`: and the global cooldown of the restore) |
 | `pairs` | names paired with the game-object IDs in range; `ClosestGameObjectPosition` for each |
 
 ## The `ids` procedure (round 3, #7)
@@ -126,3 +146,36 @@ can share one spot (a quest and its objective line).
 learns names, per name and once each: from gathering casts for free, and by turning the tracking off
 and on when a sweep sees a name it doesn't know yet, out of combat. A name is the client's own,
 localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-coded.
+
+### Release check, run 1: `release`, 1.60.1.70450 (owner's run, 2026-10-17, Durotar, Find Herbs; Glass MiniMap and Leatrix Maps)
+
+| Check | Result |
+|---|---|
+| **The restore's global cooldown** | **Yes.** After `SetTracking(1, true)`: the tracking spell's cooldown went active, and action slots 2, 3 and 4 started a ≤ 1.6 s cooldown (220 samples); Retail's GCD spell (61304) never did. The owner saw the sweep. So **`learn` ships off**: learning is by gathering, and by toggle only for players who turn it on (`/nr learn`) |
+| The toggle | Find Herbs off and back on, `UNIT_SPELLCAST_SENT` 2383 at the restore; Silverleaf vanished and came back, eight quest lines stayed |
+| NodeRadar learning by itself; the walk's alerts | **Never ran: every sweep was skipped.** NodeRadar's gamepad guard read `GamePadEnable`, which is **true on this keyboard-and-mouse client** with "Enable Gamepad UI" off (the owner's options). Fixed: the guard reads the Gamepad UI the way Blizzard does, `InputUtil.IsGamepadUIEnabled()`. Re-run as `/fp steps nr walk` |
+| Learning by gathering | works: Silverleaf, Peacebloom, Earthroot |
+| `/nr test` | the ring and the sound (owner), under Glass MiniMap |
+| A `/reload` with a restore pending | NodeRadar restored tracking 1.2 s after the login (`UNIT_SPELLCAST_SENT` 2383), nothing left pending |
+| **A full client exit** | the cooldown set to 7 and 3 learned names both came back; no NodeRadar failure |
+
+### Release check, the walk: `walk`, 1.60.1.70450 (owner's run, 2026-10-17, Durotar)
+
+- **The radar runs** with the gamepad fix: Gamepad UI false, `GamePadEnable` true, gamepad cursor
+  false.
+- **Learning by itself:** within 1 s it learned "A Solvent Spirit" (a quest) as **not a node**.
+- **Alerts:** Peacebloom twice in 2½ minutes, once per node, no repeats (owner: yes).
+- **Names carry escape codes** (`NodeRadar.lua`'s learned names). A node above or below the player
+  reads `|TInterface\Minimap\Minimap-PositionArrows:…|tPeacebloom`: the position arrow's texture
+  comes first, so it was a different name and pinged only once the player reached its height (the
+  owner's "too slow"). Quest lines carry colours (`For Honor|cffffffff`, `- 0/1 … slain|r`). Fixed:
+  `Scan.Plain` strips textures, atlases, colours and links; names saved before are cleaned at
+  login; the export tool cleans too.
+- **The cadence follows the speed** (the owner): about 2 yards between sweeps (0.29 s at 100%,
+  0.48 s at 60%, 0.71 s at 40%, 0.2 s at most), and 2 s standing still.
+- **The ring:** `Interface\Cooldown\ping4` draws in a black square (no additive blend), and isn't
+  Blizzard's ping animation (owner). Replaced by the sonar (the owner's pick): two rings ripple out
+  from the node and a glow stays on it for 3 s, green for herbs, gold for ore, from our own art
+  (`Tools/make_media.py`) drawn additively. Not yet seen in game.
+- **Respawns** alert like any new node. A node gathered by the player no longer counts as one
+  blinking at the edge, so the next of its name within 20 s alerts.

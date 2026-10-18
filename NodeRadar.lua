@@ -1,7 +1,7 @@
 -- NodeRadar.lua: bootstrap, saved settings, the radar loop, /nr.
 --
--- While Find Herbs or Find Minerals is on, the radar sweeps the minimap every
--- half second (Scan), tells the gathering nodes from the other blips (Learn)
+-- While Find Herbs or Find Minerals is on, the radar sweeps the minimap (about
+-- every 2 yards moved; Scan), tells the gathering nodes from the other blips (Learn)
 -- and pings when a new one comes into range (Alert). docs/PLAN.md has the
 -- design, docs/FOREVER-PROBE.md what it rests on.
 
@@ -14,17 +14,26 @@ local ADDON_NAME = ...
 local DEFAULTS = {
     enabled  = true,
     sound    = true,    -- MAP_PING
-    ring     = true,    -- a ring on the new node's blip
+    ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
-    learn    = true,    -- learn unknown names by turning tracking off and on
+    learn    = false,   -- learn unknown names by turning tracking off and on: off, since
+                        -- turning it back on costs a global cooldown (release check, 70450)
     cooldown = 5,       -- seconds between alerts
-    interval = 0.5,     -- seconds between sweeps
-    ringR = 0.2, ringG = 1.0, ringB = 0.4,
+    interval = 2,       -- seconds between sweeps standing still; moving, NR.Interval adapts it
 }
--- v1's settings (it never worked on Forever): dropped.
+-- Settings no longer used: v1's (it never worked on Forever), and the ring's
+-- colour (the sonar is green for herbs, gold for ore). Dropped.
 local V1_KEYS = { "soundEnabled", "pingEnabled", "chatAlert", "mountedOnly", "scanInterval", "soundID",
-                  "pingColorR", "pingColorG", "pingColorB" }
+                  "pingColorR", "pingColorG", "pingColorB", "ringR", "ringG", "ringB" }
+
+-- The first port (#9) saved every default, learning on and a 0.5 s interval
+-- among them. They're dropped once, so today's defaults apply: a saved value
+-- equal to that old default can't be told from one the player chose, and
+-- learning costs a global cooldown, so it goes back to off (Codex, PR #10).
+local SAVED_DEFAULTS = { enabled = true, sound = true, ring = true, chat = false, ping = false,
+                         learn = true, cooldown = 5, interval = 0.5 }
+local SCHEMA = 2
 
 NR.DEFAULTS = DEFAULTS
 
@@ -32,11 +41,16 @@ local function initDB()
     if type(NodeRadarDB) ~= "table" then NodeRadarDB = {} end
     local db = NodeRadarDB
     for _, k in ipairs(V1_KEYS) do db[k] = nil end
-    for k, v in pairs(DEFAULTS) do
-        if db[k] == nil then db[k] = v end
+    if db.schema == nil then
+        for k, v in pairs(SAVED_DEFAULTS) do if db[k] == v then db[k] = nil end end
+        db.schema = SCHEMA
     end
+    -- Only what the player set is saved; the rest reads the defaults, so a
+    -- default can change in a later version.
+    setmetatable(db, { __index = DEFAULTS })
     if type(db.learned) ~= "table" then db.learned = {} end
     NR.db = db
+    Learn.CleanNames()
     if type(NodeRadarCharDB) ~= "table" then NodeRadarCharDB = {} end
     NR.charDb = NodeRadarCharDB
 end
@@ -68,13 +82,25 @@ function NR.Step(now)
     return result
 end
 
+-- Seconds until the next sweep, from the movement speed (the owner, release
+-- check): about YARDS of movement between sweeps, so 0.29 s at 100% (7 yd/s),
+-- 0.48 s at 60%, 0.71 s at 40%; never faster than FASTEST; standing still,
+-- db.interval (nothing on the map moves but a spawn).
+NR.YARDS, NR.FASTEST = 2, 0.2
+function NR.Interval()
+    local idle = NR.db.interval
+    local speed = API.Speed()
+    if not speed or speed <= 0 then return idle end
+    return math.max(NR.FASTEST, math.min(idle, NR.YARDS / speed))
+end
+
 local radar = CreateFrame("Frame")
 radar:SetScript("OnUpdate", function(_, dt)
     if not NR.db then return end
     local now = GetTime()
     Learn.Tick(now)
     elapsed = elapsed + (dt or 0)
-    if elapsed < NR.db.interval then return end
+    if elapsed < NR.Interval() then return end
     elapsed = 0
     NR.Step(now)
 end)
@@ -88,6 +114,8 @@ API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHAN
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_DEAD", "MINIMAP_UPDATE_ZOOM",
     "MINIMAP_UPDATE_TRACKING" })
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
+API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
+local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
 events:SetScript("OnEvent", function(_, event, ...)
     local now = GetTime()
     if event == "ADDON_LOADED" then
@@ -118,6 +146,19 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.OnTrackingChanged()
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
+        local unit, target, castGUID, spellID = ...
+        gathering = nil
+        if unit == "player" and type(target) == "string" and not API.IsSecret(target)
+            and not API.IsSecret(castGUID) and not API.IsSecret(spellID) and Learn.CastKind(spellID) then
+            gathering = { guid = castGUID, target = target }
+        end
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        -- Only a gather that went through: an interrupted one leaves the node (Codex, PR #10).
+        local unit, castGUID = ...
+        if gathering and unit == "player" and not API.IsSecret(castGUID) and castGUID == gathering.guid then
+            Alert.Gathered(gathering.target, now)
+            gathering = nil
+        end
     end
 end)
 
@@ -127,7 +168,7 @@ end)
 
 local function onOff(v) return v and "|cff00ff00on|r" or "|cffff4444off|r" end
 
-local TOGGLES = { sound = "sound", ring = "ring on the map", chat = "chat line",
+local TOGGLES = { sound = "sound", ring = "sonar on the node", chat = "chat line",
                   ping = "Blizzard's ping (solo only)", learn = "learning by turning tracking off and on" }
 
 local function status()
@@ -214,7 +255,7 @@ SlashCmdList.NODERADAR = function(msg)
         end
         if not any then API.Say("no failures") end
     elseif cmd == "reset" then
-        for k, v in pairs(DEFAULTS) do db[k] = v end
+        for k in pairs(DEFAULTS) do db[k] = nil end
         API.Say("settings reset (learned names kept)")
     else
         help()

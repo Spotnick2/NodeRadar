@@ -428,7 +428,7 @@ local function blipsAt(dx, dy)
     for _, b in ipairs(WoW.blips) do
         if (b[2] - dx) ^ 2 + (b[3] - dy) ^ 2 <= 36 and (not b.kind or kindOn(b.kind)) then
             local c = b.colour or { 1, 1, 1 }
-            local text = WoW.secretNames and WoW.Secret("name") or b[1]
+            local text = WoW.secretNames and WoW.Secret("name") or b.text or b[1]
             lines[#lines + 1] = { leftText = text, type = 0, leftColor = { r = c[1], g = c[2], b = c[3], a = 1 } }
         end
     end
@@ -474,9 +474,38 @@ C_Minimap = {
         assert(type(on) == "boolean", "SetTracking takes a bool")
         local t = WoW.tracking[i]
         if t and not (on and WoW.refuseTrackingOn) and not (not on and WoW.refuseTrackingOff) then t.active = on end
+        -- WoW.trackingGCD: turning a tracking on (a cast) starts a 1.5 s global cooldown.
+        if on and WoW.trackingGCD then WoW.gcdUntil = WoW.now + 1.5 end
         WoW.fire("MINIMAP_UPDATE_TRACKING")
     end,
 }
+
+-- The global cooldown, as the action bar shows it: slots 1-3 hold spells.
+local function onGCD() return WoW.gcdUntil ~= nil and WoW.now < WoW.gcdUntil end
+C_ActionBar = {
+    GetActionCooldown = function(slot)
+        local on = slot <= 3 and onGCD()
+        return { startTime = on and 1 or 0, duration = on and 1.5 or 0, isEnabled = true, isActive = on, modRate = 1 }
+    end,
+}
+WoW.onGCD = onGCD
+
+-- The Gamepad UI option (InputUtil, Blizzard_SharedXML): WoW.gamepadUI. The
+-- GamePadEnable CVar is something else, on by default.
+WoW.gamepadUI = false
+InputUtil = { IsGamepadUIEnabled = function() return WoW.gamepadUI == true end }
+function IsGamePadCursorControlEnabled() return WoW.gamepadCursor == true end
+
+-- The client's secure hook: the original runs, then the hook, with the same arguments.
+function hooksecurefunc(t, name, fn)
+    if type(t) == "string" then t, name, fn = _G, t, name end
+    local orig = t[name]
+    t[name] = function(...)
+        local r = { orig(...) }
+        fn(...)
+        return unpack(r)
+    end
+end
 
 -- The closest game object of an ID: WoW.closest[id] = { x, y, distance }, or
 -- secrets when WoW.closestSecret (documented SecretReturns).

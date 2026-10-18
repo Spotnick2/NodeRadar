@@ -59,6 +59,26 @@ function Learn.Record(name, kind, source)
     return true
 end
 
+-- Names saved before Scan.Plain (release check, 70450) carry escape codes
+-- ("|T…|tPeacebloom", "For Honor|cffffffff"): cleaned once, at login. A clash
+-- with the clean name keeps the gathered one, else the one already clean.
+function Learn.CleanNames()
+    for _, names in pairs(NR.db.learned) do
+        local dirty = {}
+        for name in pairs(names) do
+            if type(name) == "string" and name:find("|", 1, true) then dirty[#dirty + 1] = name end
+        end
+        for _, name in ipairs(dirty) do
+            local e, clean = names[name], Scan.Plain(name)
+            names[name] = nil
+            local cur = names[clean]
+            if clean ~= "" and (cur == nil or (e.source == "gather" and cur.source ~= "gather")) then
+                names[clean] = e
+            end
+        end
+    end
+end
+
 function Learn.Forget(name)
     local m = mine()
     if m then m[name] = nil end
@@ -87,6 +107,12 @@ local function castKind(spellID)
     end
     local n = spellName(spellID)
     return n and castNames[n] or nil
+end
+
+-- Whether a spell is a gathering cast (by ID, or another rank by name): its kind.
+function Learn.CastKind(spellID)
+    if API.IsSecret(spellID) or type(spellID) ~= "number" then return nil end
+    return castKind(spellID)
 end
 
 function Learn.OnCastSent(unit, target, _, spellID)
