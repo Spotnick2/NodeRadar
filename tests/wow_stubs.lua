@@ -436,6 +436,15 @@ C_SuperTrack = {
     IsSuperTrackingUserWaypoint = function() return WoW.superTracked == "waypoint" end,
     GetSuperTrackedQuestID = function() return WoW.superTracked == "quest" and 783 or nil end,
 }
+-- Items (#28): WoW.itemCached[id] says which are cached; GetItemIconByID
+-- answers only those (a model: what the client does is the probe's question),
+-- GetItemInfoInstant every one.
+WoW.itemCached = {}
+C_Item = {
+    IsItemDataCachedByID = function(id) return WoW.itemCached[id] == true end,
+    GetItemIconByID = function(id) if WoW.itemCached[id] then return 130000 + id end end,
+    GetItemInfoInstant = function(id) return id, "Trade Goods", "Herb", "", 130000 + id, 7, 9 end,
+}
 C_Navigation = {
     GetFrame = function() return WoW.superTracked == "waypoint" and WoW.navFrame or nil end,
     HasValidScreenPosition = function() return WoW.superTracked == "waypoint" end,
@@ -573,13 +582,17 @@ local function kindOn(kind)
 end
 
 -- A blip's hit area: a square, 17 units wide (a herb's narrowest, #11); a
--- blip's own `half` makes it larger (a quest's objective area).
+-- blip's own `half` makes it larger (a quest's objective area), `disc` round.
 WoW.BLIP_HALF = 8.5
+local function inside(b, dx, dy)
+    local half, x, y = b.half or WoW.BLIP_HALF, b[2] - dx, b[3] - dy
+    if b.disc then return x * x + y * y <= half * half end
+    return math.abs(x) <= half and math.abs(y) <= half
+end
 local function blipsAt(dx, dy)
     local lines = {}
     for _, b in ipairs(WoW.blips) do
-        local half = b.half or WoW.BLIP_HALF
-        if math.abs(b[2] - dx) <= half and math.abs(b[3] - dy) <= half
+        if inside(b, dx, dy)
             and (not b.kind or kindOn(b.kind)) then
             local c = b.colour or { 1, 1, 1 }
             local text = WoW.secretNames and WoW.Secret("name") or b.text or b[1]

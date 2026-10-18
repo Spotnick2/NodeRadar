@@ -33,7 +33,8 @@
 -- /fp steps nr walk (its walk alone); /fp steps nr memory (a leak, or garbage?);
 -- /fp steps nr blipsize (how wide the grid can be); /fp steps nr skill and
 -- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
--- coords (a blip's map coordinates, #27); /fp steps nr waypoint (Blizzard's marker, #29).
+-- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
+-- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -1955,6 +1956,319 @@ Probe:Steps("waypointframe", {
 })
 
 --------------------------------------------------------------------------------
+-- Item icons on the minimap's nodes (#28), its first round. A node blip's
+-- exact hit area: every map unit over ±30 around it, a square or a disc, its
+-- size and centre; the drawn dot against it (our marks at the measured centre
+-- and box, and a screenshot); the raw text of a node above and below the player
+-- (the Minimap-PositionArrows texture Scan.Plain strips); what C_Item answers
+-- for every NODE_INFO item, cached or not. Saved in NodeRadarProbeDB.icons.
+--------------------------------------------------------------------------------
+
+local MASK_HALF = 30
+local NEIGHBOURS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+
+-- The raw left texts at a point (map units from the map's centre). The soft
+-- cursor must be on.
+local function rawAt(g, x, y)
+    Minimap:UpdateMouseoverAtPoint((g.cx + x) * g.es, (g.cy + y) * g.es)
+    local ok, data = pcall(C_TooltipInfo.GetMinimapMouseover)
+    local out = {}
+    if not ok or secret(data) or type(data) ~= "table" or secret(data.lines) or type(data.lines) ~= "table" then
+        return out
+    end
+    for _, line in ipairs(data.lines) do
+        local t = type(line) == "table" and line.leftText or nil
+        if type(t) == "string" and not secret(t) then out[#out + 1] = t end
+    end
+    return out
+end
+
+-- One blip's hit area: the 4-connected group of hit cells nearest its grid
+-- centre (another node of the name nearby is a second group), its box, how
+-- full the box is (a square fills it, a disc about 70-79%), its corners, its
+-- centre; the rows as text, top first ('#' this group, 'o' another).
+local function hitArea(n, name, b, g)
+    local hit = {}
+    for dy = -MASK_HALF, MASK_HALF do
+        for dx = -MASK_HALF, MASK_HALF do
+            local x, y = b.x + dx, b.y + dy
+            if math.abs(x) <= g.w / 2 and math.abs(y) <= g.h / 2 then
+                Minimap:UpdateMouseoverAtPoint((g.cx + x) * g.es, (g.cy + y) * g.es)
+                for _, row in ipairs(mouseover() or {}) do
+                    if n.Scan.Plain(row) == name then hit[dx .. ":" .. dy] = { dx, dy }; break end
+                end
+            end
+        end
+    end
+    local seen, best, bestD, groups = {}, nil, math.huge, 0
+    for key, c in pairs(hit) do
+        if not seen[key] then
+            groups = groups + 1
+            local group, stack, d = {}, { c }, math.huge
+            seen[key] = true
+            while #stack > 0 do
+                local p = table.remove(stack)
+                group[#group + 1] = p
+                d = math.min(d, p[1] * p[1] + p[2] * p[2])
+                for _, o in ipairs(NEIGHBOURS) do
+                    local k = (p[1] + o[1]) .. ":" .. (p[2] + o[2])
+                    if hit[k] and not seen[k] then seen[k] = true; stack[#stack + 1] = hit[k] end
+                end
+            end
+            if d < bestD then best, bestD = group, d end
+        end
+    end
+    if not best then return { name = name, points = 0, groups = 0 } end
+    local mine = {}
+    local minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
+    for _, p in ipairs(best) do
+        mine[p[1] .. ":" .. p[2]] = true
+        minx, maxx = math.min(minx, p[1]), math.max(maxx, p[1])
+        miny, maxy = math.min(miny, p[2]), math.max(maxy, p[2])
+    end
+    local w, h = maxx - minx + 1, maxy - miny + 1
+    local corners = 0
+    for _, k in ipairs({ minx .. ":" .. miny, minx .. ":" .. maxy, maxx .. ":" .. miny, maxx .. ":" .. maxy }) do
+        if mine[k] then corners = corners + 1 end
+    end
+    local fill = #best / (w * h)
+    local rows = {}
+    for y = maxy, miny, -1 do
+        local row = {}
+        for x = minx, maxx do
+            local k = x .. ":" .. y
+            row[#row + 1] = mine[k] and "#" or hit[k] and "o" or "."
+        end
+        rows[#rows + 1] = table.concat(row)
+    end
+    local x, y = b.x + (minx + maxx) / 2, b.y + (miny + maxy) / 2
+    return {
+        name = name, points = #best, w = w, h = h, fill = fill, corners = corners, groups = groups,
+        shape = corners == 4 and fill >= 0.95 and "square" or corners == 0 and fill < 0.9 and "disc" or "other",
+        x = x, y = y, offset = { x - b.x, y - b.y },
+        window = minx == -MASK_HALF or maxx == MASK_HALF or miny == -MASK_HALF or maxy == MASK_HALF,
+        rim = math.sqrt(x * x + y * y) + math.max(w, h) / 2 > g.w / 2,
+        rows = rows,
+    }
+end
+
+-- Our marks on the minimap: a red cross at each measured centre, a blue box
+-- around its hit area. Unnamed children of Minimap, mouse pass-through.
+local marks = {}
+local function hideMarks() for _, f in ipairs(marks) do f:Hide() end end
+local function showMarks(list)
+    hideMarks()
+    for i, m in ipairs(list) do
+        local f = marks[i]
+        if not f then
+            f = CreateFrame("Frame", nil, Minimap)
+            f:EnableMouse(false)
+            local function tex(r, g, b)
+                local t = f:CreateTexture(nil, "OVERLAY")
+                t:SetColorTexture(r, g, b, 0.9)
+                return t
+            end
+            f.cross = { tex(1, 0, 0), tex(1, 0, 0) }
+            f.box = { tex(0, 0.8, 1), tex(0, 0.8, 1), tex(0, 0.8, 1), tex(0, 0.8, 1) }
+            for j, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do f.box[j]:SetPoint(side, f, side) end
+            f.cross[1]:SetPoint("CENTER", f, "CENTER")
+            f.cross[2]:SetPoint("CENTER", f, "CENTER")
+            f.cross[1]:SetSize(4, 1)
+            f.cross[2]:SetSize(1, 4)
+            marks[i] = f
+        end
+        f:ClearAllPoints()
+        f:SetPoint("CENTER", Minimap, "CENTER", m.x, m.y)
+        f:SetSize(m.w, m.h)
+        f.box[1]:SetSize(m.w, 1)
+        f.box[2]:SetSize(m.w, 1)
+        f.box[3]:SetSize(1, m.h)
+        f.box[4]:SetSize(1, m.h)
+        f:Show()
+    end
+end
+
+local function iconsDB()
+    NodeRadarProbeDB.icons = NodeRadarProbeDB.icons or {}
+    return NodeRadarProbeDB.icons
+end
+
+local function measureHitAreas(label)
+    local n = nr()
+    if not n then error("NodeRadar isn't loaded", 0) end
+    local r = n.Scan.Sweep()
+    if not r then error("NodeRadar's sweep failed", 0) end
+    local g = geometry()
+    if not g then error("the map's geometry is unreadable", 0) end
+    -- One herb and one ore when both show, then other nodes: three at most.
+    local picked, kinds, seen = {}, {}, {}
+    for _, b in ipairs(r.blips) do
+        local kind = n.Learn.Kind(b.name)
+        seen[#seen + 1] = b.name
+        if kind and not kinds[kind] then kinds[kind] = true; picked[#picked + 1] = b; b.picked = true end
+    end
+    for _, b in ipairs(r.blips) do
+        if #picked >= 3 then break end
+        if n.Learn.Kind(b.name) and not b.picked then picked[#picked + 1] = b end
+    end
+    if #picked == 0 then error("no node on the minimap (saw: " .. join(seen) .. "): stand where one shows, then Retry", 0) end
+    local okZoom, zoom = pcall(Minimap.GetZoom, Minimap)
+    local out = { label = label, zoom = okZoom and num(zoom) or nil, radius = num(C_Minimap.GetViewRadius()),
+                  w = g.w, h = g.h, es = g.es, blips = {} }
+    local t0 = debugprofilestop()
+    setSoft(true)
+    local ok, err = pcall(function()
+        for _, b in ipairs(picked) do
+            local m = hitArea(n, b.name, b, g)
+            m.kind = n.Learn.Kind(b.name)
+            m.raw = m.x and rawAt(g, m.x, m.y) or {}
+            out.blips[#out.blips + 1] = m
+        end
+    end)
+    pcall(Minimap.UpdateMouseoverAtPoint, Minimap, farPixels(g))
+    setSoft(false)
+    if not ok then error(str(err), 0) end
+    out.ms = debugprofilestop() - t0
+    local db = iconsDB()
+    db.areas = db.areas or {}
+    db.areas[#db.areas + 1] = out
+    local drawn, parts = {}, {}
+    for _, m in ipairs(out.blips) do
+        if m.points > 0 then
+            drawn[#drawn + 1] = m
+            parts[#parts + 1] = ("%s [%s] %s %dx%d, %d points, fill %.2f, corners %d, centre %+.1f %+.1f from the grid's, "
+                .. "groups %d%s%s"):format(m.name, str(m.kind), m.shape, m.w, m.h, m.points, m.fill, m.corners,
+                m.offset[1], m.offset[2], m.groups, m.window and ", touches the window" or "", m.rim and ", at the rim" or "")
+        else
+            parts[#parts + 1] = m.name .. ": no hit"
+        end
+    end
+    showMarks(drawn)
+    local text = ("%s: zoom %s, radius %s yd, map %.0fx%.0f, %.0f ms: %s"):format(label, str(out.zoom), str(out.radius),
+        g.w, g.h, out.ms, table.concat(parts, "; "))
+    say("hit areas " .. text)
+    return text
+end
+
+-- The raw text of a node blip with a position arrow, unlike `other`'s.
+local function arrowFound(other)
+    local n = nr()
+    if not n then return nil, "NodeRadar isn't loaded" end
+    local r = n.Scan.Sweep()
+    local g = geometry()
+    if not (r and g) then return nil, "no sweep" end
+    local found
+    setSoft(true)
+    local ok, err = pcall(function()
+        for _, b in ipairs(r.blips) do
+            if n.Learn.Kind(b.name) then
+                for _, t in ipairs(rawAt(g, b.x, b.y)) do
+                    local tex = t:match("|T([^|]*PositionArrows[^|]*)|t")
+                    if tex and tex ~= other then found = { name = b.name, raw = t, tex = tex }; return end
+                end
+            end
+        end
+    end)
+    pcall(Minimap.UpdateMouseoverAtPoint, Minimap, farPixels(g))
+    setSoft(false)
+    if not ok then return nil, "ERROR " .. str(err) end
+    return found, "no node with an arrow" .. (other and " other than the first" or "") .. " yet"
+end
+
+local function arrowWait(which)
+    return function()
+        hideMarks()
+        local arrows = iconsDB().arrows or {}
+        iconsDB().arrows = arrows
+        local found, why = arrowFound(which == "below" and arrows.above and arrows.above.tex or nil)
+        if not found then return false, why end
+        arrows[which] = found
+        say(("arrow %s: %s, raw %q"):format(which, found.name, found.raw))
+        return true, ("%s: %s"):format(found.name, found.tex)
+    end
+end
+
+-- What C_Item answers for every NODE_INFO item of this locale, cached or not.
+local function itemIcons()
+    local n = nr()
+    local info = n and n.NODE_INFO and n.NODE_INFO[GetLocale()]
+    if type(info) ~= "table" then error("no NODE_INFO for " .. tostring(GetLocale()), 0) end
+    local names, list = {}, {}
+    for name, v in pairs(info) do
+        if v.item and not names[v.item] then names[v.item] = name; list[#list + 1] = v.item end
+    end
+    table.sort(list)
+    local t = { items = #list, cached = 0, uncached = 0, icon = 0, uncachedIcon = 0, instant = 0, differ = 0,
+                errors = 0, examples = {} }
+    for _, id in ipairs(list) do
+        local okC, cached = pcall(C_Item.IsItemDataCachedByID, id)
+        local okI, icon = pcall(C_Item.GetItemIconByID, id)
+        local okN, _, _, _, _, instant = pcall(C_Item.GetItemInfoInstant, id)
+        if not (okC and okI and okN) then t.errors = t.errors + 1 end
+        cached = okC and yes(cached)
+        icon = okI and not secret(icon) and icon or nil
+        instant = okN and not secret(instant) and instant or nil
+        if cached then t.cached = t.cached + 1 else t.uncached = t.uncached + 1 end
+        if icon ~= nil then
+            t.icon = t.icon + 1
+            if not cached then t.uncachedIcon = t.uncachedIcon + 1 end
+        end
+        if instant ~= nil then t.instant = t.instant + 1 end
+        if icon ~= nil and instant ~= nil and icon ~= instant then t.differ = t.differ + 1 end
+        if not cached and #t.examples < 5 then
+            t.examples[#t.examples + 1] = ("%s %d: icon %s, instant %s"):format(names[id], id, str(icon), str(instant))
+        end
+    end
+    iconsDB().items = t
+    local text = ("%d items: %d cached, %d not; GetItemIconByID answered %d (%d of the uncached), "
+        .. "GetItemInfoInstant's icon %d, %d differ, %d errors; uncached: %s"):format(t.items, t.cached, t.uncached,
+        t.icon, t.uncachedIcon, t.instant, t.differ, t.errors, join(t.examples))
+    say("item icons " .. text)
+    return text
+end
+
+local function zoomChanged()
+    hideMarks()
+    local ok, zoom = pcall(Minimap.GetZoom, Minimap)
+    zoom = ok and num(zoom) or nil
+    local areas = iconsDB().areas
+    local last = areas and areas[#areas] and areas[#areas].zoom
+    if zoom == nil or zoom == last then return false, "zoom " .. str(zoom) end
+    return true, "zoom " .. str(zoom)
+end
+
+local MARKS_ASK = "Stay still. Is each red cross on the middle of a node's yellow dot, with the blue box around the "
+    .. "dot? (The box is where the node answers the mouse.)"
+
+Probe:Steps("icons", {
+    rev = 1,
+    title = "Item icons on the minimap's nodes: hit areas, arrows, icons (#28)",
+    { text = "Have NodeRadar loaded and gathering tracking on.", wait = function()
+          if not nr() then return false, "NodeRadar isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          NodeRadarProbeDB.icons = nil
+          return true, "ready"
+      end },
+    { text = "Reading the items' icons (a moment).", auto = true, run = itemIcons },
+    { text = "Stand still where a herb or ore shows on the minimap (one of each if you can), then press Measure. "
+          .. "The game freezes a second or two.", button = "Measure",
+      run = function() return measureHitAreas("first zoom") end },
+    { text = MARKS_ASK, ask = true, screenshot = "hit areas, first zoom" },
+    { text = "Zoom the minimap in or out (its + and - buttons or the mouse wheel), keeping a node in view.",
+      wait = zoomChanged },
+    { text = "Stand still with a node in view, then press Measure.", button = "Measure",
+      run = function() return measureHitAreas("second zoom") end },
+    { text = MARKS_ASK, ask = true, screenshot = "hit areas, second zoom" },
+    { text = "Find a node above you (up a slope or on a ledge): the minimap marks it with an arrow. "
+          .. "Skip if there's none near.", wait = arrowWait("above") },
+    { text = "Now a node below you. Skip if there's none near.", wait = arrowWait("below") },
+    { text = "Optional: two nodes of one name touching on the minimap, or one at its edge. Stand so and press "
+          .. "Measure, or Skip.", button = "Measure", run = function() return measureHitAreas("extra") end },
+    { text = MARKS_ASK .. " (Skip if you skipped the last step.)", ask = true, screenshot = "hit areas, extra" },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
@@ -2017,4 +2331,4 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     end
 end)
 
-NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode }
+NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }
