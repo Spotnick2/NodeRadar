@@ -1,8 +1,10 @@
 -- The waypoint procedure (/fp steps nr waypoint, #29): our user waypoint on
 -- the nearest node (NodeRadar's own Scan.MapPosition), super-tracked; the
 -- marker read; clamped; arrival; the player's own waypoint over ours;
--- both clearing orders; the reload. Events fired inside our setters are
--- marked "(ours)". Runs locally only (ForeverProbe is private; CI skips it).
+-- both clearing orders; the reload, and the final cleanup (tracking first).
+-- Then /fp steps nr waypointframe, SuperTrackedFrame read again. Events fired
+-- inside our setters are marked "(ours)". Runs locally only (ForeverProbe is
+-- private; CI skips it).
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
@@ -40,6 +42,9 @@ local function detail(i) return tostring(result(i).detail) end
 WoW.cvars.rotateMinimap = "0"
 WoW.map, WoW.mapPos, WoW.mapSize = 1411, { x = 0.5, y = 0.4 }, { 5287, 3525 }
 WoW.navFrame = CreateFrame("Frame")
+local stf = CreateFrame("Frame")
+stf:Show()
+rawset(_G, "SuperTrackedFrame", stf)
 WoW.blips = { { "Wilted Peacebloom", 30, -20, kind = "herbs" }, { "Silverleaf", -60, 60, kind = "herbs" } }
 
 -- Not free: a quest super-tracked waits.
@@ -79,6 +84,8 @@ WoW.blips = { { "Wilted Peacebloom", 30, -20, kind = "herbs" }, { "Silverleaf", 
 poll()
 eq(result(3).status, "done", "the navigation frame read")
 check(detail(3):find("nav frame present") and detail(3):find("super%-tracking anything true"), "...its state")
+check(detail(3):find("SuperTrackedFrame shown"), "SuperTrackedFrame read as shown: " .. detail(3))
+stf:Hide()
 S.Answer(true)                                             -- 4: seen
 settle()
 poll()
@@ -98,6 +105,7 @@ S.Answer(true)                                             -- 8
 
 -- Ours again, then the player's own over it.
 eq(result(9).status, "done", "ours set again: " .. tostring(result(9).lastError))
+check(detail(9):find("SuperTrackedFrame hidden"), "...and as hidden: " .. detail(9))
 check(WoW.waypoint and WoW.superTracked == "waypoint", "...and tracked")
 poll()
 eq(record().at, 10, "waits for the player's own waypoint")
@@ -120,6 +128,33 @@ check(logged("tracking off, waypoint still set"), "...its middle state logged")
 check(logged("cleared, tracking first: waypoint false"), "nothing left after the second order")
 eq(result(14).status, "done", "set once more for the reload")
 check(WoW.waypoint ~= nil, "...set")
+eq(record().at, 15, "at the reload")
+S.Next()
+eq(result(16).status, "done", "read after the reload")
+eq(result(17).status, "done", "cleared")
+check(WoW.waypoint == nil and WoW.superTracked == nil,
+    "the final cleanup leaves no waypoint and no super-track (tracking first)")
+eq(record().at, 18, "at the last reload")
+fp("steps stop")
+
+-- SuperTrackedFrame read again, a few seconds after Set.
+fp("steps nr waypointframe")
+local function frec() return FP.db.steps.records["NodeRadarProbe/waypointframe"] end
+poll()
+eq(frec().results[1].status, "done", "free")
+stf:Show()
+S.Run()
+eq(frec().results[2].status, "done", "set: " .. tostring(frec().results[2].lastError))
+poll()
+check(frec().at == 3 and (frec().results[3] or {}).status == nil, "waits a few seconds after Set: "
+    .. tostring((frec().results[3] or {}).detail))
+WoW.advance(2)
+poll()
+eq(frec().results[3].status, "done", "read")
+check(tostring(frec().results[3].detail):find("SuperTrackedFrame shown"), "...shown: " .. tostring(frec().results[3].detail))
+settle()
+eq(frec().results[4].status, "done", "cleared")
+check(WoW.waypoint == nil and WoW.superTracked == nil, "...tracking first: nothing left")
 fp("steps stop")
 
 eq(errors(), 0, "no step threw")

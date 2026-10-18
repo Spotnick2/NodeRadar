@@ -421,9 +421,9 @@ C_Map.SetUserWaypoint = function(point)
     WoW.fire("USER_WAYPOINT_UPDATED")
     return true
 end
+-- Clearing the waypoint leaves its super-track on, as measured (FOREVER-PROBE.md).
 C_Map.ClearUserWaypoint = function()
     WoW.waypoint = nil
-    if WoW.superTracked == "waypoint" then WoW.superTracked = nil; WoW.fire("SUPER_TRACKING_CHANGED") end
     WoW.fire("USER_WAYPOINT_UPDATED")
 end
 C_SuperTrack = {

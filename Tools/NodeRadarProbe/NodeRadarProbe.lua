@@ -1788,8 +1788,12 @@ local function navState()
         where = str(pt)
     end
     local frame = wpRead(C_Navigation.GetFrame)
-    local stf = rawget(_G, "SuperTrackedFrame")
-    local okShown, shown = stf and pcall(stf.IsShown, stf)
+    -- Both returns kept: `stf and pcall(...)` would keep only the first (Codex on #39).
+    local stf, shown = rawget(_G, "SuperTrackedFrame"), "absent"
+    if stf then
+        local ok, v = pcall(stf.IsShown, stf)
+        shown = ok and (yes(v) and "shown" or "hidden") or "unreadable"
+    end
     local loaded = wpRead(C_AddOns.IsAddOnLoaded, "Blizzard_QuestNavigation")
     return ("waypoint %s at %s; super-tracking anything %s, the waypoint %s, quest %s; nav frame %s, valid %s, "
         .. "distance %s, clamped %s, state %s; SuperTrackedFrame %s; Blizzard_QuestNavigation loaded %s")
@@ -1798,7 +1802,7 @@ local function navState()
             frame == nil and "none" or type(frame) == "string" and frame or "present",
             str(wpRead(C_Navigation.HasValidScreenPosition)), str(wpRead(C_Navigation.GetDistance)),
             str(wpRead(C_Navigation.WasClampedToScreen)), str(wpRead(C_Navigation.GetTargetState)),
-            stf and (okShown and (yes(shown) and "shown" or "hidden") or "unreadable") or "absent", str(loaded))
+            shown, str(loaded))
 end
 
 local function wpSay(label)
@@ -1921,7 +1925,32 @@ Probe:Steps("waypoint", {
     { text = "After the reload: is our waypoint still there?", auto = true, run = function()
           return wpSay("after the reload")
       end },
-    { text = "Clearing it.", auto = true, run = function() return clearOurs("waypoint first") end },
+    -- Tracking first: the waypoint first leaves the super-track on (measured
+    -- above). Same text and rev, so the run left at step 16 resumes with this.
+    { text = "Clearing it.", auto = true, run = function() return clearOurs("tracking first") end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+-- SuperTrackedFrame's visibility, read again: the first run's read always
+-- said hidden (Codex on #39).
+Probe:Steps("waypointframe", {
+    rev = 1,
+    title = "SuperTrackedFrame read again (#29)",
+    { text = "Remove any map waypoint you have and stop tracking quests on screen (super-track), so the "
+          .. "waypoint is free.", wait = waypointFree },
+    { text = "Stand outdoors facing a herb or ore 40-80 yards away on the minimap, then press Set.",
+      button = "Set", run = function()
+          state.wpSetAt = GetTime()
+          return setOurs(nearestNode())
+      end },
+    { text = "Reading the marker frame (a few seconds).", wait = function()
+          local frame = wpRead(C_Navigation.GetFrame)
+          if frame ~= nil and type(frame) ~= "string" and GetTime() - (state.wpSetAt or 0) >= 3 then
+              return true, wpSay("frame")
+          end
+          return false, "waiting for the navigation frame"
+      end, timeout = 10, screenshot = "facing the node" },
+    { text = "Clearing ours, the tracking first.", auto = true, run = function() return clearOurs("tracking first") end },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
 
