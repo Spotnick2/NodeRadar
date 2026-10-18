@@ -12,4 +12,5 @@ Data\Nodes.lua
 Scan.lua
 Learn.lua
 Alert.lua
+Options.lua
 NodeRadar.lua

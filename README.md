@@ -25,10 +25,20 @@ out from the node and a glow stays on it, green for herbs, gold for ore.
 one. A node leaving the map's edge in the same half second another of its name comes in may not
 alert.
 
+## Options
+
+**Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; how often it looks,
+standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
+for the game to clean up); the sound, from a dropdown (the minimap ping, a sonar or radar ping from
+the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sonar, bell chime,
+notification, sci-fi HUD ping), the sonar on the node, a chat line, Blizzard's ping, the time
+between alerts, a test button; learning by toggling tracking.
+
 ## Commands
 
-- `/nr`: radar on or off
-- `/nr sound`, `/nr ring`, `/nr chat`: the ping sound, the sonar on the node, a chat line
+- `/nr`: radar on or off; `/nr options`: the Options page
+- `/nr sound`, `/nr ring`, `/nr chat`: the sound, the sonar on the node, a chat line;
+  `/nr sound <name>`: which sound (`/nr help` lists the names)
 - `/nr ping`: Blizzard's minimap ping on the node too, solo only (in a group it would show on
   everyone's minimap)
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
@@ -37,4 +47,21 @@ alert.
 
 ## License
 
-MIT
+MIT, except the six alert sounds below.
+
+## Sounds
+
+The six sounds in `Media/*.ogg` are royalty-free sound effects from [Pixabay](https://pixabay.com),
+under the [Pixabay Content License](https://pixabay.com/service/terms/), not MIT:
+
+| File | Pixabay | By |
+|---|---|---|
+| `Sonar.ogg` | "sonar ping", #95840 | freesound_community |
+| `RadarBlip.ogg` | "radar ping", #306440 | user 49053354 |
+| `DeepSea.ogg` | "deepsea sonar", #386156 | Dragon Studio |
+| `BellChime.ogg` | "clear bell chime", #487898 | Universfield |
+| `Notification.ogg` | "new notification 016", #350210 | Universfield |
+| `HudPing.ogg` | "sci-fi HUD notification ping", #547867 | vadim_makes_sound |
+
+Trimmed, made mono and evened in loudness by `Tools/import_sounds.py`. They ship inside NodeRadar
+only, never as files of their own. The `LICENSE` that ships with the addon says the same.

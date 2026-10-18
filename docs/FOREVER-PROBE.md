@@ -202,3 +202,16 @@ apart) read as one and the second never alerted (Codex, PR #12): a cluster of se
 name known to be a node is read again at a step of 7 (as fine as the old 8) and grouped anew,
 however wide (a chain of three is as wide as a quest's area). A node on one cell costs nothing
 more; a pair a few reads; a quest's area, or any name not known as a node, isn't read again.
+
+### Sounds (owner, 2026-10-18, 1.60.1.70450) (#13)
+
+Played from the Options page with `PlaySoundFile`: FileDataID **569006** (`Spell_Uni_SonarPing_01`)
+and **7466154** (`12.0_UI_Alert_Tonal_Radar_Ping`, a 12.0 file) both play, as does NodeRadar's own
+`Media\Sonar.ogg`. They're the page's Sonar ping, Radar ping and NodeRadar's sonar, beside the
+minimap ping (kit 3175).
+
+Later the same day the owner replaced NodeRadar's own synthesised sonar with six Pixabay sounds
+(README, "Sounds"): Sonar, Radar blip, Deep-sea sonar, Bell chime, Notification, Sci-fi HUD ping,
+converted by `Tools/import_sounds.py`. The sound became a dropdown, `WowStyle1DropdownTemplate`
+with radio items, as Blizzard's AddOns list on this build (`Blizzard_AddOnList/AddonList.xml:126`);
+the radio group stays as the fallback.

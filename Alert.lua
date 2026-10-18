@@ -11,7 +11,8 @@ local Alert = {}
 NR.Alert = Alert
 
 Alert.BLINK = 20      -- seconds: a rise this soon after a drop is the same node at the map's edge
-Alert.STALE = 5       -- seconds without a successful sweep before the next is a silent baseline
+Alert.STALE = 5       -- seconds without a successful sweep, past the idle interval, before
+                      -- the next is a silent baseline (plus the interval: Codex, #13)
 Alert.GATHERED = 15   -- seconds: a drop this soon after gathering that name is the gathered node
 Alert.MAP_PING = 3175 -- SOUNDKIT.MAP_PING (SoundKitConstants.lua:73)
 
@@ -41,7 +42,7 @@ end
 
 -- After each successful radar sweep. Returns the names that alerted.
 function Alert.Update(result, now)
-    if hist and now - hist.at > Alert.STALE then hist = nil end
+    if hist and now - hist.at > Alert.STALE + NR.db.interval then hist = nil end
     local counts, blips = nodes(result)
     if not hist then
         hist = { counts = counts, drops = {}, at = now }
@@ -163,12 +164,37 @@ function Alert.Sonar(x, y, kind)
     end
 end
 
+-- The sounds (#13), the owner's picks: Blizzard's minimap ping; two of the
+-- client's files by FileDataID, both heard on 70450 (Spell_Uni_SonarPing_01,
+-- and 12.0_UI_Alert_Tonal_Radar_Ping, a 12.0 file in this client too); six
+-- of ours from Pixabay (Tools/import_sounds.py, README "Sounds").
+Alert.SOUNDS = {
+    ping      = { kit = Alert.MAP_PING },
+    sonarping = { file = 569006 },
+    radar     = { file = 7466154 },
+    sonar     = { file = Alert.MEDIA .. "Sonar.ogg" },
+    radarblip = { file = Alert.MEDIA .. "RadarBlip.ogg" },
+    deepsea   = { file = Alert.MEDIA .. "DeepSea.ogg" },
+    bell      = { file = Alert.MEDIA .. "BellChime.ogg" },
+    notify    = { file = Alert.MEDIA .. "Notification.ogg" },
+    hud       = { file = Alert.MEDIA .. "HudPing.ogg" },
+}
+
+-- The chosen sound, whatever db.sound says (the Options page's choice plays it).
+function Alert.PlaySound()
+    local s = Alert.SOUNDS[NR.db.soundKind] or Alert.SOUNDS.ping
+    local ok, willPlay
+    if s.file then
+        ok, willPlay = pcall(PlaySoundFile, s.file, "Master")
+    else
+        ok, willPlay = pcall(PlaySound, s.kit, "Master")
+    end
+    if not ok or not willPlay then API.Fail("sound", ok and "refused" or willPlay) end
+end
+
 function Alert.Fire(names, blips)
     local db = NR.db
-    if db.sound then
-        local ok, willPlay = pcall(PlaySound, Alert.MAP_PING, "Master")
-        if not ok or willPlay == false then API.Fail("sound", ok and "refused" or willPlay) end
-    end
+    if db.sound then Alert.PlaySound() end
     local first
     for _, name in ipairs(names) do
         local kind = NR.Learn.Kind(name)

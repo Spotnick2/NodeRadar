@@ -22,6 +22,9 @@ looked for the minimap's blips where the game doesn't put them.
   codes (it used to ping only once you reached its height).
 - Respawns alert, and so does the next node of a name you just gathered (it isn't taken for the
   gathered one blinking at the map's edge).
+- **An Options page** (Esc > Options > AddOns, or `/nr options`, #13): how often it looks standing
+  still and moving, the sound (a dropdown: the minimap ping, a sonar or radar ping from the game, or
+  one of six shipped sounds from Pixabay), the alert's parts, the time between alerts, learning.
 - **Ships with node names already learned**, and works in any language.
 - Blizzard's minimap ping on the node, optional and solo only (`/nr ping`).
 - `/nr known`, `/nr forget`, `/nr status` (names a build it wasn't measured on), `/nr failures`.

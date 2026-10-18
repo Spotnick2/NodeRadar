@@ -8,6 +8,7 @@ additively, so they glow on any minimap skin with no square around them.
 
   SonarRing   a thin ring with a soft halo, scaled out from the node
   SonarGlow   a round soft glow that stays on the node a moment
+The sounds come from Tools/import_sounds.py.
 
 Plain Python, no dependencies: 32-bit uncompressed TGA, top-left origin.
 """

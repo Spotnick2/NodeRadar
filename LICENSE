@@ -22,13 +22,21 @@ SOFTWARE.
 
 --------------------------------------------------------------------------
 
-THIRD-PARTY COMPONENTS
+THIRD-PARTY SOUNDS
 
-The MIT terms above cover Glass Mail's own code. They do NOT relicense the
-library bundled under Libs/, which is redistributed under its own terms and
-remains the work of its author:
+The MIT terms above cover NodeRadar's own code and textures. They do NOT
+cover the six alert sounds in Media/, royalty-free sound effects from
+Pixabay (https://pixabay.com), used under the Pixabay Content License
+(https://pixabay.com/service/terms/). They ship inside NodeRadar only and
+may not be redistributed as files of their own:
 
-  Libs/LibGlass-1.0        LibGlass-1.0, copyright (c) 2026 Spotnick2.
-                           MIT License; its own LICENSE ships beside it.
-                           Fetched at build time, not kept in this
-                           repository.
+  Media/Sonar.ogg          "sonar ping", Pixabay #95840, freesound_community
+  Media/RadarBlip.ogg      "radar ping", Pixabay #306440, user 49053354
+  Media/DeepSea.ogg        "deepsea sonar", Pixabay #386156, Dragon Studio
+  Media/BellChime.ogg      "clear bell chime", Pixabay #487898, Universfield
+  Media/Notification.ogg   "new notification 016", Pixabay #350210,
+                           Universfield
+  Media/HudPing.ogg        "sci-fi HUD notification ping", Pixabay #547867,
+                           vadim_makes_sound
+
+Each was trimmed, made mono and evened in loudness (Tools/import_sounds.py).

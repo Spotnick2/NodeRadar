@@ -9,6 +9,30 @@ check(toc:find("## SavedVariables: NodeRadarDB", 1, true), "saved variables decl
 check(toc:find("## SavedVariablesPerCharacter: NodeRadarCharDB", 1, true), "per-character saved variables declared")
 check(not toc:find("ForeverProbe", 1, true), "the addon never depends on the probe host")
 check(#tocFiles() >= 1, "the TOC lists files")
+
+-- Every sound that ships is credited in the LICENSE that ships with it (Codex,
+-- PR #14): the README isn't packaged.
+local license = io.open("LICENSE"):read("*a")
+check(not license:find("Glass Mail", 1, true), "LICENSE: NodeRadar's own, no copied notice")
+local sounds = 0
+for _, f in ipairs({ "Sonar", "RadarBlip", "DeepSea", "BellChime", "Notification", "HudPing" }) do
+    local path = "Media/" .. f .. ".ogg"
+    if io.open(path, "rb") then sounds = sounds + 1 end
+    check(license:find(path, 1, true), "LICENSE credits " .. path)
+end
+eq(sounds, 6, "the six sounds ship")
+local windows = package.config:sub(1, 1) == "\\"
+local listed = io.popen(windows and "dir /b Media\\*.ogg" or "ls Media/*.ogg")
+local found = 0
+for line in listed:lines() do
+    local name = line:match("([%w_%-]+%.ogg)")
+    if name then
+        found = found + 1
+        check(license:find("Media/" .. name, 1, true), "LICENSE credits every Media/*.ogg: " .. name)
+    end
+end
+listed:close()
+eq(found, sounds, "...the listing saw them all")
 for _, f in ipairs(tocFiles()) do
     check(io.open(f, "r") ~= nil, "TOC file exists: " .. f)
 end
