@@ -286,7 +286,7 @@ Glass MiniMap on, its map 198 x 198 units at an effective scale of 0.64, zoom 0 
 | What | Measured |
 |---|---|
 | **A herb's hit area** (Earthroot x7, Peacebloom x1; every unit over ±30) | a **square of 25 x 25** sample points every time: 625 hits, the box full, all four corners. Never a disc, never another size. The 17 of #11 was a lower bound |
-| Its centre against the drawn dot | **within about 2 units**. Our crosses (4 x 1 units) were too small to see in game: the owner saw only the boxes, and the boxes sat around the dots (owner: yes, three times). Zoomed in, the screenshots show a red + inside each dot, drawn over it, on the dot's centre for some and 1 to 2 units right and below for others (a fixed piece of the dot's art would sit the same in every dot). The dot is about 8 units across, a third of the box |
+| Its centre against the drawn dot | **within about 2 units**. Our crosses (4 x 1 units) were too small to see in game: the owner saw only the boxes (note at the first: "it's a blue square not a red cross"), and the boxes sat around the dots (yes, three times). Zoomed in, the screenshots show a red + inside each dot, drawn over it, on the dot's centre for some and 1 to 2 units right and below for others (a fixed piece of the dot's art would sit the same in every dot). The dot is about 8 units across, a third of the box |
 | Its centre against the sweep's grid | off by up to 5 units (+4 +2, +3 -5, +2 +3), about 12 yd at this zoom: the grid's centroid isn't a position to draw on |
 | Overlapping hit areas | another blip's line (a quest's objective area, "Legging It") under the same point didn't change the herb's square: hits are by name |
 | Two nodes of a name, a node at the rim | not met (one group every time, none at the rim) |
