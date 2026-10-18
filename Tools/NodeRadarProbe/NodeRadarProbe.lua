@@ -30,7 +30,8 @@
 --   /fp nr clear                        empty the saved log
 --
 -- Procedures: /fp steps nr ids (round 3, #7); /fp steps nr release (NodeRadar's release check, #3);
--- /fp steps nr walk (its walk alone).
+-- /fp steps nr walk (its walk alone); /fp steps nr memory (a leak, or garbage?);
+-- /fp steps nr blipsize (how wide the grid can be).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -1164,6 +1165,238 @@ Probe:Steps("walk", {
     learnStep(),
     walkStep(),
     walkAskStep(),
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
+-- Memory: the owner saw NodeRadar at 54.7 MB (70450). A leak, or a sweep's
+-- garbage (625 mouseover reads, each a new table) not yet collected?
+--------------------------------------------------------------------------------
+
+local function memKB()
+    local ok = pcall(UpdateAddOnMemoryUsage)
+    local okGet, kb = pcall(GetAddOnMemoryUsage, "NodeRadar")
+    return ok and okGet and num(kb) or nil
+end
+
+local function collect()
+    local ok, err = pcall(collectgarbage, "collect")
+    if not ok then say("collectgarbage('collect'): ERROR " .. str(err)) end
+    return ok
+end
+
+local function kb(v) return v and ("%.0f KB"):format(v) or "?" end
+
+-- What one mouseover read allocates at an empty point and on the map, and one
+-- of NodeRadar's sweeps, with the collector stopped when the client allows it.
+local function allocations(n)
+    local g = geometry()
+    if not g then error("the map's geometry is unreadable", 0) end
+    local stopped = pcall(collectgarbage, "stop")
+    local r = { stopped = stopped }
+    setSoft(true)
+    local okRun, err = pcall(function()
+        local fx, fy = farPixels(g)
+        Minimap:UpdateMouseoverAtPoint(fx, fy)
+        local data = C_TooltipInfo.GetMinimapMouseover()
+        r.emptyType = secret(data) and "secret" or type(data)
+        if type(data) == "table" and not secret(data) then
+            local keys = {}
+            for k in pairs(data) do keys[#keys + 1] = tostring(k) end
+            table.sort(keys)
+            r.emptyKeys = table.concat(keys, ",")
+            r.emptyLines = type(data.lines) == "table" and #data.lines or nil
+        end
+        local c0 = collectgarbage("count")
+        for _ = 1, 200 do C_TooltipInfo.GetMinimapMouseover() end
+        r.perEmptyRead = (collectgarbage("count") - c0) / 200
+        c0 = collectgarbage("count")
+        for _ = 1, 200 do Minimap:UpdateMouseoverAtPoint(fx, fy) end
+        r.perMove = (collectgarbage("count") - c0) / 200
+    end)
+    setSoft(false)
+    if okRun then
+        okRun, err = pcall(function()
+            local c0 = collectgarbage("count")
+            for _ = 1, 5 do n.Scan.Sweep() end
+            r.perSweep = (collectgarbage("count") - c0) / 5
+        end)
+    end
+    -- Whatever happened above: a stopped collector would grow the whole UI.
+    if stopped then pcall(collectgarbage, "restart") end
+    if not okRun then error(str(err), 0) end
+    return r
+end
+
+Probe:Steps("memory", {
+    rev = 1,
+    title = "NodeRadar's memory: a leak, or garbage not yet collected?",
+    readyStep(),
+    { text = "Reading NodeRadar's memory, then collecting the garbage once.", auto = true, run = function()
+          local before = memKB()
+          collect()
+          local after = memKB()
+          state.mem = { before = before, base = after }
+          NodeRadarProbeDB.memory = { before = before, afterCollect = after }
+          say(("memory: NodeRadar %s, %s after a full collection"):format(kb(before), kb(after)))
+          return "NodeRadar " .. kb(before), kb(after) .. " after a collection"
+      end },
+    { text = "Measuring what a mouseover read and a sweep allocate (a moment).", auto = true, run = function()
+          local r = allocations(nr())
+          local saved = NodeRadarProbeDB.memory or {}
+          for k, v in pairs(r) do saved[k] = v end
+          NodeRadarProbeDB.memory = saved
+          say(("memory: empty read -> %s (%s; %s lines); %.2f KB a read, %.2f KB a move, %.1f KB a sweep (collector stopped: %s)")
+              :format(r.emptyType, str(r.emptyKeys), str(r.emptyLines), r.perEmptyRead, r.perMove, r.perSweep or -1, str(r.stopped)))
+          return ("%.1f KB a sweep"):format(r.perSweep or -1), ("%.2f KB an empty read"):format(r.perEmptyRead)
+      end },
+    { text = "Play as usual for a minute: ride or walk near nodes, or stand. The probe samples NodeRadar's memory "
+          .. "every 5 s, then collects once more.",
+      wait = function()
+          local s = state.mem
+          if not s then return false, "go Back two steps" end
+          local now = GetTime()
+          s.start = s.start or now
+          s.samples = s.samples or {}
+          if not s.last or now - s.last >= 5 then
+              s.last = now
+              s.samples[#s.samples + 1] = memKB()
+          end
+          local peak = 0
+          for _, v in ipairs(s.samples) do peak = math.max(peak, v or 0) end
+          if now - s.start < 60 then
+              return false, ("%d s: NodeRadar %s (peak %s)"):format(now - s.start, kb(s.samples[#s.samples]), kb(peak))
+          end
+          collect()
+          s.retained = memKB()
+          local saved = NodeRadarProbeDB.memory or {}
+          saved.samples, saved.peak, saved.retained = s.samples, peak, s.retained
+          NodeRadarProbeDB.memory = saved
+          say(("memory: a minute's peak %s; %s after a collection (%s at the start)"):format(kb(peak), kb(s.retained), kb(s.base)))
+          return true, "peak " .. kb(peak), kb(s.retained) .. " after a collection (" .. kb(s.base) .. " at the start)"
+      end,
+      check = function()
+          local s = state.mem
+          local grew = s and s.retained and s.base and s.retained - s.base
+          return grew ~= nil and grew < 256, grew and ("kept %s more after a minute"):format(kb(grew)) or "not measured"
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
+-- Blip size: memory run 1 (70450) found 2.8 MB of garbage a sweep, 2.5 KB a
+-- read, empty or not. Fewer reads need a wider grid: how wide can it be and
+-- still read every node blip? Each node blip NodeRadar sees is sampled every
+-- map unit around it; a grid of step S misses none when the blip's hit points
+-- cover every remainder (x mod S, y mod S).
+--------------------------------------------------------------------------------
+
+local SIZE_HALF, SIZE_STEPS = 24, { 8, 10, 12, 14, 16, 18, 20, 24 }
+
+local function blipMask(n, name, b, g)
+    local cells, count = {}, 0
+    local minx, maxx, miny, maxy = math.huge, -math.huge, math.huge, -math.huge
+    for dy = -SIZE_HALF, SIZE_HALF do
+        for dx = -SIZE_HALF, SIZE_HALF do
+            local ox, oy = g.w / 2 + b.x + dx, g.h / 2 + b.y + dy
+            if ox >= 0 and ox <= g.w and oy >= 0 and oy <= g.h then
+                Minimap:UpdateMouseoverAtPoint((g.l + ox) * g.es, (g.b + oy) * g.es)
+                local names = mouseover()
+                for _, row in ipairs(names or {}) do
+                    if n.Scan.Plain(row) == name then
+                        cells[#cells + 1] = { dx, dy }
+                        count = count + 1
+                        minx, maxx = math.min(minx, dx), math.max(maxx, dx)
+                        miny, maxy = math.min(miny, dy), math.max(maxy, dy)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    -- The widest step whose every offset lands a sample on the blip.
+    local safe
+    for _, s in ipairs(SIZE_STEPS) do
+        local seen, left = {}, s * s
+        for _, c in ipairs(cells) do
+            local k = (c[1] % s) .. ":" .. (c[2] % s)
+            if not seen[k] then seen[k] = true; left = left - 1 end
+        end
+        if left == 0 then safe = s end
+    end
+    return { name = name, points = count, w = count > 0 and maxx - minx + 1 or 0,
+             h = count > 0 and maxy - miny + 1 or 0, safe = safe }
+end
+
+local function measureBlips()
+    local n = nr()
+    local r = n.Scan.Sweep()
+    if not r then error("NodeRadar's sweep failed", 0) end
+    local g = geometry()
+    if not g then error("the map's geometry is unreadable", 0) end
+    local okZoom, zoom = pcall(Minimap.GetZoom, Minimap)
+    local out = { zoom = okZoom and num(zoom) or nil, w = g.w, h = g.h, es = g.es, blips = {} }
+    -- Known nodes first, then names NodeRadar hasn't learned yet (a herb it
+    -- hasn't met); never a name it knows isn't a node.
+    local picked, seen = {}, {}
+    for _, b in ipairs(r.blips) do
+        local kind = n.Learn.Kind(b.name)
+        seen[#seen + 1] = b.name .. " (" .. (kind == nil and "unknown" or tostring(kind)) .. ")"
+        if kind then table.insert(picked, 1, b) elseif kind == nil then picked[#picked + 1] = b end
+    end
+    setSoft(true)
+    local ok, err = pcall(function()
+        for i = 1, math.min(4, #picked) do
+            local b = picked[i]
+            local m = blipMask(n, b.name, b, g)
+            m.kind = n.Learn.Kind(b.name) or "unknown"
+            out.blips[#out.blips + 1] = m
+        end
+    end)
+    pcall(Minimap.UpdateMouseoverAtPoint, Minimap, farPixels(g))
+    setSoft(false)
+    if not ok then error(str(err), 0) end
+    if #out.blips == 0 then
+        error("no node on the minimap (saw: " .. join(seen) .. "): stand where one shows, then Retry", 0)
+    end
+    local parts, safest = {}, math.huge
+    for _, b in ipairs(out.blips) do
+        parts[#parts + 1] = ("%s [%s] %dx%d (%d points) safe %s"):format(b.name, b.kind, b.w, b.h, b.points, str(b.safe))
+        safest = math.min(safest, b.safe or 0)
+    end
+    out.safe = safest
+    local saved = NodeRadarProbeDB.blipSize or {}
+    saved[#saved + 1] = out
+    NodeRadarProbeDB.blipSize = saved
+    local text = ("zoom %s, map %.0fx%.0f: %s"):format(str(out.zoom), g.w, g.h, table.concat(parts, "; "))
+    say("blip size: " .. text)
+    return "a step of " .. safest .. " misses none", text
+end
+
+Probe:Steps("blipsize", {
+    rev = 1,
+    title = "How big a node's blip is: how wide the grid can be",
+    { text = "Stand where a herb or ore shows on the minimap, with NodeRadar on.",
+      wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          NodeRadarProbeDB.blipSize = nil
+          return true, "ready"
+      end },
+    { text = "Measuring the node blips (a moment).", auto = true, run = function()
+          local done, text = measureBlips()
+          state.sizeZoom = NodeRadarProbeDB.blipSize[1].zoom
+          return done, text
+      end },
+    { text = "Zoom the minimap in or out (its + and − buttons or the mouse wheel), keeping a node in view.",
+      wait = function()
+          local ok, zoom = pcall(Minimap.GetZoom, Minimap)
+          zoom = ok and num(zoom) or nil
+          if zoom == nil or zoom == state.sizeZoom then return false, "zoom " .. str(zoom) end
+          return true, "zoom " .. str(zoom)
+      end },
+    { text = "Measuring again at this zoom.", auto = true, run = measureBlips },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
 

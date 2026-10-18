@@ -83,10 +83,11 @@ function NR.Step(now)
 end
 
 -- Seconds until the next sweep, from the movement speed (the owner, release
--- check): about YARDS of movement between sweeps, so 0.29 s at 100% (7 yd/s),
--- 0.48 s at 60%, 0.71 s at 40%; never faster than FASTEST; standing still,
--- db.interval (nothing on the map moves but a spawn).
-NR.YARDS, NR.FASTEST = 2, 0.2
+-- check): about YARDS of movement between sweeps, so 0.57 s at 100% (7 yd/s),
+-- 0.95 s at 60%, 1.43 s at 40%; never faster than FASTEST; standing still,
+-- db.interval (nothing on the map moves but a spawn). 4 yards, not 2: a sweep
+-- is garbage to collect (#11), and a node comes in at the map's edge, far off.
+NR.YARDS, NR.FASTEST = 4, 0.5
 function NR.Interval()
     local idle = NR.db.interval
     local speed = API.Speed()

@@ -11,7 +11,12 @@ local API = NR.API
 local Scan = {}
 NR.Scan = Scan
 
-Scan.STEP = 8   -- the map's own units between samples
+-- The map's own units between samples. A node's blip is a square at least 17
+-- units wide (herbs read 3 x 3 at a step of 8; a quest object measured 15 x 15,
+-- at every zoom: docs/FOREVER-PROBE.md, "Memory"), so 14 never misses one, with
+-- room for a smaller icon. Each read is a new table (2.5 KB), even empty: 225
+-- reads a sweep, not 625 at 8 (#11).
+Scan.STEP = 14
 
 -- The map's rect in its own units and its effective scale; nil and why when
 -- any part is missing or secret.

@@ -25,11 +25,10 @@ eq(Scan.Count(r, "Carry Your Weight"), 1, "the quest")
 eq(Scan.Count(r, "Silverleaf"), 0, "a name not there counts 0")
 local near = {}
 for _, b in ipairs(r.byName.Peacebloom) do
-    if (b.x - 30) ^ 2 + (b.y + 20) ^ 2 < 16 then near.a = true end
-    if (b.x + 60) ^ 2 + (b.y - 40) ^ 2 < 16 then near.b = true end
-    check(b.cells >= 2, "a blip covers several cells: " .. b.cells)
+    if (b.x - 30) ^ 2 + (b.y + 20) ^ 2 < 49 then near.a = true end
+    if (b.x + 60) ^ 2 + (b.y - 40) ^ 2 < 49 then near.b = true end
 end
-check(near.a and near.b, "each blip at its herb (within 4 units)")
+check(near.a and near.b, "each blip at its herb (within half a step, 7 units)")
 eq(WoW.softCursor, false, "the soft cursor off after a sweep")
 eq(r.geometry.w, 198, "the geometry rides along")
 
@@ -85,13 +84,25 @@ Minimap._rect = rect
 eq(none, nil, "no geometry, no sweep")
 eq(WoW.softCursor, nil, "...the soft cursor untouched")
 
--- The cost: one mouseover read per point, 25 x 25 on a 198-unit map.
+-- A node's blip is never missed (#11): a 17-unit square, wherever it sits
+-- against the grid.
+local missed = 0
+for dx = 0, 13 do
+    for dy = 0, 13 do
+        WoW.blips = { { "Peacebloom", -40 + dx, 10 + dy } }
+        if Scan.Count(Scan.Sweep(), "Peacebloom") ~= 1 then missed = missed + 1 end
+    end
+end
+eq(missed, 0, "a 17-unit blip read at every offset against the grid")
+WoW.blips = {}
+
+-- The cost: one mouseover read per point, 14 x 14 on a 198-unit map.
 local reads = 0
 local real = C_TooltipInfo.GetMinimapMouseover
 C_TooltipInfo.GetMinimapMouseover = function() reads = reads + 1; return real() end
 Scan.Sweep()
 C_TooltipInfo.GetMinimapMouseover = real
-eq(reads, 625, "625 points per sweep")
+eq(reads, 196, "196 points per sweep, not 625 (#11)")
 
 eq(#WoW.chat, 0, "nothing in chat")
 done("test_scan")

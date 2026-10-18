@@ -172,10 +172,28 @@ localized and exact ("Wilted Peacebloom" is its own name), so nothing is hard-co
   `Scan.Plain` strips textures, atlases, colours and links; names saved before are cleaned at
   login; the export tool cleans too.
 - **The cadence follows the speed** (the owner): about 2 yards between sweeps (0.29 s at 100%,
-  0.48 s at 60%, 0.71 s at 40%, 0.2 s at most), and 2 s standing still.
+  0.48 s at 60%, 0.71 s at 40%, 0.2 s at most), and 2 s standing still. Later 4 yards (#11, "Memory").
 - **The ring:** `Interface\Cooldown\ping4` draws in a black square (no additive blend), and isn't
   Blizzard's ping animation (owner). Replaced by the sonar (the owner's pick): two rings ripple out
   from the node and a glow stays on it for 3 s, green for herbs, gold for ore, from our own art
   (`Tools/make_media.py`) drawn additively. Not yet seen in game.
 - **Respawns** alert like any new node. A node gathered by the player no longer counts as one
   blinking at the edge, so the next of its name within 20 s alerts.
+
+### Memory: `memory` and `blipsize`, 1.60.1.70450 (owner's runs, 2026-10-18, Tirisfal) (#11)
+
+The owner saw NodeRadar at 54 to 82 MB in the game menu's addon memory, with the game degrading;
+its CPU there was 0.1 to 0.3%.
+
+| Measured | Result |
+|---|---|
+| NodeRadar's memory, then a full `collectgarbage("collect")` | 3021 KB, **84 KB after**; a minute of play later, 85 KB after another: **no leak** |
+| `C_TooltipInfo.GetMinimapMouseover()` at an empty point | **a table**, not nil: `dataInstanceID, lines, type`, one line; **2.5 KB a read**, empty or not |
+| `Minimap:UpdateMouseoverAtPoint` | allocates nothing |
+| One sweep (625 reads, step 8) | **2830 KB of garbage**; moving at 3 to 5 sweeps a second, about 10 MB/s. The minute's samples swung between 15 and 78 MB |
+| Blip hit areas, sampled every unit (zoom 5 and 4: the same) | a **square**: a quest object (Tomb Weed, opened with spell 22810) 15 x 15; an NPC 25 x 25; a quest's objective area larger than 49 x 49. Herbs read 3 x 3 hits at step 8 in earlier rounds (Wilted Peacebloom, Stunted Silverleaf x9), so a node is **at least 17 units wide**. No herb was in view for an exact measure |
+
+So the cost is garbage for the shared collector, which the per-addon CPU figure doesn't show.
+Fixed (#11): a step of 14 (196 reads on a 198-unit map, a third of 625; it never misses a 17-unit
+square at any offset) and about 4 yards between sweeps moving (0.57 s at 100%, 0.95 s at 60%,
+1.43 s at 40%, 0.5 s at most), 2 s standing still: about a sixth of the garbage while moving.

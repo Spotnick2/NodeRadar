@@ -35,7 +35,7 @@ WoW.advance(0.6)
 eq(sounds(), 1, "a node in view at login alerts (a new area)")
 local r = rings()
 eq(#r, 1, "...one ring")
-check(r[1] and math.abs(r[1][1] - 30) < 4 and math.abs(r[1][2] + 20) < 4, "...on the node's blip")
+check(r[1] and math.abs(r[1][1] - 30) < 7 and math.abs(r[1][2] + 20) < 7, "...on the node's blip")
 
 -- Nothing new: no alert.
 hideRings()
