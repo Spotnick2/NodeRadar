@@ -72,7 +72,7 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   the real one.
 - `Tools/extract_gathermate.lua <GatherMate2 folder> [--write]` → `Tools/Reference/gathermate2.lua`:
   the classic nodes' names in every language, with GatherMate2's node ID, from its node table and
-  locale files (`..\References\Gathering`), run in a sandbox that only records names (#19).
+  locale files (`..\References\Addons\MapMinimap\GatherMate2`), run in a sandbox that only records names (#19).
   `Tools/Reference/node-info.lua`: the Classic skill and item per node ID (#26). The export reads
   every `Tools/Reference` file on each run and rebuilds `NODE_INFO` whole:
   `lua5.1 Tools/export_nodes.lua <SavedVariables>... --write` (or `pwsh Tools/export_nodes.ps1`).
@@ -98,12 +98,12 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 
 ## References: read these before touching an unfamiliar API
 
-- `C:\Projects\WoW\References\PORTING-TBC-TO-FOREVER.md`: measured, addon-agnostic field notes.
+- `C:\Projects\WoW\References\Docs\PORTING-TBC-TO-FOREVER.md`: measured, addon-agnostic field notes.
   Treat them as fact. New addon-agnostic findings go there, not into a copy here.
-- `C:\Projects\WoW\References\forever-api-<version>.<build>.md`: the API dump; use the **highest
+- `C:\Projects\WoW\References\Forever\api\forever-api-<version>.<build>.md`: the API dump; use the **highest
   build** there. This repo follows **1.60.1.70450** (the stubs and `tests\events-70450.txt`
   follow it). **Presence is not a contract.**
-- `C:\Projects\WoW\References\PROBES.md` and `C:\Projects\WoW\ForeverProbe\docs\GUIDE.md`: probes.
+- `C:\Projects\WoW\References\Docs\PROBES.md` and `C:\Projects\WoW\ForeverProbe\docs\GUIDE.md`: probes.
 - `C:\Projects\WoW\wow-ui-source`: the client's own FrameXML. `Blizzard_Minimap/Mainline/Minimap.lua`
   (the hover tooltip, the tracking menu) first; check its `version.txt` against the build.
 

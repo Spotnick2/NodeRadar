@@ -97,7 +97,7 @@ eq(env.NodeRadarDB.learned.deDE["Kupfervorkommen"].node, 201, "...with the node 
 
 -- The committed reference is the one the tool writes from the real GatherMate2,
 -- when it's here (local only).
-local real = "../References/Gathering/GatherMate2-1.52.3-10-gbff600d/GatherMate2"
+local real = "../References/Addons/MapMinimap/GatherMate2/GatherMate2"
 local f = io.open(real .. "/Constants.lua", "rb")
 if f then
     f:close()
