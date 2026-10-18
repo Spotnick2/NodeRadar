@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Only nodes you can gather alert** (#26): NodeRadar knows each classic node's required skill and
+  reads yours, bonuses included, so a node above your Herbalism or Mining no longer pings. A Tauren
+  herbalist still hears herbs above their skill while Cultivation is ready. On by default; `/nr skill`
+  or the Options page turns it off. A node it can't place, or a skill it can't read, alerts as before.
+
 ## v1.0.0
 
 Released 2026-10-18. The first release for World of Warcraft: Forever, rebuilt from scratch: the

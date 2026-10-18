@@ -30,6 +30,21 @@ function Alert.Reset() hist = nil end
 -- A new area: counts from zero, so its nodes alert.
 function Alert.NewArea(now) hist = { counts = {}, drops = {}, at = now } end
 
+-- Whether the player can gather a node of that name (#26): only a known
+-- requirement above a readable skill says no, and for herbs not while
+-- Cultivation is ready. Everything unknown alerts.
+Alert.SKILL_LINES = { herbs = 182, ore = 186 }   -- Herbalism, Mining
+function Alert.Gatherable(name)
+    if not NR.db.skillOnly then return true end
+    local info = NR.Learn.Info(name)
+    local need = info and API.Num(info.skill)
+    if not need then return true end
+    local kind = NR.Learn.Kind(name)
+    local have = API.Skill(Alert.SKILL_LINES[kind])
+    if not have or have >= need then return true end
+    return kind == "herbs" and API.CultivationReady()
+end
+
 -- Node counts by name, and the node blips by name.
 local function nodes(result)
     local counts, blips = {}, {}
@@ -68,11 +83,17 @@ function Alert.Update(result, now)
         end
     end
     hist.counts, hist.at = counts, now
-    if #new == 0 or now - lastAlert < NR.db.cooldown then return nil end
+    -- Counted whatever the skill (a skill-up mustn't make old nodes new); a
+    -- node the player can't gather neither alerts nor spends the cooldown.
+    local fire = {}
+    for _, name in ipairs(new) do
+        if Alert.Gatherable(name) then fire[#fire + 1] = name end
+    end
+    if #fire == 0 or now - lastAlert < NR.db.cooldown then return nil end
     lastAlert = now
-    table.sort(new)
-    Alert.Fire(new, blips)
-    return new
+    table.sort(fire)
+    Alert.Fire(fire, blips)
+    return fire
 end
 
 --------------------------------------------------------------------------------

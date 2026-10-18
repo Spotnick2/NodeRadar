@@ -72,6 +72,20 @@ eq(learned.deDE["Kupfervorkommen"].kind, "ore", "...and the Vanilla one")
 eq(learned.deDE["Blutrebe"].kind, "herbs", "...a Vanilla-only node")
 eq(learned.deDE["Teufelseisenvorkommen"], nil, "a TBC node's name: left out")
 eq(learned.deDE["Friedensblume"].source, "gathermate2", "the source, for the export's review")
+-- GatherMate2's node ID, the key of the skill and item (#26), on both spellings.
+eq(learned.enUS["Copper Vein"].node, 201, "the node ID kept")
+eq(learned.deDE["Kupferader"].node, 201, "...on the Retail name")
+eq(learned.deDE["Kupfervorkommen"].node, 201, "...and the Vanilla one")
+eq(learned.deDE["Blutrebe"].node, 430, "...a Vanilla-only node's too")
+
+-- Two nodes sharing a translated name: the name keeps no ID, and it's reported.
+local twin, shared = G.build(nodes, { frFR = { NL = { ["Peacebloom"] = "Fleur", ["Black Lotus"] = "Fleur",
+    ["Copper Vein"] = "Filon" } } }, "GatherMate2 test")
+eq(twin.frFR["Fleur"].node, nil, "a name two nodes share has no ID")
+eq(twin.frFR["Fleur"].kind, "herbs", "...but is still a node")
+eq(twin.frFR["Filon"].node, 201, "...the others keep theirs")
+eq(#shared, 1, "...reported once")
+check(shared[1] and shared[1]:find('frFR "Fleur": nodes'), "...naming it: " .. tostring(shared[1]))
 
 -- The rendered file loads back, in the export tool's input shape.
 local chunk = loadstring(G.render(learned, "GatherMate2 test"))
@@ -79,6 +93,7 @@ local env = {}
 setfenv(chunk, env)
 chunk()
 eq(env.NodeRadarDB.learned.deDE["Kupfervorkommen"].kind, "ore", "the reference file loads back")
+eq(env.NodeRadarDB.learned.deDE["Kupfervorkommen"].node, 201, "...with the node ID")
 
 -- The committed reference is the one the tool writes from the real GatherMate2,
 -- when it's here (local only).

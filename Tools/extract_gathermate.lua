@@ -9,7 +9,9 @@
 -- Tools/export_nodes.lua in NodeRadar's SavedVariables shape. Every name
 -- GatherMate2 maps to a node ships: its Retail name and its Vanilla one where
 -- they differ (Forever's tooltips may use either; one that never shows is
--- harmless). tests/test_gathermate.lua pins it.
+-- harmless). Each name keeps GatherMate2's node ID (`node`), the key of
+-- Tools/Reference/node-info.lua's skill and item (#26). tests/test_gathermate.lua
+-- pins it.
 
 local M = {}
 
@@ -29,7 +31,7 @@ local function classic(dbType, id)
     return false
 end
 
--- Constants.lua's text -> { { english, kind }, ... }, the classic nodes only.
+-- Constants.lua's text -> { { english, kind, id }, ... }, the classic nodes only.
 function M.parseNodes(text)
     local out, section = {}, nil
     for line in (text .. "\n"):gmatch("(.-)\r?\n") do
@@ -41,7 +43,7 @@ function M.parseNodes(text)
             id = tonumber(id)
             if name and id and classic(section, id) and not M.SKIP[name]
                 and (commented == "" or M.COMMENTED[name]) then
-                out[#out + 1] = { name, M.KINDS[section] }
+                out[#out + 1] = { name, M.KINDS[section], id }
             end
         end
     end
@@ -65,23 +67,32 @@ function M.readLocale(text, name)
 end
 
 -- nodes, { [locale] = { NL = {...}, NLV = {...} } } -> learned, in the
--- SavedVariables shape. enUS's `true` means the key is the name.
+-- SavedVariables shape, and the names two nodes share. enUS's `true` means
+-- the key is the name. A name two nodes share keeps no ID: neither node's
+-- skill can be said to be its.
 function M.build(nodes, locales, build)
-    local learned = {}
+    local learned, shared = {}, {}
     for locale, t in pairs(locales) do
-        local names = {}
+        local names, many = {}, {}
         for _, node in ipairs(nodes) do
             for _, tbl in ipairs({ t.NL or {}, t.NLV or {} }) do
                 local v = tbl[node[1]]
                 if v == true then v = node[1] end
                 if type(v) == "string" and v ~= "" then
-                    names[v] = { kind = node[2], source = "gathermate2", build = build }
+                    local e = names[v]
+                    if not e then
+                        names[v] = { kind = node[2], source = "gathermate2", build = build, node = node[3] }
+                    elseif e.node ~= node[3] and not many[v] then
+                        shared[#shared + 1] = ("%s %q: nodes %s and %d"):format(locale, v, tostring(e.node), node[3])
+                        e.node, many[v] = nil, true
+                    end
                 end
             end
         end
         if next(names) then learned[locale] = names end
     end
-    return learned
+    table.sort(shared)
+    return learned, shared
 end
 
 function M.render(learned, build)
@@ -104,8 +115,8 @@ NodeRadarDB = {
         table.sort(names)
         for _, name in ipairs(names) do
             local e = learned[locale][name]
-            out[#out + 1] = ("            [%q] = { kind = %q, source = %q, build = %q },\n")
-                :format(name, e.kind, e.source, e.build)
+            out[#out + 1] = ("            [%q] = { kind = %q, source = %q, build = %q%s },\n")
+                :format(name, e.kind, e.source, e.build, e.node and (", node = " .. e.node) or "")
         end
         out[#out + 1] = "        },\n"
     end
@@ -142,7 +153,8 @@ function M.main(args)
             NLV = vanilla and M.readLocale(vanilla, locale).GatherMate2NodesVanilla,
         }
     end
-    local learned = M.build(nodes, locales, build)
+    local learned, shared = M.build(nodes, locales, build)
+    for _, s in ipairs(shared) do io.write("shared name, no node ID: " .. s .. "\n") end
     for _, locale in ipairs(M.LOCALES) do
         local n = 0
         for _ in pairs(learned[locale] or {}) do n = n + 1 end

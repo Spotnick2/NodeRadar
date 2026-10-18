@@ -215,3 +215,24 @@ Later the same day the owner replaced NodeRadar's own synthesised sonar with six
 converted by `Tools/import_sounds.py`. The sound became a dropdown, `WowStyle1DropdownTemplate`
 with radio items, as Blizzard's AddOns list on this build (`Blizzard_AddOnList/AddonList.xml:126`);
 the radio group stays as the fallback.
+
+### Skill and Cultivation: `skill` and `cultivation`, 1.60.1.70450 (owner's runs, 2026-10-18, Durotar) (#26)
+
+`skill` on an Orc herbalist (Herbalism 24/75, then 25 in the Barrens' Razormane Grounds), `cultivation` on a Tauren
+without Herbalism.
+
+| What | Measured |
+|---|---|
+| `C_SkillInfo.GetSkillLineInfoByID(182)` | plain, every field: `rank=24, modifier=0, maxRank=75, tempPoints=0, skillID=182, skillLineCategoryID=11`, the name and description. **Nil** for a profession the character doesn't have (186, Mining) |
+| A skill-up | `SKILL_LINES_CHANGED` fired and `rank` read 25 at once |
+| A node's world tooltip (`C_TooltipInfo.GetWorldCursor()`, hovering Silverleaf in the world) | two lines: `Silverleaf` (gold, `ffd200`) and **`Herbalism` in orange (`ff8040`)**: the profession line carries the node's difficulty colour, as in Classic. Silverleaf needs 1, the skill was 24: orange, Classic's band below +25 |
+| A node above the skill (Mageroyal, Razormane Grounds, Herbalism 25) | the tooltip's `Herbalism` line **red (`ff2020`)**; gathering **refused**: `UI_ERROR_MESSAGE` type **291**, "Requires Herbalism 50", Classic's requirement. Earthroot (15) read orange at 25, and gathering it raised the skill to 26 |
+| A herb gathered without Herbalism (the Tauren) | refused: `UI_ERROR_MESSAGE` type **290**, "Requires Herbalism" |
+| Cultivation | the Tauren knows **20552** (`C_SpellBook.IsSpellKnown` true); **1312643 is not known**. Neither is known to the Orc |
+| Its cooldown, out of combat at the cast | only the global cooldown: `isActive=true, isOnGCD=true, duration=1.5` (category 133, shared by both IDs) |
+| Its cooldown out of combat, 3.5 min later | plain: **`duration=900`** (15 min), `isActive=true`, `isOnGCD=false`, category 2578, `startTime` about 4 s after the button (its 3 s cast) |
+| Its cooldown in combat, 11 s after the cast (and again 3.7 min after) | `startTime`, `duration`, `modRate`, `activeCategory` **secret**; **`isActive=true` and `isOnGCD=false` plain**: a cooldown longer than the global one runs, readable as a boolean in combat |
+
+So Forever keeps Classic's per-node requirements (type 291 with the level; type 290 without the
+profession), the skill filter can read the skill plainly, and Cultivation's state is readable everywhere as
+"on cooldown" = `isActive` and not `isOnGCD` (both plain in combat, where the durations are secret).

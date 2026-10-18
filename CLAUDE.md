@@ -44,8 +44,9 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
   failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
   state (`Speed`, `Casting`, `Dead`, `Gamepad`); `MEASURED_ON_BUILD`.
-- `Data/Nodes.lua`: the shipped library, `NodeRadar.LIBRARY[locale][name] = "herbs" | "ore"`.
-  **Generated**: change it with `Tools/export_nodes.lua`, never by hand.
+- `Data/Nodes.lua`: the shipped library, `NodeRadar.LIBRARY[locale][name] = "herbs" | "ore"`, and
+  `NodeRadar.NODE_INFO[locale][name] = { skill, item }` (#26). **Generated**: change it with
+  `Tools/export_nodes.lua`, never by hand.
 - `Scan.lua`: `Scan.Sweep()`, one read of the map's blips (soft cursor on, a grid of 14 in
   `GetCursorPosition`'s space, same-name hits grouped into separate blips, a cluster of a known
   node read again at 7 so nodes side by side stay apart, `Scan.Sweep(count)`; the soft cursor turned off on every path). Every read
@@ -54,7 +55,8 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   (every guard in PLAN.md: the experiment is voided by movement, zone, loading, death, the gamepad,
   a zoom, a failed sweep or the player's own tracking change; tracking is always restored, across a
   reload through `NodeRadarCharDB.pendingRestore`, and the player's own choice wins).
-- `Alert.lua`: new nodes by a rise in a name's count; the sound (`Alert.SOUNDS`: the map ping, two of
+- `Alert.lua`: new nodes by a rise in a name's count, only those the player can gather
+  (`Alert.Gatherable`: `NODE_INFO`'s skill against `API.Skill`, Cultivation for herbs, #26); the sound (`Alert.SOUNDS`: the map ping, two of
   the client's files by FileDataID, six `Media\*.ogg` from Pixabay made by `Tools/import_sounds.py`,
   README "Sounds"), the sonar, chat line, solo-only ping.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
@@ -69,9 +71,11 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   fixed library (`TEST_LIBRARY`, harness), whatever `Data/Nodes.lua` ships; `test_export` pins
   the real one.
 - `Tools/extract_gathermate.lua <GatherMate2 folder> [--write]` → `Tools/Reference/gathermate2.lua`:
-  the classic nodes' names in every language, from GatherMate2's node table and locale files
-  (`..\References\Gathering`), run in a sandbox that only records names (#19). Rebuild the
-  library: `lua5.1 Tools/export_nodes.lua Tools/Reference/*.lua <SavedVariables>... --write`.
+  the classic nodes' names in every language, with GatherMate2's node ID, from its node table and
+  locale files (`..\References\Gathering`), run in a sandbox that only records names (#19).
+  `Tools/Reference/node-info.lua`: the Classic skill and item per node ID (#26). The export reads
+  every `Tools/Reference` file on each run and rebuilds `NODE_INFO` whole:
+  `lua5.1 Tools/export_nodes.lua <SavedVariables>... --write` (or `pwsh Tools/export_nodes.ps1`).
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
   (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr release` for the release check (#3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).

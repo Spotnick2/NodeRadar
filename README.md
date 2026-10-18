@@ -38,6 +38,11 @@ turn on Find Herbs or Find Minerals.
   Rich Thorium Vein, by name in English, German, French, Spanish, Portuguese, Italian, Russian,
   Korean and Chinese, so it alerts from the start. A name it doesn't know yet it learns as you
   gather.
+- **It alerts only for nodes you can gather.** It knows what each classic node needs (Mageroyal,
+  Herbalism 50) and reads your skill with its bonuses, so a Mithril Deposit doesn't ping a miner at
+  90. A Tauren herbalist still hears herbs above their skill while Cultivation is ready, since it
+  grows a copy anyone can gather. A node whose requirement it doesn't know, or a skill it can't read,
+  alerts as usual. `/nr skill` turns this off.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not
@@ -50,7 +55,7 @@ standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often
 for the game to clean up); the sound, from a dropdown (the minimap ping, a sonar or radar ping from
 the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sonar, bell chime,
 notification, sci-fi HUD ping), the sonar on the node, a chat line, Blizzard's ping, the time
-between alerts, a test button; learning by toggling tracking.
+between alerts, a test button; only nodes you can gather; learning by toggling tracking.
 
 ## Commands
 
@@ -59,6 +64,7 @@ between alerts, a test button; learning by toggling tracking.
   `/nr sound <name>`: which sound (`/nr help` lists the names)
 - `/nr ping`: Blizzard's minimap ping on the node too, solo only (in a group it would show on
   everyone's minimap)
+- `/nr skill`: alert only for nodes your skill can gather (on by default)
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`

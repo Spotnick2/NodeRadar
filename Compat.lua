@@ -79,6 +79,58 @@ function API.Gamepad()
     return ok and on == true
 end
 
+-- A gathering skill with its bonuses (rank + modifier), or nil: the character
+-- hasn't the profession, or it's unreadable. Plain on 70450 (#26).
+function API.Skill(lineID)
+    local f = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
+    if type(f) ~= "function" then return nil end
+    local ok, info = pcall(f, lineID)
+    if not ok or API.IsSecret(info) or type(info) ~= "table" then return nil end
+    local rank, bonus = API.Num(info.rank), API.Num(info.modifier)
+    if not rank or (info.modifier ~= nil and not bonus) then return nil end
+    return rank + (bonus or 0)
+end
+
+-- Cultivation, the Tauren racial: a herb above the skill grows a copy anyone
+-- can gather (measured: spell 20552, a 900 s cooldown). Its state is read only
+-- on SPELL_UPDATE_COOLDOWN, the one time the client says isOnGCD can be
+-- trusted (SpellSharedDocumentation.lua:30; Codex, #26). "cooling" until
+-- `cultivationUntil` when that's readable (out of combat), else until the next
+-- event; anything unreadable is "unknown", which counts as ready.
+API.CULTIVATION = 20552
+local cultivation, cultivationUntil = "unknown", nil
+
+function API.KnowsCultivation()
+    local f = C_SpellBook and C_SpellBook.IsSpellKnown
+    if type(f) ~= "function" then return false end
+    local ok, known = pcall(f, API.CULTIVATION)
+    return ok and API.Yes(known)
+end
+
+function API.OnCooldownUpdate()
+    cultivation, cultivationUntil = "unknown", nil
+    if not API.KnowsCultivation() then return end
+    local f = C_Spell and C_Spell.GetSpellCooldown
+    if type(f) ~= "function" then return end
+    local ok, cd = pcall(f, API.CULTIVATION)
+    if not ok or API.IsSecret(cd) or type(cd) ~= "table" then return end
+    local active, gcd = cd.isActive, cd.isOnGCD
+    if API.IsSecret(active) or API.IsSecret(gcd) then return end
+    if active == false then
+        cultivation = "ready"
+    elseif active == true and gcd == false then
+        cultivation = "cooling"
+        local start, duration = API.Num(cd.startTime), API.Num(cd.duration)
+        if start and duration then cultivationUntil = start + duration end
+    end
+end
+
+function API.CultivationReady()
+    if not API.KnowsCultivation() then return false end
+    if cultivation ~= "cooling" then return true end
+    return cultivationUntil ~= nil and GetTime() >= cultivationUntil
+end
+
 -- The TOC's version; nil when unreadable.
 function API.AddOnVersion(addon)
     local get = C_AddOns and C_AddOns.GetAddOnMetadata

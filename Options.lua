@@ -59,6 +59,7 @@ local function checkbox(parent, anchor, text, key)
     local function sync() cb:SetChecked(NR.db[key] == true) end
     cb:SetScript("OnClick", function() NR.Set(key, cb:GetChecked() == true); sync() end)
     refreshers[#refreshers + 1] = sync
+    Options._test.checks[key] = cb
     return cb
 end
 
@@ -170,7 +171,8 @@ local function build()
         .. "up: every look reads the whole minimap.")
 
     local alert = heading(panel, cost, "The alert")
-    local sound = checkbox(panel, alert, "A sound", "sound")
+    local skill = checkbox(panel, alert, "Only nodes I can gather (my Herbalism or Mining skill)", "skillOnly")
+    local sound = checkbox(panel, skill, "A sound", "sound")
     local which = dropdown(panel, sound, "Which sound (it plays when chosen)", "soundKind",
         { { "ping", "The minimap ping" }, { "sonarping", "Sonar ping" }, { "radar", "Radar ping" },
           { "sonar", "Sonar" }, { "radarblip", "Radar blip" }, { "deepsea", "Deep-sea sonar" },
@@ -217,4 +219,4 @@ function Options.Open()
     return pcall(Settings.OpenToCategory, category:GetID()) and true or false
 end
 
-Options._test = { panel = panel, refreshers = refreshers, radios = {}, dropdowns = {} }
+Options._test = { panel = panel, refreshers = refreshers, radios = {}, dropdowns = {}, checks = {} }
