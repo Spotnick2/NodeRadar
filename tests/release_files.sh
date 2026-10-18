@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # release_files.sh - Write what a tag publishes next to its zip: the release
 # notes (the tag's CHANGELOG.md section) and release.json, the manifest addon
-# managers (WowUp) read to pick the right zip for a client (#35). Priestly's
-# script (Priestly #103), for NodeRadar. CI's `check` runs it on every run, so
-# a broken changelog heading or TOC field fails on the pull request instead of
-# at tag time; on a tag, `release` and `wago` publish the files that run wrote.
+# managers (WowUp) read to pick the right zip for a client. CI's `check` runs
+# it on every run, so a broken changelog heading or TOC field fails on the pull
+# request instead of at tag time; on a tag, `release` and `wago` publish the
+# files that run wrote.
+#
+# The template is References\Docs\release\release_files.sh (RELEASING.md §2).
+# Copy it to tests/release_files.sh unchanged: the addon folder is .pkgmeta's
+# `package-as` (or $ADDON when set), so there is nothing to adapt.
 #
 # Why not the packager's own release.json: it writes one only inside its
 # GitHub upload, which also creates (or PATCHes) the GitHub Release with the
@@ -16,9 +20,11 @@
 # repository copy.
 #
 # Usage (from the repo root):  bash tests/release_files.sh <tag> <zip> <out dir>
-#   e.g.  bash tests/release_files.sh v1.0.2 .release/NodeRadar-v1.0.2-forever.zip "$RUNNER_TEMP/out"
-# A pre-release tag (v1.0.2-alpha1) uses its own changelog section if there
-# is one, else the section of the version it is a trial of.
+#   e.g.  bash tests/release_files.sh v1.2.0 .release/MyAddon-v1.2.0-forever.zip "$RUNNER_TEMP/out"
+# The notes are the "## <tag>" section. A pre-release tag (v1.2.0-alpha1)
+# falls back to the section of the version it is a trial of ("## v1.2.0"),
+# then to "## Unreleased", so an alpha can go out before the release's section
+# is written. A release tag never falls back to "Unreleased".
 # Needs jq and unzip.
 set -euo pipefail
 
@@ -32,19 +38,31 @@ fi
 test -f "$zip" || { echo "no zip at $zip" >&2; exit 1; }
 mkdir -p "$out"
 
-# The heading is "## v1.0.1", or "## v1.0.1 - 2026-10-18": the tag, then a
-# space or nothing. The blank lines around the section are dropped.
+addon="${ADDON:-$(tr -d '\r' < .pkgmeta | sed -n 's/^package-as: *//p' | head -1)}"
+test -n "$addon" || { echo "no ADDON and no package-as in .pkgmeta" >&2; exit 1; }
+
+# The heading is "## v1.2.0", optionally followed by " - 2026-10-11" or
+# " (2026-10-11)": the tag, then a space or nothing. The blank lines around the
+# section are dropped.
 section() {
     tr -d '\r' < CHANGELOG.md |
         awk -v h="## $1" '$0 == h || index($0, h " ") == 1 { on = 1; next } on && /^## / { exit } on' |
         sed -e '/[^[:space:]]/,$!d' | sed -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}'
 }
+tried="'## $tag'"
 section "$tag" > "$out/notes.md"
-grep -q '[^[:space:]]' "$out/notes.md" || section "${tag%%-*}" > "$out/notes.md"
+if [ "${tag%%-*}" != "$tag" ]; then
+    for h in "${tag%%-*}" Unreleased; do
+        grep -q '[^[:space:]]' "$out/notes.md" && break
+        tried="$tried, '## $h'"
+        section "$h" > "$out/notes.md"
+    done
+fi
 grep -q '[^[:space:]]' "$out/notes.md" ||
-    { echo "CHANGELOG.md has no '## $tag' or '## ${tag%%-*}' section" >&2; exit 1; }
+    { echo "CHANGELOG.md has no $tried section" >&2; exit 1; }
 
-toc=$(unzip -p "$zip" NodeRadar/NodeRadar.toc | tr -d '\r')
+toc=$(unzip -p "$zip" "$addon/$addon.toc" 2>/dev/null | tr -d '\r') ||
+    { echo "$zip has no $addon/$addon.toc" >&2; exit 1; }
 field() { printf '%s\n' "$toc" | sed -n "s/^## $1: *//p" | head -1; }
 
 # |cffRRGGBB...|r colour codes stripped, as the packager does for "name".

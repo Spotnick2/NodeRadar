@@ -147,7 +147,9 @@ the probe.
   `release` job publishes a GitHub Release from the tag's `## vX.Y.Z` section of `CHANGELOG.md`,
   with `release.json` for WowUp (#35); the `wago` job uploads the same checked zip to Wago (project
   `mNwwoLNo`, the TOC's `X-Wago-ID`) with the `WAGO_API_TOKEN` secret (#15). Both publish what
-  `check` built: the zip, and the notes and `release.json` from `tests/release_files.sh` (Priestly's).
+  `check` built: the zip, and the notes and `release.json` from `tests/release_files.sh`. Both files
+  are the shared templates (`..\References\Docs\release\`, RELEASING.md §2), the workflow with
+  `ADDON: NodeRadar` and our own test and allowlist steps; update them from there.
   Re-publish a tag with `workflow_dispatch` from `main` (`publish: both | github | wago`).
 
 ## Conventions
