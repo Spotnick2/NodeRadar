@@ -1578,6 +1578,185 @@ Probe:Steps("cultivation", {
 })
 
 --------------------------------------------------------------------------------
+-- A blip's map coordinates (#27). The conversion #27 plans, which is
+-- HereBeDragons-Pins' minimap drawing inverted (HereBeDragons-Pins-2.0.lua:
+-- the map's edge is C_Minimap.GetViewRadius() yards, up is north, a rotating
+-- map turns by GetPlayerFacing()): the blip's offset in the map's units x
+-- radius / half-width = yards; the zone map's y grows southward. Checked
+-- against where the player stands when gathering that node (within reach).
+--------------------------------------------------------------------------------
+
+local function cvar(name)
+    local ok, v = pcall(C_CVar.GetCVar, name)
+    return ok and not secret(v) and v or nil
+end
+
+-- The player's zone-map position and the map's size in yards; nil and why.
+local function playerPos()
+    local okM, map = pcall(C_Map.GetBestMapForUnit, "player")
+    map = okM and num(map)
+    if not map then return nil, "no map" end
+    local okP, pos = pcall(C_Map.GetPlayerMapPosition, map, "player")
+    if not okP or pos == nil or secret(pos) then return nil, "no position on map " .. map end
+    local okXY, x, y = pcall(pos.GetXY, pos)
+    x, y = okXY and num(x), okXY and num(y)
+    if not (x and y) then return nil, "position unreadable on map " .. map end
+    local okS, w, h = pcall(C_Map.GetMapWorldSize, map)
+    w, h = okS and num(w), okS and num(h)
+    if not (w and h) or w <= 0 or h <= 0 then return nil, "no world size for map " .. map end
+    return { map = map, x = x, y = y, w = w, h = h }
+end
+
+-- Everything the conversion reads, at one moment; nil and why.
+local function snapshot()
+    local g, why = geometry()
+    if not g then return nil, why end
+    local p, whyP = playerPos()
+    if not p then return nil, whyP end
+    local okR, radius = pcall(C_Minimap.GetViewRadius)
+    local okZ, zoom = pcall(Minimap.GetZoom, Minimap)
+    local okI, ignored = pcall(C_Minimap.IsRotateMinimapIgnored)
+    local okIn, indoors = pcall(IsIndoors)
+    local s = { radius = okR and num(radius), zoom = okZ and num(zoom), halfW = g.w / 2, halfH = g.h / 2,
+                rotate = cvar("rotateMinimap") == "1", ignored = okI and yes(ignored),
+                indoors = okIn and yes(indoors), facing = num(GetPlayerFacing()), pos = p }
+    s.rotating = s.rotate and not s.ignored
+    if not s.radius then return nil, "no view radius" end
+    if s.rotating and not s.facing then return nil, "rotating, but no facing" end
+    return s
+end
+
+local function snapText(s)
+    return ("zoom %s, radius %.1f yd over %.1f units (%.3f yd/unit), %s, rotate %s%s, map %d at (%.4f, %.4f), "
+        .. "%.0f x %.0f yd"):format(str(s.zoom), s.radius, s.halfW, s.radius / s.halfW,
+        s.indoors and "indoors" or "outdoors", tostring(s.rotate), s.ignored and " (ignored)" or "",
+        s.pos.map, s.pos.x, s.pos.y, s.pos.w, s.pos.h)
+end
+
+-- A blip's map coordinates and distance, from a snapshot: (x, y) are its
+-- offset from the map's centre in the map's own units, y up.
+local function predict(s, bx, by)
+    local k = s.radius / s.halfW
+    local right, down = bx * k, -by * k              -- yards on the screen
+    local east, south = right, down
+    if s.rotating then                               -- undo HereBeDragons' turn by the facing
+        local c, sn = math.cos(s.facing), math.sin(s.facing)
+        east, south = right * c + down * sn, -right * sn + down * c
+    end
+    return s.pos.x + east / s.pos.w, s.pos.y + south / s.pos.h, math.sqrt(east * east + south * south)
+end
+
+-- The node blips now, each with its predicted coordinates; saved for the gather.
+local function predictNodes(label)
+    local n = nr()
+    if not n then error("NodeRadar isn't loaded", 0) end
+    local s, why = snapshot()
+    if not s then error(why, 0) end
+    local r = n.Scan.Sweep(function(name) return n.Learn.Kind(name) end)
+    if not r then error("NodeRadar's sweep failed", 0) end
+    local out, parts = { label = label, snap = snapText(s), nodes = {}, at = GetTime() }, {}
+    for _, b in ipairs(r.blips) do
+        if n.Learn.Kind(b.name) then
+            local x, y, d = predict(s, b.x, b.y)
+            out.nodes[#out.nodes + 1] = { name = b.name, x = x, y = y, yards = d }
+            parts[#parts + 1] = ("%s (%.1f, %.1f) %.0f yd"):format(b.name, x * 100, y * 100, d)
+        end
+    end
+    if #out.nodes == 0 then error("no node on the minimap: stand where one shows, then Retry", 0) end
+    state.coordsPredicted = out
+    local saved = NodeRadarProbeDB.coords or {}
+    saved[#saved + 1] = out
+    NodeRadarProbeDB.coords = saved
+    say(("coords %s: %s; %s"):format(label, out.snap, table.concat(parts, ", ")))
+    return table.concat(parts, ", ")
+end
+
+-- A wait: done when the player gathers a node predicted by the last step;
+-- the error is from the prediction to where the player stood.
+local function gatheredNear()
+    local g, p = state.lastGather, state.coordsPredicted
+    if not p then return false, "no prediction yet: go Back and Predict" end
+    if not (g and g.at >= p.at) then return false, "gather one of the " .. #p.nodes .. " predicted" end
+    if not g.pos then return true, "gathered " .. str(g.name) .. ", position unreadable" end
+    local best
+    for _, nd in ipairs(p.nodes) do
+        if nd.name == g.name then
+            local d = math.sqrt(((nd.x - g.pos.x) * g.pos.w) ^ 2 + ((nd.y - g.pos.y) * g.pos.h) ^ 2)
+            if not best or d < best.d then best = { d = d, nd = nd } end
+        end
+    end
+    if not best then return true, str(g.name) .. " gathered: none of that name was predicted" end
+    local text = ("%s (%s): predicted (%.2f, %.2f), stood at (%.2f, %.2f), %.1f yd apart (seen %.0f yd away)")
+        :format(g.name, p.label, best.nd.x * 100, best.nd.y * 100, g.pos.x * 100, g.pos.y * 100, best.d,
+            best.nd.yards)
+    say("coords " .. text)
+    local saved = NodeRadarProbeDB.coordsChecked or {}
+    saved[#saved + 1] = text
+    NodeRadarProbeDB.coordsChecked = saved
+    state.coordsPredicted = nil
+    return true, text
+end
+
+-- A wait: the view radius at every zoom, recorded as the owner zooms.
+local function everyZoom()
+    local radii = NodeRadarProbeDB.coordsRadii or {}
+    NodeRadarProbeDB.coordsRadii = radii
+    local s, why = snapshot()
+    if not s then return false, str(why) end
+    local where = s.indoors and "indoor" or "outdoor"
+    radii[where] = radii[where] or {}
+    if s.zoom and radii[where][s.zoom] == nil then
+        radii[where][s.zoom] = s.radius
+        say("coords radius: " .. snapText(s))
+    end
+    local missing = {}
+    for z = 0, 5 do if not (radii.outdoor and radii.outdoor[z]) then missing[#missing + 1] = z end end
+    if #missing > 0 then return false, "outdoors, zooms still to see: " .. table.concat(missing, " ") end
+    local parts = {}
+    for z = 0, 5 do parts[#parts + 1] = ("%d=%.1f"):format(z, radii.outdoor[z]) end
+    return true, "outdoor radii " .. table.concat(parts, " ")
+end
+
+local function rotateIs(on)
+    return function()
+        local v = cvar("rotateMinimap")
+        if (v == "1") == on then return true, "rotateMinimap " .. str(v) end
+        return false, "rotateMinimap " .. str(v)
+    end
+end
+
+Probe:Steps("coords", {
+    rev = 1,
+    title = "A blip's map coordinates (#27)",
+    { text = "Outdoors, with Find Herbs or Find Minerals on: reading the minimap and your position.", auto = true,
+      run = function()
+          NodeRadarProbeDB.coordsRadii, state.coordsPredicted = nil, nil
+          local s, why = snapshot()
+          if not s then error(why, 0) end
+          say("coords now: " .. snapText(s))
+          return snapText(s)
+      end },
+    { text = "Zoom the minimap through all six levels, all the way in and all the way out (+ and -).",
+      wait = everyZoom },
+    { text = "Zoom back out, and stand still where a herb or ore shows 40-80 yards away, Rotate Minimap off. "
+          .. "Then Run.", button = "Predict", run = function() return predictNodes("north-up") end },
+    { text = "Walk to one of those nodes and gather it.", wait = gatheredNear },
+    { text = "Turn on Rotate Minimap (Esc > Options, Interface).", wait = rotateIs(true) },
+    { text = "Turn to face any direction but north, stand still with another node 40-80 yards away, then Run.",
+      button = "Predict", run = function() return predictNodes("rotating") end },
+    { text = "Walk to one of those nodes and gather it.", wait = gatheredNear },
+    { text = "Turn Rotate Minimap back off (unless you use it).", wait = rotateIs(false) },
+    { text = "Optional: go inside a building or cave where the minimap zooms in, then Run (or Skip).",
+      button = "Read", run = function()
+          local s, why = snapshot()
+          if not s then error(why, 0) end
+          say("coords inside: " .. snapText(s))
+          return snapText(s)
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
@@ -1606,6 +1785,11 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         aoi(event, a1)
     elseif event == "UNIT_SPELLCAST_SENT" then
         say(("UNIT_SPELLCAST_SENT spell=%s target=%s"):format(str(a4), str(a2)))
+        -- A gather: where the player stands, within reach of the node (#27).
+        local n = nr()
+        if n and not secret(a4) and n.Learn.CastKind(a4) and type(a2) == "string" and not secret(a2) then
+            state.lastGather = { name = a2, at = GetTime(), pos = playerPos() }
+        end
     elseif event == "UNIT_SPELLCAST_FAILED" then
         say(("UNIT_SPELLCAST_FAILED spell=%s"):format(str(a3)))
     elseif event == "UI_ERROR_MESSAGE" then
