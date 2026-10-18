@@ -104,5 +104,39 @@ Scan.Sweep()
 C_TooltipInfo.GetMinimapMouseover = real
 eq(reads, 196, "196 points per sweep, not 625 (#11)")
 
+-- Two nodes of a name side by side (Codex, PR #12): at (0, 0) and (26, 0) the
+-- grid of 14 hits them in four running columns; the patch read again at 7
+-- tells them apart, wherever the pair sits against the grid.
+local merged = 0
+for dx = 0, 13 do
+    for dy = 0, 13 do
+        WoW.blips = { { "Peacebloom", -20 + dx, dy }, { "Peacebloom", 6 + dx, dy } }
+        if Scan.Count(Scan.Sweep(), "Peacebloom") ~= 2 then merged = merged + 1 end
+    end
+end
+eq(merged, 0, "two Peaceblooms 26 units apart: two blips at every offset")
+WoW.blips = { { "Peacebloom", 0, 0 }, { "Peacebloom", 26, 0 } }
+local pair = Scan.Sweep().byName.Peacebloom
+table.sort(pair, function(a, b) return a.x < b.x end)
+check(math.abs(pair[1].x - 0) < 4 and math.abs(pair[2].x - 26) < 4, ("...each where it is: %.1f, %.1f"):format(pair[1].x, pair[2].x))
+
+-- What reading again costs: nothing for a node one cell wide, a few reads for
+-- a wider cluster, nothing for an area wider than REFINE_SPAN cells.
+local function readsFor(blips)
+    WoW.blips = blips
+    reads = 0
+    C_TooltipInfo.GetMinimapMouseover = function() reads = reads + 1; return real() end
+    local r = Scan.Sweep()
+    C_TooltipInfo.GetMinimapMouseover = real
+    return reads, r
+end
+eq(readsFor({ { "Peacebloom", -92, -92 } }), 196, "one node on one cell: no extra read")
+local n = readsFor({ { "Peacebloom", 0, 0 }, { "Peacebloom", 26, 0 } })
+check(n > 196 and n <= 196 + 32, "the pair's patch: a few more reads (" .. (n - 196) .. ")")
+local area, r = readsFor({ { "- 0/8 Duskbat Wing Membrane", 0, 0, half = 60 } })
+eq(area, 196, "a quest's area: not read again")
+eq(Scan.Count(r, "- 0/8 Duskbat Wing Membrane"), 1, "...one blip")
+WoW.blips = {}
+
 eq(#WoW.chat, 0, "nothing in chat")
 done("test_scan")

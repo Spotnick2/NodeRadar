@@ -63,19 +63,18 @@ local function names()
     return list
 end
 
--- Cells that touch (8 neighbours) are one blip, at the centre of its cells, in
--- the map's units from its centre, as drawn.
-local function group(cells, g)
-    local byName, list = {}, {}
+-- Cells that touch (8 neighbours) are one cluster: { name, cells = { cell, ... } }.
+local function clusters(cells)
+    local out = {}
     for name, set in pairs(cells) do
-        local seen, blips = {}, {}
+        local seen = {}
         for key, cell in pairs(set) do
             if not seen[key] then
-                local sx, sy, n, stack = 0, 0, 0, { cell }
+                local members, stack = {}, { cell }
                 seen[key] = true
                 while #stack > 0 do
                     local c = table.remove(stack)
-                    sx, sy, n = sx + c[1], sy + c[2], n + 1
+                    members[#members + 1] = c
                     for dc = -1, 1 do
                         for dr = -1, 1 do
                             local k = (c.col + dc) .. ":" .. (c.row + dr)
@@ -87,14 +86,65 @@ local function group(cells, g)
                         end
                     end
                 end
-                local blip = { name = name, x = sx / n - g.w / 2, y = sy / n - g.h / 2, cells = n }
-                blips[#blips + 1] = blip
-                list[#list + 1] = blip
+                out[#out + 1] = { name = name, cells = members }
             end
         end
-        byName[name] = blips
     end
-    return byName, list
+    return out
+end
+
+-- Grid cells of a name, sampled every `step` over a rect of the map (its own
+-- units from the bottom left); only `want` is kept when given.
+local function sample(g, step, x0, y0, x1, y1, cells, want)
+    local row = 0
+    for oy = y0 + step / 2, y1, step do
+        local col = 0
+        for ox = x0 + step / 2, x1, step do
+            Minimap:UpdateMouseoverAtPoint((g.l + ox) * g.es, (g.b + oy) * g.es)
+            local found = names()
+            if found then
+                for _, name in ipairs(found) do
+                    if want == nil or name == want then
+                        cells[name] = cells[name] or {}
+                        cells[name][col .. ":" .. row] = { ox, oy, col = col, row = row }
+                    end
+                end
+            end
+            col = col + 1
+        end
+        row = row + 1
+    end
+end
+
+-- A cluster of several cells may be two nodes of a name side by side: the
+-- grid bridges any gap narrower than its step (Codex, PR #12). Its patch is
+-- read again at half the step, as fine as the old grid of 8, and grouped anew.
+-- One cell is one node; a cluster wider than REFINE_SPAN cells is an area (a
+-- quest's), left as it is. Returns the cell lists, one per blip.
+Scan.REFINE_SPAN = 4
+local function refine(cl, g, step)
+    if #cl.cells < 2 then return { cl.cells } end
+    local c1, c2, r1, r2 = math.huge, -math.huge, math.huge, -math.huge
+    for _, c in ipairs(cl.cells) do
+        c1, c2 = math.min(c1, c.col), math.max(c2, c.col)
+        r1, r2 = math.min(r1, c.row), math.max(r2, c.row)
+    end
+    if c2 - c1 >= Scan.REFINE_SPAN or r2 - r1 >= Scan.REFINE_SPAN then return { cl.cells } end
+    local fine = {}
+    sample(g, step / 2, c1 * step, r1 * step, math.min(g.w, (c2 + 1) * step), math.min(g.h, (r2 + 1) * step),
+        fine, cl.name)
+    local parts = clusters(fine)
+    if #parts == 0 then return { cl.cells } end
+    local out = {}
+    for _, part in ipairs(parts) do out[#out + 1] = part.cells end
+    return out
+end
+
+-- A blip at the centre of its cells, in the map's units from its centre, as drawn.
+local function blip(name, members, g)
+    local sx, sy = 0, 0
+    for _, c in ipairs(members) do sx, sy = sx + c[1], sy + c[2] end
+    return { name = name, x = sx / #members - g.w / 2, y = sy / #members - g.h / 2, cells = #members }
 end
 
 -- Puts the mouseover back where the player's cursor is, or off the map.
@@ -114,27 +164,18 @@ function Scan.Sweep()
     local g, why = Scan.Geometry()
     if not g then return nil, why end
     local step = Scan.STEP
-    local cells = {}
+    local parts = {}                                   -- { name, cells } per blip
     local t0 = debugprofilestop()
     local okOn, errOn = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
     local ok, err = okOn, errOn
     if okOn then
         ok, err = pcall(function()
-            local row = 0
-            for oy = step / 2, g.h, step do
-                local col = 0
-                for ox = step / 2, g.w, step do
-                    Minimap:UpdateMouseoverAtPoint((g.l + ox) * g.es, (g.b + oy) * g.es)
-                    local found = names()
-                    if found then
-                        for _, name in ipairs(found) do
-                            cells[name] = cells[name] or {}
-                            cells[name][col .. ":" .. row] = { ox, oy, col = col, row = row }
-                        end
-                    end
-                    col = col + 1
+            local cells = {}
+            sample(g, step, 0, 0, g.w, g.h, cells)
+            for _, cl in ipairs(clusters(cells)) do
+                for _, members in ipairs(refine(cl, g, step)) do
+                    parts[#parts + 1] = { name = cl.name, cells = members }
                 end
-                row = row + 1
             end
         end)
     end
@@ -145,7 +186,13 @@ function Scan.Sweep()
         API.Fail("sweep", err)
         return nil, "the sweep failed: " .. tostring(err)
     end
-    local byName, list = group(cells, g)
+    local byName, list = {}, {}
+    for _, part in ipairs(parts) do
+        local b = blip(part.name, part.cells, g)
+        byName[part.name] = byName[part.name] or {}
+        table.insert(byName[part.name], b)
+        list[#list + 1] = b
+    end
     return { byName = byName, blips = list, geometry = g, ms = debugprofilestop() - t0 }
 end
 
