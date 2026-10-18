@@ -273,5 +273,7 @@ Our user waypoint on the nearest node (NodeRadar's `Scan.MapPosition`), then sup
 | Clearing: the tracking first, then the waypoint | both false: the order to use |
 | Across a logout | pending: the procedure resumes at step 16 at the next login |
 
+`/console showInGameNavigation 1` (the hidden option's CVar) brought no marker back either (owner).
+
 So on Forever the user waypoint works but draws no marker on screen: #29's first choice is out
 unless Forever turns the navigation on.
