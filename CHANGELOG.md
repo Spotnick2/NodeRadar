@@ -16,7 +16,7 @@ looked for the minimap's blips where the game doesn't put them.
   changes win.
 - The radar stands down only for the Gamepad UI (Options), not for the `GamePadEnable` setting,
   which is on for keyboard players too.
-- **Sweeps follow your speed**: about every 2 yards you move (0.29 s running, 0.71 s walking), every
+- **Sweeps follow your speed**: about every 4 yards you move (0.57 s running, 1.4 s walking), every
   2 s standing still.
 - A node above or below you is the same node: names lose the minimap's position arrow and colour
   codes (it used to ping only once you reached its height).

@@ -69,7 +69,7 @@ check(logged("PlaySound%(3175, Master%): returned willPlay=true"), "sound: MAP_P
 check(logged("GetFileIDFromPath%(Interface\\Cooldown\\ping4%) = nil"), "ring: the texture looked up")
 check(logged("point: no blip kept"), "point needs a kept blip")
 check(logged("sweep screen: 0 names in 625 points"), "sweep, cursor off the map: nothing (round 1)")
-check(logged("sweep screen soft: 1 names in 625 points, [%d.]+ ms: Peacebloom %(30, %-20%) x3 #ffffff"),
+check(logged("sweep screen soft: 1 names in 625 points, [%d.]+ ms: Peacebloom %(29, %-19%) x4 #ffffff"),
     "sweep soft: the blip, at the centre of its hits, with its colour")
 check(logged("radar started with screen for 1 s"), "radar: screen pixels by default (round 2)")
 check(logged("SetUsingSoftCursor%(true%)") and logged("SetUsingSoftCursor%(false%)"), "soft on and off")
@@ -97,8 +97,8 @@ WoW.tracking[1].active = true
 poll()
 eq(result(1).status, "done", "Find Herbs on")
 eq(result(2).status, "done", "the names read on arrival")
-check(logged("sweep screen soft: 3 names .*Peacebloom %(30, %-20%) x3 #ffffff"), "...a herb, white")
-check(logged("Burning Blade Medallion %(%-39, 61%) x%d+ #ffd100"), "...a quest, its colour")
+check(logged("sweep screen soft: 3 names .*Peacebloom %(29, %-19%) x4 #ffffff"), "...a herb, white")
+check(logged("Burning Blade Medallion %(%-43, 61%) x%d+ #ffd100"), "...a quest, its colour")
 
 S.Run()                                                    -- 3 toggle
 check(T.state.toggle ~= nil, "the toggle started")

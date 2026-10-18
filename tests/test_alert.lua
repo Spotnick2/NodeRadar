@@ -35,7 +35,7 @@ WoW.advance(0.6)
 eq(sounds(), 1, "a node in view at login alerts (a new area)")
 local r = rings()
 eq(#r, 1, "...one ring")
-check(r[1] and math.abs(r[1][1] - 30) < 4 and math.abs(r[1][2] + 20) < 4, "...on the node's blip")
+check(r[1] and math.abs(r[1][1] - 30) < 7 and math.abs(r[1][2] + 20) < 7, "...on the node's blip")
 
 -- Nothing new: no alert.
 hideRings()
@@ -216,6 +216,21 @@ WoW.advance(1)
 table.insert(WoW.blips, edge)
 WoW.advance(1)
 eq(sounds(), before, "an interrupted gather: the node that left and came back is a blink")
+
+-- A second node of a name coming in beside the first (Codex, PR #12): two
+-- blips, a rise, an alert; at 26 units the wide grid alone merged them.
+WoW.blips = { { "Peacebloom", 0, 0, kind = "herbs" } }
+WoW.advance(25)                                            -- past the blink window of the earlier drops
+before = sounds()
+table.insert(WoW.blips, { "Peacebloom", 26, 0, kind = "herbs" })
+WoW.advance(1)
+eq(sounds(), before + 1, "a second Peacebloom 26 units from the first alerts")
+-- And a third in the chain (Codex again): five running columns, still a rise.
+WoW.advance(6)
+before = sounds()
+table.insert(WoW.blips, { "Peacebloom", 52, 0, kind = "herbs" })
+WoW.advance(1)
+eq(sounds(), before + 1, "a third Peacebloom in the chain alerts")
 
 -- /nr test.
 NR.db.sound = true

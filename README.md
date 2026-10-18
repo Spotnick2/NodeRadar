@@ -6,7 +6,7 @@ out from the node and a glow stays on it, green for herbs, gold for ore.
 
 ## How it works
 
-- **It reads the minimap's blips.** About every 2 yards you move (every 2 s standing still) it
+- **It reads the minimap's blips.** About every 4 yards you move (every 2 s standing still) it
   samples the minimap through the client's own mouseover (the same data its tooltip shows), so it
   sees what you'd see by hovering every blip. Each look takes about 4 ms. It works under any minimap
   skin, and your own hover tooltip isn't affected.

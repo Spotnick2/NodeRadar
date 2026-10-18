@@ -25,11 +25,10 @@ eq(Scan.Count(r, "Carry Your Weight"), 1, "the quest")
 eq(Scan.Count(r, "Silverleaf"), 0, "a name not there counts 0")
 local near = {}
 for _, b in ipairs(r.byName.Peacebloom) do
-    if (b.x - 30) ^ 2 + (b.y + 20) ^ 2 < 16 then near.a = true end
-    if (b.x + 60) ^ 2 + (b.y - 40) ^ 2 < 16 then near.b = true end
-    check(b.cells >= 2, "a blip covers several cells: " .. b.cells)
+    if (b.x - 30) ^ 2 + (b.y + 20) ^ 2 < 49 then near.a = true end
+    if (b.x + 60) ^ 2 + (b.y - 40) ^ 2 < 49 then near.b = true end
 end
-check(near.a and near.b, "each blip at its herb (within 4 units)")
+check(near.a and near.b, "each blip at its herb (within half a step, 7 units)")
 eq(WoW.softCursor, false, "the soft cursor off after a sweep")
 eq(r.geometry.w, 198, "the geometry rides along")
 
@@ -85,13 +84,72 @@ Minimap._rect = rect
 eq(none, nil, "no geometry, no sweep")
 eq(WoW.softCursor, nil, "...the soft cursor untouched")
 
--- The cost: one mouseover read per point, 25 x 25 on a 198-unit map.
+-- A node's blip is never missed (#11): a 17-unit square, wherever it sits
+-- against the grid.
+local missed = 0
+for dx = 0, 13 do
+    for dy = 0, 13 do
+        WoW.blips = { { "Peacebloom", -40 + dx, 10 + dy } }
+        if Scan.Count(Scan.Sweep(), "Peacebloom") ~= 1 then missed = missed + 1 end
+    end
+end
+eq(missed, 0, "a 17-unit blip read at every offset against the grid")
+WoW.blips = {}
+
+-- The cost: one mouseover read per point, 14 x 14 on a 198-unit map.
 local reads = 0
 local real = C_TooltipInfo.GetMinimapMouseover
 C_TooltipInfo.GetMinimapMouseover = function() reads = reads + 1; return real() end
 Scan.Sweep()
 C_TooltipInfo.GetMinimapMouseover = real
-eq(reads, 625, "625 points per sweep")
+eq(reads, 196, "196 points per sweep, not 625 (#11)")
+
+-- Nodes of a name side by side (Codex, PR #12): at (0, 0) and (26, 0) the
+-- grid of 14 hits them in four running columns; the patch read again at 7
+-- tells them apart, wherever the pair sits against the grid. Only the names
+-- the caller counts (the alert's nodes) are read again.
+local function nodes(name) return name == "Peacebloom" end
+local merged = 0
+for dx = 0, 13 do
+    for dy = 0, 13 do
+        WoW.blips = { { "Peacebloom", -20 + dx, dy }, { "Peacebloom", 6 + dx, dy } }
+        if Scan.Count(Scan.Sweep(nodes), "Peacebloom") ~= 2 then merged = merged + 1 end
+    end
+end
+eq(merged, 0, "two Peaceblooms 26 units apart: two blips at every offset")
+WoW.blips = { { "Peacebloom", 0, 0 }, { "Peacebloom", 26, 0 } }
+local pair = Scan.Sweep(nodes).byName.Peacebloom
+table.sort(pair, function(a, b) return a.x < b.x end)
+check(math.abs(pair[1].x - 0) < 4 and math.abs(pair[2].x - 26) < 4, ("...each where it is: %.1f, %.1f"):format(pair[1].x, pair[2].x))
+eq(Scan.Count(Scan.Sweep(), "Peacebloom"), 1, "...without `count`, one cluster is one blip (the same grouping every sweep)")
+
+-- A chain of three (Codex again): five running columns, as wide as an area,
+-- still three nodes, at every offset.
+merged = 0
+for dx = 0, 13 do
+    WoW.blips = { { "Peacebloom", -26 + dx, 0 }, { "Peacebloom", dx, 0 }, { "Peacebloom", 26 + dx, 0 } }
+    if Scan.Count(Scan.Sweep(nodes), "Peacebloom") ~= 3 then merged = merged + 1 end
+end
+eq(merged, 0, "three Peaceblooms in a row, 26 apart: three blips at every offset")
+
+-- What reading again costs: nothing for a node one cell wide, a few reads for
+-- a wider cluster of a node, nothing for a name the caller doesn't count (a
+-- quest's area), however wide.
+local function readsFor(blips)
+    WoW.blips = blips
+    reads = 0
+    C_TooltipInfo.GetMinimapMouseover = function() reads = reads + 1; return real() end
+    local r = Scan.Sweep(nodes)
+    C_TooltipInfo.GetMinimapMouseover = real
+    return reads, r
+end
+eq(readsFor({ { "Peacebloom", -92, -92 } }), 196, "one node on one cell: no extra read")
+local n = readsFor({ { "Peacebloom", 0, 0 }, { "Peacebloom", 26, 0 } })
+check(n > 196 and n <= 196 + 32, "the pair's patch: a few more reads (" .. (n - 196) .. ")")
+local area, r = readsFor({ { "- 0/8 Duskbat Wing Membrane", 0, 0, half = 60 } })
+eq(area, 196, "a quest's area: not read again")
+eq(Scan.Count(r, "- 0/8 Duskbat Wing Membrane"), 1, "...one blip")
+WoW.blips = {}
 
 eq(#WoW.chat, 0, "nothing in chat")
 done("test_scan")

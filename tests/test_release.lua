@@ -138,4 +138,71 @@ WoW.fire("PLAYER_LOGIN")
 eq(NR.db.learn, true, "learning put back at login after an interrupted toggle")
 eq(db.restoreLearn, nil, "...once")
 
+-- The memory procedure: read, collect, allocations, a minute's samples.
+fp("steps stop")
+fp("steps nr memory")
+local function mem(i) return FP.db.steps.records["NodeRadarProbe/memory"].results[i] or {} end
+poll()
+eq(mem(1).status, "done", "memory: ready")
+eq(mem(2).status, "done", "memory: read and collected")
+eq(mem(3).status, "done", "memory: allocations measured: " .. tostring(mem(3).detail or mem(3).error))
+local m = db.memory
+check(m and m.afterCollect and m.perSweep and m.perEmptyRead, "...saved")
+eq(m and m.emptyType, "nil", "...an empty read is nil here")
+eq(WoW.softCursor, false, "...the soft cursor off after")
+-- The collector restarted, even when a sweep throws.
+local stops, restarts, realGC = 0, 0, collectgarbage
+collectgarbage = function(opt, ...)
+    if opt == "stop" then stops = stops + 1 elseif opt == "restart" then restarts = restarts + 1 end
+    return realGC(opt, ...)
+end
+local realSweep = NR.Scan.Sweep
+NR.Scan.Sweep = function() error("boom") end
+S.Back()                                                   -- to step 3, which waits for Run
+S.Run()
+NR.Scan.Sweep, collectgarbage = realSweep, realGC
+check(stops > 0 and restarts == stops, ("...the collector restarted after a failed sweep (%d stops, %d restarts)"):format(stops, restarts))
+S.Run()                                                    -- Retry, on to the minute
+for _ = 1, 62 do WoW.advance(1) end
+poll()
+eq(mem(4).status, "done", "memory: a minute sampled")
+check(#(m.samples or {}) >= 12, "...every 5 s: " .. #(m.samples or {}))
+check(m.retained, "...and what's kept after a collection")
+fp("steps stop")
+
+-- The blip-size procedure (blipsize): the stubs' blips are 17-unit squares, so a
+-- step of 16 always lands on one and 18 can miss it.
+WoW.blips = { { "Wilted Peacebloom", 30, -20, kind = "herbs" } }
+fp("steps nr blipsize")
+local function size(i) return FP.db.steps.records["NodeRadarProbe/blipsize"].results[i] or {} end
+poll()
+eq(size(2).status, "done", "blips: measured: " .. tostring(size(2).detail or size(2).error))
+local first = db.blipSize and db.blipSize[1]
+eq(first and first.blips[1].w, 17, "...17 units wide")
+eq(first and first.safe, 16, "...a step of 16 misses none, 18 could")
+eq(WoW.softCursor, false, "...the soft cursor off after")
+poll()
+eq(size(3).status, nil, "the zoom step waits for a zoom")
+Minimap._zoom = 2
+poll()
+poll()
+eq(size(4).status, "done", "measured again after the zoom")
+eq(db.blipSize[2].zoom, 2, "...at zoom 2")
+Minimap._zoom = 0
+fp("steps stop")
+-- A herb NodeRadar hasn't learned is measured; a name it knows isn't a node isn't.
+NR.db.learned.enUS["Carry Your Weight"] = { kind = false, source = "toggle" }
+WoW.blips = { { "Carry Your Weight", -40, 40 } }
+fp("steps nr blipsize")
+poll()
+check(tostring(size(2).error or size(2).lastError):find("saw: Carry Your Weight %(false%)"), "a known non-node isn't measured; the error says what was seen: "
+    .. tostring(size(2).error or size(2).lastError))
+WoW.blips = { { "Carry Your Weight", -40, 40 }, { "Briarthorn", 30, -20, kind = "herbs" } }
+S.Run()
+eq(size(2).status, "done", "a name not learned yet is measured")
+eq(db.blipSize[1].blips[1].name, "Briarthorn", "...Briarthorn")
+eq(db.blipSize[1].blips[1].kind, "unknown", "...marked unknown")
+eq(#db.blipSize[1].blips, 1, "...and only it")
+fp("steps stop")
+
 done("test_release")
