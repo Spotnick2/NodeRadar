@@ -25,9 +25,11 @@ turn on Find Herbs or Find Minerals.
     sees what disappeared, since a herb is what vanishes when Find Herbs is off. Turning tracking
     back on costs a global cooldown, which is why it's off by default. If anything stops it from
     turning tracking back on, it says so in chat.
-- **It ships knowing every classic herb and ore node** by its English name, Peacebloom to Black
-  Lotus, Copper Vein to Rich Thorium Vein, so on an English client it alerts from the start. Names
-  are your client's own: in another language it learns them as you gather.
+- **It ships knowing every classic herb and ore node**, Peacebloom to Black Lotus, Copper Vein to
+  Rich Thorium Vein, by name in English, German, French, Spanish, Portuguese, Italian, Russian,
+  Korean and Chinese, so it alerts from the start. A name it doesn't know yet it learns as you
+  gather. The translations come from [GatherMate2](https://www.curseforge.com/wow/addons/gathermate2)'s
+  node list (the names themselves are Blizzard's).
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not

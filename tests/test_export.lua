@@ -31,7 +31,16 @@ eq(lib.enUS["Wilted Peacebloom"], "herbs", "...and the Forever starter herbs")
 for _, doubtful in ipairs({ "Beached Sea Creature", "Skeletal Sea Turtle", "Incendia Agave", "Violet Tragan" }) do
     eq(lib.enUS[doubtful], nil, "left out as doubtful: " .. doubtful)
 end
-eq(lib.deDE, nil, "English only: the other languages learn as they go")
+-- And every language GatherMate2 translates (#19), all of it in.
+local gm = X.load("Tools/Reference/gathermate2.lua").NodeRadarDB.learned
+local _, gmMissing = X.merge(lib, { { file = "gathermate2", learned = gm } })
+eq(#gmMissing, 0, "every GatherMate2 name is in the shipped library")
+for _, locale in ipairs({ "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }) do
+    check(lib[locale] and next(lib[locale]), "names for " .. locale)
+end
+eq(lib.deDE["Kupfervorkommen"], "ore", "deDE: the Vanilla name")
+eq(lib.deDE["Kupferader"], "ore", "...and the Retail one")
+eq(lib.enUS["Bloodvine"], "herbs", "Bloodvine, which the English reference missed")
 
 -- Two accounts' learned names, against the small library behaviour tests use.
 local a = { file = "a.lua", learned = { enUS = {

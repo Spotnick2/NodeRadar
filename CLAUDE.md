@@ -64,6 +64,10 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   reference list, #17), an input to the export in the SavedVariables shape. Tests run on a small
   fixed library (`TEST_LIBRARY`, harness), whatever `Data/Nodes.lua` ships; `test_export` pins
   the real one.
+- `Tools/extract_gathermate.lua <GatherMate2 folder> [--write]` → `Tools/Reference/gathermate2.lua`:
+  the classic nodes' names in every language, from GatherMate2's node table and locale files
+  (`..\References\Gathering`), run in a sandbox that only records names (#19). Rebuild the
+  library: `lua5.1 Tools/export_nodes.lua Tools/Reference/*.lua <SavedVariables>... --write`.
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
   (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr release` for the release check (#3).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
