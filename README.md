@@ -1,8 +1,8 @@
 # NodeRadar
 
-Gathering while you quest usually means staring at the minimap. Look away for a second to read a
-quest, pull a mob or answer guild chat, and that Peacebloom you wanted slides right past the edge
-of the map.
+Gathering while you quest or ride across a zone usually means staring at the minimap. Look away
+for a second to read a quest, pull a mob or answer guild chat, and that Peacebloom you wanted
+slides right past the edge of the map.
 
 NodeRadar keeps an eye on the minimap so you don't have to. Turn on Find Herbs or Find Minerals and
 just play: the moment a herb or ore node shows up, you hear a ping and a sonar ripples out from it
