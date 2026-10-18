@@ -10,10 +10,7 @@ rawset(_G, "Screenshot", function() WoW.shots = (WoW.shots or 0) + 1 end)
 rawset(_G, "EnumerateFrames", function() return nil end)
 
 -- What these procedures read beyond the shared stub (all in the 70450 dump).
-WoW.skillLines = { [182] = { skillID = 182, name = "Herbalism", rank = 40, modifier = 0, maxRank = 75 } }
-rawset(_G, "C_SkillInfo", { GetSkillLineInfoByID = function(id) return WoW.skillLines[id] end })
-WoW.knownSpells = {}
-rawset(_G, "C_SpellBook", { IsSpellKnown = function(id) return WoW.knownSpells[id] == true end })
+WoW.skillLines[182] = { skillID = 182, name = "Herbalism", rank = 40, modifier = 0, maxRank = 75 }
 WoW.race = { "Orc", "Orc", 2 }
 rawset(_G, "UnitRace", function() return unpack(WoW.race) end)
 WoW.worldTooltip = nil                                     -- the lines under the world cursor
@@ -24,10 +21,6 @@ C_TooltipInfo.GetWorldCursor = function()
         lines[#lines + 1] = { leftText = l[1], leftColor = { r = l[2][1], g = l[2][2], b = l[2][3], a = 1 } }
     end
     return { type = 13, lines = lines }
-end
-WoW.spellCooldowns = {}
-C_Spell.GetSpellCooldown = function(id)
-    return WoW.spellCooldowns[id] or { startTime = 0, duration = 0, isEnabled = true, isActive = false, modRate = 1 }
 end
 
 local NR = loadAddon()

@@ -157,6 +157,13 @@ player's, not the world's (Codex). So v1 counts instead, which no movement or tu
   checked), a ring on the map at the blip's drawn position (our unnamed frame on `Minimap`, `HIGH`
   strata, `Interface\Cooldown\ping4`), an optional chat line.
 
+Only nodes the player can gather alert (#26): a rise of a name whose known requirement
+(`NODE_INFO`, generated) is above the player's skill (`rank + modifier`, read when a name rises)
+neither alerts nor spends the cooldown; it's still counted, so a skill-up doesn't make a node already
+on the map new. Herbs above the skill alert while the Tauren's Cultivation (20552) is ready, its state
+read only on `SPELL_UPDATE_COOLDOWN` (the client's docs: `isOnGCD` is trustworthy only there).
+Anything unknown or unreadable alerts.
+
 Known misses, accepted for v1: a node leaving one edge in the same half second another of that name
 enters the other. World positions (`UnitPosition`) would fix it once their axes are measured.
 

@@ -48,6 +48,15 @@ function Learn.Kind(name)
     return lib and lib[name] or nil
 end
 
+-- A node's required skill and item (NODE_INFO, #26), only while the name is
+-- still the library's kind: a learned "not a node" or another kind ignores it.
+function Learn.Info(name)
+    local l = GetLocale()
+    local lib, info = NR.LIBRARY and NR.LIBRARY[l], NR.NODE_INFO and NR.NODE_INFO[l]
+    local e = info and info[name]
+    if e and lib and lib[name] ~= nil and Learn.Kind(name) == lib[name] then return e end
+end
+
 -- Gathering is the strongest evidence: it overrides a toggle's answer, and a
 -- toggle never overrides it.
 function Learn.Record(name, kind, source)

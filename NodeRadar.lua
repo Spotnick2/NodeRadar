@@ -15,6 +15,7 @@ local DEFAULTS = {
     enabled  = true,
     sound    = true,    -- a sound with the alert
     soundKind = "ping", -- which: a key of Alert.SOUNDS (the map ping, the sonar, two FileDataIDs)
+    skillOnly = true,   -- alert only for nodes the player's skill can gather (#26)
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -132,7 +133,7 @@ end)
 local events = CreateFrame("Frame")
 API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_DEAD", "MINIMAP_UPDATE_ZOOM",
-    "MINIMAP_UPDATE_TRACKING" })
+    "MINIMAP_UPDATE_TRACKING", "SPELL_UPDATE_COOLDOWN" })
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
 local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
@@ -166,6 +167,8 @@ events:SetScript("OnEvent", function(_, event, ...)
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         Alert.Reset()
         Learn.OnTrackingChanged()
+    elseif event == "SPELL_UPDATE_COOLDOWN" then
+        API.OnCooldownUpdate()                     -- Cultivation's state (#26)
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
         local unit, target, castGUID, spellID = ...
@@ -195,7 +198,8 @@ local TOGGLES = { sound = "sound", ring = "sonar on the node", chat = "chat line
 
 local function status()
     local db = NR.db
-    API.Say("radar " .. onOff(db.enabled) .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
+    API.Say("radar " .. onOff(db.enabled) .. "; only nodes you can gather " .. onOff(db.skillOnly)
+        .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
         .. ", chat " .. onOff(db.chat) .. ", Blizzard's ping " .. onOff(db.ping) .. "; learning " .. onOff(db.learn)
         .. "; " .. db.cooldown .. " s between alerts")
     local on = {}
@@ -230,6 +234,7 @@ local function help()
     API.Say("/nr sound | ring | chat | ping | learn: toggle the sound, the ring, a chat line, Blizzard's ping "
         .. "(solo only), learning by turning tracking off and on")
     API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea | bell | notify | hud: which sound.")
+    API.Say("/nr skill: alert only for nodes your skill can gather (on by default)")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -245,6 +250,9 @@ SlashCmdList.NODERADAR = function(msg)
     if cmd == "" then
         NR.Set("enabled", not db.enabled)
         API.Say("radar " .. onOff(db.enabled))
+    elseif cmd == "skill" then
+        NR.Set("skillOnly", not db.skillOnly)
+        API.Say("only nodes you can gather " .. onOff(db.skillOnly))
     elseif cmd == "options" or cmd == "config" then
         if not NR.Options.Open() then API.Say("the Options page can't open here: Esc > Options > AddOns") end
     elseif cmd == "sound" and Alert.SOUNDS[rest:lower()] then

@@ -347,11 +347,32 @@ C_Spell = {
         local n = WoW.spellNames[id]
         if n then return { name = n, spellID = id, iconID = 1, originalIconID = 1, castTime = 0, minRange = 0, maxRange = 0 } end
     end,
+    -- WoW.spellCooldowns[id] gives a spell's whole answer (Cultivation's, #26),
+    -- else WoW.cooling[id] puts it on the global cooldown.
     GetSpellCooldown = function(id)
+        if WoW.spellCooldowns[id] ~= nil then
+            local cd = WoW.spellCooldowns[id]
+            if cd == "throw" then error("GetSpellCooldown failed") end
+            return cd
+        end
         local on = WoW.cooling[id] == true
-        return { startTime = on and 1 or 0, duration = on and 1.5 or 0, isEnabled = true, isActive = on, modRate = 1 }
+        return { startTime = on and 1 or 0, duration = on and 1.5 or 0, isEnabled = true, isActive = on, modRate = 1,
+                 isOnGCD = on }
     end,
 }
+WoW.spellCooldowns = {}
+
+-- Gathering skills (#26): WoW.skillLines[id] is GetSkillLineInfoByID's answer
+-- (nil without the profession; "throw" throws). Spells known: WoW.knownSpells.
+WoW.skillLines = {}
+C_SkillInfo = {
+    GetSkillLineInfoByID = function(id)
+        if WoW.skillLines[id] == "throw" then error("GetSkillLineInfoByID failed") end
+        return WoW.skillLines[id]
+    end,
+}
+WoW.knownSpells = {}
+C_SpellBook = { IsSpellKnown = function(id) return WoW.knownSpells[id] == true end }
 
 WoW.mounted = false
 function IsMounted() return WoW.mounted end
