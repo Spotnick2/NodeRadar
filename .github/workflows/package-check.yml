@@ -131,6 +131,9 @@ jobs:
       # built on every run so a changelog heading or TOC field that breaks it
       # fails on the pull request. Off a tag there is no tag section, so it
       # reads the newest one. `release` and `wago` publish these very files.
+      # The script is the workflow's own (GITHUB_SHA), not the checked-out
+      # tree's: a manual run checks out the requested tag, and a tag from
+      # before the script has none (Codex, NodeRadar #36).
       - name: The release notes and release.json build
         env:
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag }}
@@ -140,7 +143,8 @@ jobs:
           if [ -z "$tag" ]; then
             tag=$(tr -d '\r' < CHANGELOG.md | sed -n 's/^## \(v[^ ]*\).*/\1/p' | head -1)
           fi
-          bash tests/release_files.sh "$tag" "$zip" "$RUNNER_TEMP/release-files"
+          git show "$GITHUB_SHA:tests/release_files.sh" > "$RUNNER_TEMP/release_files.sh"
+          bash "$RUNNER_TEMP/release_files.sh" "$tag" "$zip" "$RUNNER_TEMP/release-files"
 
       # .release is a hidden directory, and upload-artifact@v4 skips hidden
       # content by default - without include-hidden-files the upload finds
