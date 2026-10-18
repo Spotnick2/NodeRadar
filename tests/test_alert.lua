@@ -217,6 +217,15 @@ table.insert(WoW.blips, edge)
 WoW.advance(1)
 eq(sounds(), before, "an interrupted gather: the node that left and came back is a blink")
 
+-- A second node of a name coming in beside the first (Codex, PR #12): two
+-- blips, a rise, an alert; at 26 units the wide grid alone merged them.
+WoW.blips = { { "Peacebloom", 0, 0, kind = "herbs" } }
+WoW.advance(25)                                            -- past the blink window of the earlier drops
+before = sounds()
+table.insert(WoW.blips, { "Peacebloom", 26, 0, kind = "herbs" })
+WoW.advance(1)
+eq(sounds(), before + 1, "a second Peacebloom 26 units from the first alerts")
+
 -- /nr test.
 NR.db.sound = true
 before = sounds()
