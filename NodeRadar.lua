@@ -226,7 +226,7 @@ local function help()
     API.Say("/nr: radar on or off. /nr options: the Options page")
     API.Say("/nr sound | ring | chat | ping | learn: toggle the sound, the ring, a chat line, Blizzard's ping "
         .. "(solo only), learning by turning tracking off and on")
-    API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea: which sound.")
+    API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea | bell | notify | hud: which sound.")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end

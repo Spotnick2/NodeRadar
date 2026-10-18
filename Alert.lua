@@ -166,7 +166,7 @@ end
 
 -- The sounds (#13), the owner's picks: Blizzard's minimap ping; two of the
 -- client's files by FileDataID, both heard on 70450 (Spell_Uni_SonarPing_01,
--- and 12.0_UI_Alert_Tonal_Radar_Ping, a 12.0 file in this client too); three
+-- and 12.0_UI_Alert_Tonal_Radar_Ping, a 12.0 file in this client too); six
 -- of ours from Pixabay (Tools/import_sounds.py, README "Sounds").
 Alert.SOUNDS = {
     ping      = { kit = Alert.MAP_PING },
@@ -175,6 +175,9 @@ Alert.SOUNDS = {
     sonar     = { file = Alert.MEDIA .. "Sonar.ogg" },
     radarblip = { file = Alert.MEDIA .. "RadarBlip.ogg" },
     deepsea   = { file = Alert.MEDIA .. "DeepSea.ogg" },
+    bell      = { file = Alert.MEDIA .. "BellChime.ogg" },
+    notify    = { file = Alert.MEDIA .. "Notification.ogg" },
+    hud       = { file = Alert.MEDIA .. "HudPing.ogg" },
 }
 
 -- The chosen sound, whatever db.sound says (the Options page's choice plays it).

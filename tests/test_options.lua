@@ -33,7 +33,8 @@ eq(checked("interval"), 2, "standing still: 2 s checked")
 eq(checked("yards"), 4, "moving: 4 yards checked")
 -- The sound is a dropdown (the owner): radio items, the current one selected.
 local SOUND_LABELS = { ping = "The minimap ping", sonarping = "Sonar ping", radar = "Radar ping",
-                       sonar = "Sonar", radarblip = "Radar blip", deepsea = "Deep-sea sonar" }
+                       sonar = "Sonar", radarblip = "Radar blip", deepsea = "Deep-sea sonar",
+                       bell = "Bell chime", notify = "Notification", hud = "Sci-fi HUD ping" }
 local dd = O.dropdowns.soundKind
 check(dd and dd._template == "WowStyle1DropdownTemplate", "the sound: Retail's dropdown")
 eq(O.radios.soundKind, nil, "...not a radio group")
@@ -109,7 +110,7 @@ WoW.refusedSounds = {}
 NR.failures.sound = nil
 SlashCmdList.NODERADAR("sound sonarping")
 eq(db.soundKind, "sonarping", "/nr sound sonarping")
-eq(#WoW.menu(dd), 6, "six sounds in the dropdown")
+eq(#WoW.menu(dd), 9, "nine sounds in the dropdown")
 eq(selected(), "Sonar ping", "...the one chosen by /nr selected")
 local generated = dd._generated or 0
 O.panel:Hide()
@@ -118,11 +119,12 @@ check((dd._generated or 0) > generated, "...and the page refreshes the dropdown'
 
 -- Ours from Pixabay: each plays from the file that ships (the stub plays only
 -- a file that exists, so a typo in a name fails here).
-for key, file in pairs({ sonar = "Sonar.ogg", radarblip = "RadarBlip.ogg", deepsea = "DeepSea.ogg" }) do
+for key, file in pairs({ sonar = "Sonar.ogg", radarblip = "RadarBlip.ogg", deepsea = "DeepSea.ogg",
+                         bell = "BellChime.ogg", notify = "Notification.ogg", hud = "HudPing.ogg" }) do
     choose("soundKind", key)
     eq(WoW.sounds[#WoW.sounds][1], "Interface\\AddOns\\NodeRadar\\Media\\" .. file, key .. " plays " .. file)
 end
-eq(next(NR.failures), nil, "...all three play: " .. tostring(next(NR.failures)))
+eq(next(NR.failures), nil, "...all six play: " .. tostring(next(NR.failures)))
 
 -- /nr sound ping | sonar.
 SlashCmdList.NODERADAR("sound ping")

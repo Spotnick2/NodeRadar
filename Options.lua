@@ -167,7 +167,8 @@ local function build()
     local sound = checkbox(panel, alert, "A sound", "sound")
     local which = dropdown(panel, sound, "Which sound (it plays when chosen)", "soundKind",
         { { "ping", "The minimap ping" }, { "sonarping", "Sonar ping" }, { "radar", "Radar ping" },
-          { "sonar", "Sonar" }, { "radarblip", "Radar blip" }, { "deepsea", "Deep-sea sonar" } },
+          { "sonar", "Sonar" }, { "radarblip", "Radar blip" }, { "deepsea", "Deep-sea sonar" },
+          { "bell", "Bell chime" }, { "notify", "Notification" }, { "hud", "Sci-fi HUD ping" } },
         function() NR.Alert.PlaySound() end)
     local sonar = checkbox(panel, which, "The sonar on the node (green for herbs, gold for ore)", "ring")
     local chat = checkbox(panel, sonar, "A line in chat", "chat")

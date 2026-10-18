@@ -24,6 +24,9 @@ SOUNDS = {
     "freesound_community-sonar-ping-95840.mp3": ("Sonar.ogg", 1.6),
     "49053354-radar-ping-306440.mp3": ("RadarBlip.ogg", None),
     "dragon-studio-deepsea-sonar-386156.mp3": ("DeepSea.ogg", None),
+    "universfield-clear-bell-chime-487898.mp3": ("BellChime.ogg", 1.2),
+    "universfield-new-notification-016-350210.mp3": ("Notification.ogg", 0.65),
+    "vadim_makes_sound-sci-fi-hud-notification-ping-547867.mp3": ("HudPing.ogg", 1.1),
 }
 MEAN, PEAK = -20.0, -1.0
 

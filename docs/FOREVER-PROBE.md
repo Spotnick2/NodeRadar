@@ -205,7 +205,7 @@ and **7466154** (`12.0_UI_Alert_Tonal_Radar_Ping`, a 12.0 file) both play, as do
 `Media\Sonar.ogg`. They're the page's Sonar ping, Radar ping and NodeRadar's sonar, beside the
 minimap ping (kit 3175).
 
-Later the same day the owner replaced NodeRadar's own synthesised sonar with three Pixabay sounds
-(README, "Sounds"): Sonar, Radar blip, Deep-sea sonar, converted by `Tools/import_sounds.py`. The
-sound became a dropdown, `WowStyle1DropdownTemplate` with radio items, as Blizzard's AddOns list on
+Later the same day the owner replaced NodeRadar's own synthesised sonar with six Pixabay sounds
+(README, "Sounds"): Sonar, Radar blip, Deep-sea sonar, Bell chime, Notification, Sci-fi HUD ping,
+converted by `Tools/import_sounds.py`. The sound became a dropdown, `WowStyle1DropdownTemplate` with radio items, as Blizzard's AddOns list on
 this build (`Blizzard_AddOnList/AddonList.xml:126`); the radio group stays as the fallback.

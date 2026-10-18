@@ -1,5 +1,5 @@
 -- The Options page on a client without WowStyle1DropdownTemplate: the sound is
--- a radio group, two rows of three in columns, and a choice still saves and plays.
+-- a radio group, three rows of three in columns, and a choice still saves and plays.
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
@@ -10,9 +10,9 @@ O.panel:Show()
 
 eq(O.dropdowns.soundKind, nil, "no dropdown without its template")
 local s = O.radios.soundKind
-eq(s and #s, 6, "the six sounds as radios")
+eq(s and #s, 9, "the nine sounds as radios")
 local p1, p4 = s[1]._points[#s[1]._points], s[4]._points[#s[4]._points]
-eq(p4[4], p1[4], "two rows: the fourth lines up under the first")
+eq(p4[4], p1[4], "in rows: the fourth lines up under the first")
 check(p4[5] < p1[5], "...below it")
 check(s[1]:GetChecked(), "the minimap ping checked")
 
