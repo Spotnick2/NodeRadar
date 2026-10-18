@@ -32,7 +32,8 @@
 -- Procedures: /fp steps nr ids (round 3, #7); /fp steps nr release (NodeRadar's release check, #3);
 -- /fp steps nr walk (its walk alone); /fp steps nr memory (a leak, or garbage?);
 -- /fp steps nr blipsize (how wide the grid can be); /fp steps nr skill and
--- /fp steps nr cultivation (the gathering skill and Cultivation, #26).
+-- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
+-- coords (a blip's map coordinates, #27); /fp steps nr waypoint (Blizzard's marker, #29).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -1757,12 +1758,211 @@ Probe:Steps("coords", {
 })
 
 --------------------------------------------------------------------------------
+-- Blizzard's waypoint marker on a node (#29). Does Forever draw the user
+-- waypoint's on-screen navigation marker (Blizzard_QuestNavigation's
+-- SuperTrackedFrame, on C_Navigation's frame) when an addon sets one; at what
+-- distance, clamped at the screen's edge; what arrival does; the events'
+-- order when we set, when the player sets their own, when we clear; whether
+-- it survives a reload. The node's point is NodeRadar's own
+-- Scan.MapPosition (#27). Every event of it is logged by the boot frame,
+-- marked "(ours)" while one of our setters runs.
+--------------------------------------------------------------------------------
+
+local function wpRead(f, ...)
+    if type(f) ~= "function" then return "MISSING" end
+    local ok, a = pcall(f, ...)
+    if not ok then return "ERROR " .. str(a) end
+    return a
+end
+
+-- The waypoint, the super-track and the navigation frame, as one line.
+local function navState()
+    local pt = wpRead(C_Map.GetUserWaypoint)
+    local where = "none"
+    if type(pt) == "table" and not secret(pt) then
+        local p = pt.position
+        local x, y = p and num(p.x), p and num(p.y)
+        where = ("map %s (%s, %s)"):format(str(pt.uiMapID), x and ("%.2f"):format(x * 100) or "?",
+            y and ("%.2f"):format(y * 100) or "?")
+    elseif pt ~= nil then
+        where = str(pt)
+    end
+    local frame = wpRead(C_Navigation.GetFrame)
+    -- Both returns kept: `stf and pcall(...)` would keep only the first (Codex on #39).
+    local stf, shown = rawget(_G, "SuperTrackedFrame"), "absent"
+    if stf then
+        local ok, v = pcall(stf.IsShown, stf)
+        shown = ok and (yes(v) and "shown" or "hidden") or "unreadable"
+    end
+    local loaded = wpRead(C_AddOns.IsAddOnLoaded, "Blizzard_QuestNavigation")
+    return ("waypoint %s at %s; super-tracking anything %s, the waypoint %s, quest %s; nav frame %s, valid %s, "
+        .. "distance %s, clamped %s, state %s; SuperTrackedFrame %s; Blizzard_QuestNavigation loaded %s")
+        :format(str(wpRead(C_Map.HasUserWaypoint)), where, str(wpRead(C_SuperTrack.IsSuperTrackingAnything)),
+            str(wpRead(C_SuperTrack.IsSuperTrackingUserWaypoint)), str(wpRead(C_SuperTrack.GetSuperTrackedQuestID)),
+            frame == nil and "none" or type(frame) == "string" and frame or "present",
+            str(wpRead(C_Navigation.HasValidScreenPosition)), str(wpRead(C_Navigation.GetDistance)),
+            str(wpRead(C_Navigation.WasClampedToScreen)), str(wpRead(C_Navigation.GetTargetState)),
+            shown, str(loaded))
+end
+
+local function wpSay(label)
+    local s = navState()
+    say("waypoint " .. label .. ": " .. s)
+    return s
+end
+
+-- The nearest node blip's map point, from NodeRadar's own conversion.
+local function nearestNode()
+    local n = nr()
+    if not n then error("NodeRadar isn't loaded", 0) end
+    local r = n.Scan.Sweep(function(name) return n.Learn.Kind(name) end)
+    if not r then error("NodeRadar's sweep failed", 0) end
+    local best
+    for _, b in ipairs(r.blips) do
+        if n.Learn.Kind(b.name) then
+            local map, x, y = n.Scan.MapPosition(r, b)
+            local d = b.x * b.x + b.y * b.y
+            if map and (not best or d < best.d) then best = { d = d, name = b.name, map = map, x = x, y = y } end
+        end
+    end
+    if not best then error("no node with coordinates on the minimap (outdoors, north-up): stand where one shows", 0) end
+    return best
+end
+
+-- Sets our waypoint on a point and super-tracks it, logging each answer;
+-- state.wpOurs marks our events. Returns the line.
+local function setOurs(p)
+    local canSet = wpRead(C_Map.CanSetUserWaypointOnMap, p.map)
+    state.wpOurs = true
+    local okPt, point = pcall(UiMapPoint.CreateFromCoordinates, p.map, p.x, p.y)
+    local wasSet = okPt and wpRead(C_Map.SetUserWaypoint, point) or ("ERROR " .. str(point))
+    local before = navState()
+    local okT, errT = pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
+    state.wpOurs = false
+    state.wpTarget = p
+    local line = ("set %s (%.2f, %.2f) on map %d: CanSetUserWaypointOnMap %s, SetUserWaypoint -> %s, then "
+        .. "super-track %s"):format(p.name, p.x * 100, p.y * 100, p.map, str(canSet), str(wasSet),
+        okT and "ok" or ("ERROR " .. str(errT)))
+    say("waypoint " .. line)
+    say("waypoint between the two setters: " .. before)
+    return line .. "; " .. wpSay("after")
+end
+
+local function clearOurs(order)
+    state.wpOurs = true
+    if order == "tracking first" then
+        pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
+        wpSay("tracking off, waypoint still set")
+        pcall(C_Map.ClearUserWaypoint)
+    else
+        pcall(C_Map.ClearUserWaypoint)
+        wpSay("waypoint cleared, tracking left alone")
+    end
+    state.wpOurs = false
+    return wpSay("cleared, " .. order)
+end
+
+local function waypointFree()
+    local has, any = wpRead(C_Map.HasUserWaypoint), wpRead(C_SuperTrack.IsSuperTrackingAnything)
+    if has == false and any == false then return true, "no waypoint, nothing super-tracked" end
+    return false, "waypoint " .. str(has) .. ", super-tracking " .. str(any)
+end
+
+Probe:Steps("waypoint", {
+    rev = 1,
+    title = "Blizzard's waypoint marker on a node (#29)",
+    { text = "Remove any map waypoint you have and stop tracking quests on screen (super-track), so the "
+          .. "waypoint is free.", wait = waypointFree },
+    { text = "Stand still outdoors with a herb or ore 40-80 yards away on the minimap, then press Set.",
+      button = "Set", run = function() return setOurs(nearestNode()) end },
+    { text = "Reading the marker (a moment).", wait = function()
+          local frame = wpRead(C_Navigation.GetFrame)
+          if frame ~= nil and type(frame) ~= "string" then return true, wpSay("marker") end
+          return false, "no navigation frame yet"
+      end, timeout = 8 },
+    { text = "Do you see Blizzard's waypoint marker over the node, with a distance?", ask = true,
+      screenshot = "the marker on the node" },
+    { text = "Turn until the node is behind you.", wait = function()
+          if wpRead(C_Navigation.WasClampedToScreen) == true then return true, wpSay("clamped") end
+          return false, "not clamped yet"
+      end, screenshot = "the marker at the edge" },
+    { text = "Is the marker held at the screen's edge, pointing toward the node?", ask = true },
+    { text = "Walk to the node (don't gather it yet) until the marker reacts, or press Done when you stand on it.",
+      wait = function()
+          local t = state.wpEvents or {}
+          if t.reached or wpRead(C_SuperTrack.IsSuperTrackingUserWaypoint) == false
+              or wpRead(C_Map.HasUserWaypoint) == false then
+              return true, wpSay("arrived")
+          end
+          return false, "distance " .. str(wpRead(C_Navigation.GetDistance))
+      end },
+    { text = "What happened on arrival? (Type it in the Note box: message, marker gone, pin gone.)", ask = true },
+    { text = "Setting ours again on the same point.", auto = true, run = function()
+          local p = state.wpTarget
+          if not p then error("no point: go back to Set", 0) end
+          clearOurs("waypoint first")
+          return setOurs(p)
+      end },
+    { text = "Now put your own waypoint on the world map (Ctrl-click a spot), over ours.", wait = function()
+          local pt = wpRead(C_Map.GetUserWaypoint)
+          local p = state.wpTarget
+          local x = type(pt) == "table" and pt.position and num(pt.position.x)
+          if p and x and math.abs(x - p.x) > 0.001 then return true, wpSay("the player's own") end
+          return false, "still ours"
+      end },
+    { text = "Remove your waypoint (on the world map), and untrack anything.", wait = waypointFree },
+    { text = "Clearing order: setting ours, then clearing the waypoint first.", auto = true, run = function()
+          setOurs(state.wpTarget)
+          return clearOurs("waypoint first")
+      end },
+    { text = "Clearing order: setting ours, then turning the tracking off first.", auto = true, run = function()
+          setOurs(state.wpTarget)
+          return clearOurs("tracking first")
+      end },
+    { text = "Setting ours once more, to see whether it survives a reload.", auto = true,
+      run = function() return setOurs(state.wpTarget) end },
+    { text = "Type /reload (or press Reload now).", reload = true },
+    { text = "After the reload: is our waypoint still there?", auto = true, run = function()
+          return wpSay("after the reload")
+      end },
+    -- Tracking first: the waypoint first leaves the super-track on (measured
+    -- above). Same text and rev, so the run left at step 16 resumes with this.
+    { text = "Clearing it.", auto = true, run = function() return clearOurs("tracking first") end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+-- SuperTrackedFrame's visibility, read again: the first run's read always
+-- said hidden (Codex on #39).
+Probe:Steps("waypointframe", {
+    rev = 1,
+    title = "SuperTrackedFrame read again (#29)",
+    { text = "Remove any map waypoint you have and stop tracking quests on screen (super-track), so the "
+          .. "waypoint is free.", wait = waypointFree },
+    { text = "Stand outdoors facing a herb or ore 40-80 yards away on the minimap, then press Set.",
+      button = "Set", run = function()
+          state.wpSetAt = GetTime()
+          return setOurs(nearestNode())
+      end },
+    { text = "Reading the marker frame (a few seconds).", wait = function()
+          local frame = wpRead(C_Navigation.GetFrame)
+          if frame ~= nil and type(frame) ~= "string" and GetTime() - (state.wpSetAt or 0) >= 3 then
+              return true, wpSay("frame")
+          end
+          return false, "waiting for the navigation frame"
+      end, timeout = 10, screenshot = "facing the node" },
+    { text = "Clearing ours, the tracking first.", auto = true, run = function() return clearOurs("tracking first") end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
 local boot = CreateFrame("Frame")
 Probe:RegisterEvents(boot, { "ADDON_LOADED", "PLAYER_LOGIN", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING",
-    "VIGNETTE_MINIMAP_UPDATED", "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI", "SKILL_LINES_CHANGED", "UI_ERROR_MESSAGE" })
+    "VIGNETTE_MINIMAP_UPDATED", "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI", "SKILL_LINES_CHANGED", "UI_ERROR_MESSAGE",
+    "USER_WAYPOINT_UPDATED", "SUPER_TRACKING_CHANGED", "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED",
+    "NAVIGATION_DESTINATION_REACHED" })
 -- The player's casts only: the target's name is what a gathering cast is
 -- aimed at (the name-learning fallback, #7).
 local okSent, errSent = pcall(boot.RegisterUnitEvent, boot, "UNIT_SPELLCAST_SENT", "player")
@@ -1795,6 +1995,13 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     elseif event == "UI_ERROR_MESSAGE" then
         -- The client's own text; the type is what a shipped check would use.
         say(("UI_ERROR_MESSAGE type=%s message=%s"):format(str(a1), str(a2)))
+    elseif event == "USER_WAYPOINT_UPDATED" or event == "SUPER_TRACKING_CHANGED" or event == "NAVIGATION_FRAME_CREATED"
+        or event == "NAVIGATION_FRAME_DESTROYED" or event == "NAVIGATION_DESTINATION_REACHED" then
+        -- #29: which fire inside our own setters, which after, and arrival.
+        state.wpEvents = state.wpEvents or {}
+        if event == "NAVIGATION_DESTINATION_REACHED" then state.wpEvents.reached = true end
+        say(("%s%s %s"):format(event, state.wpOurs and " (ours)" or "",
+            event == "NAVIGATION_DESTINATION_REACHED" and ("isWaypoint=" .. str(a1)) or ""))
     elseif event == "SKILL_LINES_CHANGED" then
         say("SKILL_LINES_CHANGED: " .. skillText(skills(true)))
     elseif event == "MINIMAP_UPDATE_TRACKING" then
@@ -1810,4 +2017,4 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     end
 end)
 
-NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS }
+NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode }

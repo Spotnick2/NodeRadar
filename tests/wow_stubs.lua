@@ -398,6 +398,52 @@ function IsInInstance()
 end
 C_CVar = { GetCVar = function(name) return WoW.cvars[name] end }
 
+-- The user waypoint and the super-track (#29): WoW.waypoint ({ map, x, y } or
+-- nil), WoW.superTracked ("waypoint", "quest" or nil); the navigation frame
+-- exists while the waypoint is super-tracked; WoW.navClamped, WoW.navDistance.
+-- Setting or clearing fires USER_WAYPOINT_UPDATED / SUPER_TRACKING_CHANGED at
+-- once (the first is SynchronousEvent; the second's timing isn't documented).
+WoW.waypoint, WoW.superTracked, WoW.navClamped, WoW.navDistance = nil, nil, false, 50
+UiMapPoint = {
+    CreateFromCoordinates = function(map, x, y, z)
+        return { uiMapID = map, position = { x = x, y = y }, z = z }
+    end,
+}
+C_Map.HasUserWaypoint = function() return WoW.waypoint ~= nil end
+C_Map.CanSetUserWaypointOnMap = function(map) return map == WoW.map end
+C_Map.GetUserWaypoint = function()
+    local w = WoW.waypoint
+    if w then return { uiMapID = w.map, position = { x = w.x, y = w.y } } end
+end
+C_Map.SetUserWaypoint = function(point)
+    if not (point and point.uiMapID == WoW.map) then return false end
+    WoW.waypoint = { map = point.uiMapID, x = point.position.x, y = point.position.y }
+    WoW.fire("USER_WAYPOINT_UPDATED")
+    return true
+end
+-- Clearing the waypoint leaves its super-track on, as measured (FOREVER-PROBE.md).
+C_Map.ClearUserWaypoint = function()
+    WoW.waypoint = nil
+    WoW.fire("USER_WAYPOINT_UPDATED")
+end
+C_SuperTrack = {
+    SetSuperTrackedUserWaypoint = function(on)
+        if on and WoW.waypoint then WoW.superTracked = "waypoint"
+        elseif not on and WoW.superTracked == "waypoint" then WoW.superTracked = nil end
+        WoW.fire("SUPER_TRACKING_CHANGED")
+    end,
+    IsSuperTrackingAnything = function() return WoW.superTracked ~= nil end,
+    IsSuperTrackingUserWaypoint = function() return WoW.superTracked == "waypoint" end,
+    GetSuperTrackedQuestID = function() return WoW.superTracked == "quest" and 783 or nil end,
+}
+C_Navigation = {
+    GetFrame = function() return WoW.superTracked == "waypoint" and WoW.navFrame or nil end,
+    HasValidScreenPosition = function() return WoW.superTracked == "waypoint" end,
+    GetDistance = function() return WoW.navDistance end,
+    WasClampedToScreen = function() return WoW.navClamped == true end,
+    GetTargetState = function() return 0 end,
+}
+
 WoW.mounted = false
 function IsMounted() return WoW.mounted end
 WoW.sounds = {}
