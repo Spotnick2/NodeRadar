@@ -278,3 +278,23 @@ Our user waypoint on the nearest node (NodeRadar's `Scan.MapPosition`), then sup
 
 So on Forever the user waypoint works but draws no marker on screen: #29's first choice is out
 unless Forever turns the navigation on.
+
+### Item icons, first round: `icons`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#28)
+
+Glass MiniMap on, its map 198 x 198 units at an effective scale of 0.64, zoom 0 (233 yd radius).
+
+| What | Measured |
+|---|---|
+| **A herb's hit area** (Earthroot x7, Peacebloom x1; every unit over ±30) | a **square of 25 x 25** sample points every time: 625 hits, the box full, all four corners. Never a disc, never another size. The 17 of #11 was a lower bound |
+| Its centre against the drawn dot | **the same point**: our red cross at the hit area's centre sat in the middle of the yellow dot on all three screenshots (owner: yes, three times). The dot is about a third of the box, about 8 units across |
+| Its centre against the sweep's grid | off by up to 5 units (+4 +2, +3 -5, +2 +3), about 12 yd at this zoom: the grid's centroid isn't a position to draw on |
+| Overlapping hit areas | another blip's line (a quest's objective area, "Legging It") under the same point didn't change the herb's square: hits are by name |
+| Two nodes of a name, a node at the rim | not met (one group every time, none at the rim) |
+| A second zoom | **not measured**: the zoom read 4 when the step saw it, and 0 again by Measure (Glass MiniMap's zoom reset, or the owner). #11 found a quest object's square the same at zoom 5 and 4 |
+| The cost | 3721 reads per blip; 2 blips in 97 ms, 3 in 154 ms: **about 13 µs a read** |
+| **A position arrow's text** | `\|TInterface\Minimap\Minimap-PositionArrows:0:0:0:0:16:32:0:16:16:32\|tEarthroot`: a 16 x 32 file, its lower half (texels 0-16 by 16-32). The minimap drew a small white **downward** triangle under that node's dot, inside its hit area |
+| The other arrow | not met (the step was done by hand) |
+| `C_Item.GetItemIconByID` for the 40 NODE_INFO items (enUS) | **all 40 answered, the 37 uncached too**, the same file IDs as `C_Item.GetItemInfoInstant`'s icon (Mageroyal 785: 133436; Copper Ore 2770: 134566) |
+
+So a node's blip answers over a fixed 25-unit square centred on its dot: one edge per axis, found
+by halving inside the grid's 14-unit bracket, places it exactly; and the icon needs no item cache.
