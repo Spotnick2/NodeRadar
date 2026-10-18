@@ -164,11 +164,16 @@ function Alert.Sonar(x, y, kind)
     end
 end
 
--- The sounds (#13): Blizzard's minimap ping, or our own sonar (Tools/make_media.py).
+-- The sounds (#13): Blizzard's minimap ping, our own sonar (Tools/make_media.py),
+-- and two of the client's files by FileDataID the owner picked, on trial: not
+-- yet heard on Forever (a newer file may not be in this client).
 Alert.SOUNDS = {
-    ping  = { kit = Alert.MAP_PING },
-    sonar = { file = Alert.MEDIA .. "Sonar.ogg" },
+    ping     = { kit = Alert.MAP_PING },
+    sonar    = { file = Alert.MEDIA .. "Sonar.ogg" },
+    ["569006"]  = { file = 569006 },
+    ["7466154"] = { file = 7466154 },
 }
+Alert.SOUND_ORDER = { "ping", "sonar", "569006", "7466154" }
 
 -- The chosen sound, whatever db.sound says (the Options page's choice plays it).
 function Alert.PlaySound()

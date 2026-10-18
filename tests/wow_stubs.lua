@@ -351,6 +351,11 @@ end
 -- refuses game-file paths, plays an addon's); here "there" is the repo's copy.
 function PlaySoundFile(path, channel)
     table.insert(WoW.sounds, { path, channel })
+    -- A FileDataID: plays unless refused (WoW.refusedSounds[id]).
+    if type(path) == "number" then
+        if WoW.refusedSounds[path] then return nil, nil end
+        return true, #WoW.sounds
+    end
     local rel = type(path) == "string" and path:match("^Interface\\AddOns\\NodeRadar\\(.+)$")
     local f = rel and io.open((rel:gsub("\\", "/")), "rb")
     if not f or WoW.refusedSounds[path] then return nil, nil end

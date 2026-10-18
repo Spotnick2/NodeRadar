@@ -79,6 +79,22 @@ check(NR.failures.sound, "a refused sound is recorded in /nr failures")
 WoW.refusedSounds = {}
 NR.failures.sound = nil
 
+-- The client's files by FileDataID, on trial: each plays when chosen, and one
+-- this client lacks is a failure in /nr failures.
+for i, id in ipairs({ 569006, 7466154 }) do
+    WoW.click(O.radios.soundKind[2 + i])
+    eq(db.soundKind, tostring(id), id .. " chosen")
+    eq(WoW.sounds[#WoW.sounds][1], id, "...plays FileDataID " .. id)
+end
+eq(next(NR.failures), nil, "...both played here")
+WoW.refusedSounds[7466154] = true
+NR.Alert.PlaySound()
+check(NR.failures.sound, "a FileDataID this client lacks: a failure")
+WoW.refusedSounds = {}
+NR.failures.sound = nil
+SlashCmdList.NODERADAR("sound 569006")
+eq(db.soundKind, "569006", "/nr sound 569006")
+
 -- /nr sound ping | sonar.
 SlashCmdList.NODERADAR("sound ping")
 eq(db.soundKind, "ping", "/nr sound ping")

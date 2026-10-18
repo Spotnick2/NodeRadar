@@ -14,7 +14,7 @@ local ADDON_NAME = ...
 local DEFAULTS = {
     enabled  = true,
     sound    = true,    -- a sound with the alert
-    soundKind = "ping", -- which: "ping" (MAP_PING) or "sonar" (Media\Sonar.ogg)
+    soundKind = "ping", -- which: a key of Alert.SOUNDS (the map ping, the sonar, two FileDataIDs)
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -226,7 +226,7 @@ local function help()
     API.Say("/nr: radar on or off. /nr options: the Options page")
     API.Say("/nr sound | ring | chat | ping | learn: toggle the sound, the ring, a chat line, Blizzard's ping "
         .. "(solo only), learning by turning tracking off and on")
-    API.Say("/nr sound ping | sonar: which sound. /nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
+    API.Say("/nr sound ping | sonar | 569006 | 7466154: which sound. /nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
 
