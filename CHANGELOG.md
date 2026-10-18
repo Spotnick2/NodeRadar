@@ -6,6 +6,9 @@
   reads yours, bonuses included, so a node above your Herbalism or Mining no longer pings. A Tauren
   herbalist still hears herbs above their skill while Cultivation is ready. On by default; `/nr skill`
   or the Options page turns it off. A node it can't place, or a skill it can't read, alerts as before.
+- **The chat line gives each node's map coordinates** (#27): `Peacebloom (45.2, 61.8)`, approximate
+  (within a few yards of the node in game), for every node of an alerted name. Not inside instances,
+  nor with a rotating minimap (`/console rotateMinimap 1`; Forever's Options don't offer it).
 
 ## v1.0.0
 

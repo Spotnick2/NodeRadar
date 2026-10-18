@@ -147,6 +147,52 @@ local function blip(name, members, g)
     return { name = name, x = sx / #members - g.w / 2, y = sy / #members - g.h / 2, cells = #members }
 end
 
+-- Where the sweep was taken, for a blip's map coordinates (#27): the player's
+-- zone map, position on it and size in yards, and the minimap's view radius;
+-- nil when any of it is missing or secret, in an instance, or when the
+-- minimap rotates (Forever has no such option; unmeasured, so no numbers).
+local function call(f, ...)
+    if type(f) ~= "function" then return false end
+    return pcall(f, ...)
+end
+
+function Scan.Where()
+    local okI, instanced = call(IsInInstance)
+    if not okI or API.IsSecret(instanced) or type(instanced) ~= "boolean" or instanced then return nil end
+    local okR, rotate = call(C_CVar and C_CVar.GetCVar, "rotateMinimap")
+    if not okR or API.IsSecret(rotate) or (rotate ~= "0" and rotate ~= "1") then return nil end
+    if rotate == "1" then
+        local okG, ignored = call(C_Minimap.IsRotateMinimapIgnored)
+        if not okG or API.IsSecret(ignored) or ignored ~= true then return nil end
+    end
+    local okM, map = call(C_Map.GetBestMapForUnit, "player")
+    map = okM and API.Num(map)
+    if not map then return nil end
+    local okP, pos = call(C_Map.GetPlayerMapPosition, map, "player")
+    if not okP or pos == nil or API.IsSecret(pos) or type(pos) ~= "table" then return nil end
+    local okXY, px, py = call(pos.GetXY, pos)
+    px, py = okXY and API.Num(px), okXY and API.Num(py)
+    local okS, w, h = call(C_Map.GetMapWorldSize, map)
+    w, h = okS and API.Num(w), okS and API.Num(h)
+    local okV, radius = call(C_Minimap.GetViewRadius)
+    radius = okV and API.Num(radius)
+    if not (px and py and w and h and radius) or w <= 0 or h <= 0 or radius <= 0 then return nil end
+    return { map = map, x = px, y = py, w = w, h = h, radius = radius }
+end
+
+-- A blip's zone-map coordinates: uiMapID, x, y (0-1), or nil. HereBeDragons-
+-- Pins' minimap drawing inverted, measured within reach of two gathered
+-- nodes (docs/FOREVER-PROBE.md): the offset in the map's own units x radius /
+-- half-width = yards, up north, the map's y growing southward.
+function Scan.MapPosition(result, blip)
+    local where, g = result and result.where, result and result.geometry
+    if not (where and g and blip) then return nil end
+    local k = where.radius / (g.w / 2)
+    local x, y = where.x + blip.x * k / where.w, where.y - blip.y * k / where.h
+    if x < 0 or x > 1 or y < 0 or y > 1 then return nil end
+    return where.map, x, y
+end
+
 -- Puts the mouseover back where the player's cursor is, or off the map.
 local function putBack(g)
     local px, py = GetCursorPosition()
@@ -195,7 +241,7 @@ function Scan.Sweep(count)
         table.insert(byName[part.name], b)
         list[#list + 1] = b
     end
-    return { byName = byName, blips = list, geometry = g, ms = debugprofilestop() - t0 }
+    return { byName = byName, blips = list, geometry = g, where = Scan.Where(), ms = debugprofilestop() - t0 }
 end
 
 -- How many blips of a name a sweep saw.

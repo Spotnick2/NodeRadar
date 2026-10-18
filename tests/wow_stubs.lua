@@ -391,6 +391,11 @@ C_Map = {
 }
 function GetPlayerFacing() return WoW.facing end
 function IsIndoors() return WoW.indoors == true end
+WoW.instanced = false
+function IsInInstance()
+    if WoW.instanced == "throw" then error("IsInInstance failed") end
+    return WoW.instanced, WoW.instanced == true and "party" or "none"
+end
 C_CVar = { GetCVar = function(name) return WoW.cvars[name] end }
 
 WoW.mounted = false
