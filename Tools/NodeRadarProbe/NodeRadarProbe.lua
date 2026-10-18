@@ -31,7 +31,8 @@
 --
 -- Procedures: /fp steps nr ids (round 3, #7); /fp steps nr release (NodeRadar's release check, #3);
 -- /fp steps nr walk (its walk alone); /fp steps nr memory (a leak, or garbage?);
--- /fp steps nr blipsize (how wide the grid can be).
+-- /fp steps nr blipsize (how wide the grid can be); /fp steps nr skill and
+-- /fp steps nr cultivation (the gathering skill and Cultivation, #26).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -1401,16 +1402,195 @@ Probe:Steps("blipsize", {
 })
 
 --------------------------------------------------------------------------------
+-- The player's gathering skill and the nodes above it (#26). What
+-- C_SkillInfo.GetSkillLineInfoByID returns for Herbalism and Mining; a node's
+-- world tooltip (C_TooltipInfo.GetWorldCursor), in case it names its
+-- requirement; what the client says when a gather is refused (UI_ERROR_MESSAGE,
+-- logged by the boot frame); a skill-up. And Forever's Tauren racial,
+-- Cultivation: which of Wowhead's two IDs the spellbook carries, and whether
+-- its 15-minute cooldown reads plainly, out of combat and in it.
+--------------------------------------------------------------------------------
+
+local SKILL_LINES = { { 182, "Herbalism" }, { 186, "Mining" } }
+local CULTIVATION = { 20552, 1312643 }    -- Wowhead (Forever): the instant one, the 3 s cast with a 15 min cooldown
+
+-- A skill line's numbers, nil when unreadable; logged in full unless quiet.
+local function skillLine(id, label, quiet)
+    local fn = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
+    if type(fn) ~= "function" then
+        if not quiet then say("C_SkillInfo.GetSkillLineInfoByID: MISSING") end
+        return nil
+    end
+    local ok, info = pcall(fn, id)
+    if not ok then
+        if not quiet then say(("skill %d (%s): ERROR %s"):format(id, label, str(info))) end
+        return nil
+    end
+    if not quiet then
+        say(("skill %d (%s): %s"):format(id, label, type(info) == "table" and Probe.Describe(info) or str(info)))
+    end
+    if info == nil then return nil end                 -- not this character's profession
+    if secret(info) or type(info) ~= "table" then return { shape = Probe.Shape(info) } end
+    return { rank = num(info.rank), modifier = num(info.modifier), maxRank = num(info.maxRank),
+             secret = secret(info.rank) or secret(info.modifier) or nil }
+end
+
+local function skills(quiet)
+    local out = {}
+    for _, s in ipairs(SKILL_LINES) do out[s[2]] = skillLine(s[1], s[2], quiet) or false end
+    return out
+end
+
+local function skillText(all)
+    local parts = {}
+    for _, s in ipairs(SKILL_LINES) do
+        local e = all[s[2]]
+        parts[#parts + 1] = s[2] .. " " .. (e and (str(e.rank) .. "+" .. str(e.modifier) .. "/" .. str(e.maxRank)
+            .. (e.secret and " (secret)" or "")) or "none")
+    end
+    return table.concat(parts, ", ")
+end
+
+-- Cultivation's two IDs: known, and the cooldown as the client gives it;
+-- logged unless quiet.
+local function cultivation(quiet)
+    local out = {}
+    for _, id in ipairs(CULTIVATION) do
+        local okK, known = pcall(function() return C_SpellBook.IsSpellKnown(id) end)
+        local okC, cd = pcall(function() return C_Spell.GetSpellCooldown(id) end)
+        local e = { known = okK and str(known) or "ERROR " .. str(known) }
+        if okC and type(cd) == "table" and not secret(cd) then
+            e.cooldown = Probe.Describe(cd)
+            e.secret = secret(cd.startTime) or secret(cd.duration) or secret(cd.isActive) or nil
+            e.cooling = yes(cd.isActive) or (num(cd.duration) or 0) > 1.5
+        else
+            e.cooldown = okC and str(cd) or "ERROR " .. str(cd)
+        end
+        if not quiet then say(("Cultivation %d: known %s, cooldown %s"):format(id, e.known, e.cooldown)) end
+        out[id] = e
+    end
+    return out
+end
+
+local function race()
+    local ok, name, file, id = Probe:Try("UnitRace", UnitRace, "player")
+    say(("race %s (%s, %s)"):format(str(file), str(name), str(id)))
+    return ok and not secret(file) and file or nil
+end
+
+-- The world tooltip under the cursor: its lines as "text [rrggbb]", or nil and why.
+local function worldTooltip()
+    local fn = C_TooltipInfo and C_TooltipInfo.GetWorldCursor
+    if type(fn) ~= "function" then return nil, "MISSING" end
+    local ok, data = pcall(fn)
+    if not ok then return nil, "ERROR " .. str(data) end
+    if secret(data) or type(data) ~= "table" or secret(data.lines) or type(data.lines) ~= "table" then
+        return nil, Probe.Shape(data)
+    end
+    local lines, first = {}, nil
+    for _, line in ipairs(data.lines) do
+        local t = type(line) == "table" and line.leftText or nil
+        if secret(t) then
+            lines[#lines + 1] = "<secret>"
+        elseif type(t) == "string" and t ~= "" then
+            first = first or Probe.Plain(t)
+            lines[#lines + 1] = Probe.Plain(t) .. " [" .. colour(line.leftColor) .. "]"
+        end
+    end
+    if #lines == 0 then return nil, "no text" end
+    return lines, nil, first
+end
+
+-- A wait: done when the cursor is on a node NodeRadar knows (its tooltip saved).
+local function hoverNode(label)
+    return function()
+        local n = nr()
+        if not n then return false, "NodeRadar isn't loaded" end
+        local lines, why, first = worldTooltip()
+        if not lines then return false, "nothing under the cursor (" .. str(why) .. ")" end
+        if not n.Learn.Kind(first) then return false, "not a node: " .. table.concat(lines, " | ") end
+        local text = table.concat(lines, " | ")
+        say("world tooltip, " .. label .. ": " .. text)
+        local saved = NodeRadarProbeDB.skillTooltips or {}
+        saved[#saved + 1] = { label = label, lines = lines }
+        NodeRadarProbeDB.skillTooltips = saved
+        return true, text
+    end
+end
+
+Probe:Steps("skill", {
+    rev = 1,
+    title = "Gathering skill and the nodes above it (#26)",
+    { text = "On your gatherer, reading the skills, the race and Cultivation.", auto = true, run = function()
+          NodeRadarProbeDB.skillTooltips = nil
+          local all = skills()
+          state.skillStart = all
+          race()
+          cultivation()
+          return skillText(all)
+      end },
+    { text = "Find a herb or ore ABOVE your skill and put the mouse on it (in the world, not the minimap) until "
+          .. "this step completes. Type the requirement in the Note box if the tooltip shows one.",
+      wait = hoverNode("above"), screenshot = "node above the skill" },
+    { text = "Try to gather it (right-click). The client's answer is logged.", event = "UI_ERROR_MESSAGE" },
+    { text = "Did it gather anyway?", ask = true },
+    { text = "Now put the mouse on a node you CAN gather, until this step completes.",
+      wait = hoverNode("gatherable"), screenshot = "node within the skill" },
+    { text = "Gather nodes until your skill goes up (Skip if none comes).", wait = function()
+          local now, start = skills(true), state.skillStart or {}
+          for _, s in ipairs(SKILL_LINES) do
+              local a, b = start[s[2]], now[s[2]]
+              if a and b and a.rank and b.rank and b.rank ~= a.rank then
+                  skills()
+                  return true, skillText(now)
+              end
+          end
+          return false, skillText(now)
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+Probe:Steps("cultivation", {
+    rev = 1,
+    title = "Cultivation, the Tauren racial (#26)",
+    { text = "On a Tauren (Herbalism not needed): reading Cultivation.", auto = true, run = function()
+          return race(), cultivation()
+      end },
+    { text = "Stand by a herb and cast Cultivation on it.", wait = function()
+          local all = cultivation(true)
+          for _, id in ipairs(CULTIVATION) do
+              local e = all[id]
+              if e.secret or e.cooling then
+                  cultivation()
+                  return true, id .. (e.secret and " cooldown secret" or " cooling: " .. e.cooldown)
+              end
+          end
+          return false, "not cooling yet"
+      end },
+    { text = "While it cools down, get into combat (attack something).", wait = function()
+          if not yes(InCombatLockdown()) then return false, "not in combat" end
+          local all = cultivation()
+          local parts = {}
+          for _, id in ipairs(CULTIVATION) do parts[#parts + 1] = id .. ": " .. all[id].cooldown end
+          return true, table.concat(parts, "; ")
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
 local boot = CreateFrame("Frame")
 Probe:RegisterEvents(boot, { "ADDON_LOADED", "PLAYER_LOGIN", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING",
-    "VIGNETTE_MINIMAP_UPDATED", "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI" })
+    "VIGNETTE_MINIMAP_UPDATED", "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI", "SKILL_LINES_CHANGED", "UI_ERROR_MESSAGE" })
 -- The player's casts only: the target's name is what a gathering cast is
 -- aimed at (the name-learning fallback, #7).
 local okSent, errSent = pcall(boot.RegisterUnitEvent, boot, "UNIT_SPELLCAST_SENT", "player")
 if not okSent then say("UNIT_SPELLCAST_SENT: ERROR " .. str(errSent)) end
+-- A gather the client refuses (#26).
+local okFailed, errFailed = pcall(boot.RegisterUnitEvent, boot, "UNIT_SPELLCAST_FAILED", "player")
+if not okFailed then say("UNIT_SPELLCAST_FAILED: ERROR " .. str(errFailed)) end
 boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     if event == "ADDON_LOADED" then
         if a1 ~= ADDON then return end
@@ -1426,6 +1606,13 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         aoi(event, a1)
     elseif event == "UNIT_SPELLCAST_SENT" then
         say(("UNIT_SPELLCAST_SENT spell=%s target=%s"):format(str(a4), str(a2)))
+    elseif event == "UNIT_SPELLCAST_FAILED" then
+        say(("UNIT_SPELLCAST_FAILED spell=%s"):format(str(a3)))
+    elseif event == "UI_ERROR_MESSAGE" then
+        -- The client's own text; the type is what a shipped check would use.
+        say(("UI_ERROR_MESSAGE type=%s message=%s"):format(str(a1), str(a2)))
+    elseif event == "SKILL_LINES_CHANGED" then
+        say("SKILL_LINES_CHANGED: " .. skillText(skills(true)))
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         local on = tracking(true)
         say("MINIMAP_UPDATE_TRACKING; gathering on: " .. (#on > 0 and table.concat(on, ", ") or "none"))
