@@ -1,8 +1,14 @@
 # NodeRadar
 
-A gathering-node alert for **World of Warcraft: Forever**: with Find Herbs or Find Minerals on, a
-ping and a sonar on the minimap the moment a herb or ore node comes into range: two rings ripple
-out from the node and a glow stays on it, green for herbs, gold for ore.
+Gathering while you walk or ride across a zone usually means staring at the minimap. Look away
+for a second to read a quest, pull a mob or answer guild chat, and that Peacebloom you wanted
+slides right past the edge of the map.
+
+NodeRadar keeps an eye on the minimap so you don't have to. Turn on Find Herbs or Find Minerals and
+just play: the moment a herb or ore node shows up, you hear a ping and a sonar ripples out from it
+on the map, green for herbs, gold for ore. Look up, go grab it, carry on.
+
+Made for **World of Warcraft: Forever**.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
 ![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)
@@ -31,8 +37,7 @@ turn on Find Herbs or Find Minerals.
 - **It ships knowing every classic herb and ore node**, Peacebloom to Black Lotus, Copper Vein to
   Rich Thorium Vein, by name in English, German, French, Spanish, Portuguese, Italian, Russian,
   Korean and Chinese, so it alerts from the start. A name it doesn't know yet it learns as you
-  gather. The translations come from [GatherMate2](https://www.curseforge.com/wow/addons/gathermate2)'s
-  node list (the names themselves are Blizzard's).
+  gather.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not

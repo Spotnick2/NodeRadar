@@ -13,12 +13,16 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** the port (#3) is written: the soft sweep, learning which names are nodes, the alert,
-the library and its export tool, as `docs/PLAN.md` "The port (#3)" (reviewed by Codex to
-consensus). Release check run 1 (70450, docs/FOREVER-PROBE.md): the restore costs a global
-cooldown, so `learn` ships off; reload restore and persistence pass; the walk is re-run as
-`/fp steps nr walk` after the gamepad-guard fix. Done: the repo setup (#1), the probe rounds that decided detection (#2) and
-classification (#7). Next after the port: the public API for minimap skins (#4), an options page.
+**Status:** v1.0.0 (#23), the first release for Forever. Done:
+- the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
+- the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
+  (70450, docs/FOREVER-PROBE.md);
+- the sweep's garbage (#11);
+- the Options page and sounds (#13);
+- publishing to CurseForge and Wago (#15);
+- the classic node names in 11 languages (#17, #19).
+
+Next: the public API for minimap skins (#4).
 
 ## The UI contract (non-negotiable)
 
