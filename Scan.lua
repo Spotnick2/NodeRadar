@@ -118,18 +118,18 @@ end
 
 -- A cluster of several cells may be two nodes of a name side by side: the
 -- grid bridges any gap narrower than its step (Codex, PR #12). Its patch is
--- read again at half the step, as fine as the old grid of 8, and grouped anew.
--- One cell is one node; a cluster wider than REFINE_SPAN cells is an area (a
--- quest's), left as it is. Returns the cell lists, one per blip.
-Scan.REFINE_SPAN = 4
-local function refine(cl, g, step)
-    if #cl.cells < 2 then return { cl.cells } end
+-- read again at half the step, as fine as the old grid of 8, and grouped anew,
+-- however wide: a chain of nodes is as wide as an area (Codex again). Only a
+-- name the caller counts is (`count(name)`, the alert's nodes): a quest's
+-- area, or a name not known yet, stays as it is and costs nothing more. One
+-- cell is one node. Returns the cell lists, one per blip.
+local function refine(cl, g, step, count)
+    if #cl.cells < 2 or not (count and count(cl.name)) then return { cl.cells } end
     local c1, c2, r1, r2 = math.huge, -math.huge, math.huge, -math.huge
     for _, c in ipairs(cl.cells) do
         c1, c2 = math.min(c1, c.col), math.max(c2, c.col)
         r1, r2 = math.min(r1, c.row), math.max(r2, c.row)
     end
-    if c2 - c1 >= Scan.REFINE_SPAN or r2 - r1 >= Scan.REFINE_SPAN then return { cl.cells } end
     local fine = {}
     sample(g, step / 2, c1 * step, r1 * step, math.min(g.w, (c2 + 1) * step), math.min(g.h, (r2 + 1) * step),
         fine, cl.name)
@@ -159,8 +159,10 @@ local function putBack(g)
 end
 
 -- One sweep: { byName = { [name] = { blip, ... } }, blips = { ... }, geometry,
--- ms }, or nil and why. The soft cursor is turned off on every path.
-function Scan.Sweep()
+-- ms }, or nil and why. The soft cursor is turned off on every path. With
+-- `count`, the names it says yes to are told apart side by side (refine);
+-- without, every cluster is one blip, the same grouping on every sweep.
+function Scan.Sweep(count)
     local g, why = Scan.Geometry()
     if not g then return nil, why end
     local step = Scan.STEP
@@ -173,7 +175,7 @@ function Scan.Sweep()
             local cells = {}
             sample(g, step, 0, 0, g.w, g.h, cells)
             for _, cl in ipairs(clusters(cells)) do
-                for _, members in ipairs(refine(cl, g, step)) do
+                for _, members in ipairs(refine(cl, g, step, count)) do
                     parts[#parts + 1] = { name = cl.name, cells = members }
                 end
             end

@@ -198,6 +198,7 @@ Fixed (#11): a step of 14 (196 reads on a 198-unit map, a third of 625; it never
 square at any offset) and about 4 yards between sweeps moving (0.57 s at 100%, 0.95 s at 60%,
 1.43 s at 40%, 0.5 s at most), 2 s standing still: about a sixth of the garbage while moving.
 The wider grid bridges a gap narrower than 14 units, so two nodes of a name side by side (26 units
-apart) read as one and the second never alerted (Codex, PR #12): a cluster of several cells, up to
-4 across, is read again at a step of 7 (as fine as the old 8) and grouped anew. A node on one cell
-costs nothing more; a pair costs a few reads; a quest's area isn't read again.
+apart) read as one and the second never alerted (Codex, PR #12): a cluster of several cells of a
+name known to be a node is read again at a step of 7 (as fine as the old 8) and grouped anew,
+however wide (a chain of three is as wide as a quest's area). A node on one cell costs nothing
+more; a pair a few reads; a quest's area, or any name not known as a node, isn't read again.

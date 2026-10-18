@@ -43,8 +43,8 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Data/Nodes.lua`: the shipped library, `NodeRadar.LIBRARY[locale][name] = "herbs" | "ore"`.
   **Generated**: change it with `Tools/export_nodes.lua`, never by hand.
 - `Scan.lua`: `Scan.Sweep()`, one read of the map's blips (soft cursor on, a grid of 14 in
-  `GetCursorPosition`'s space, same-name hits grouped into separate blips, a small cluster read
-  again at 7 so nodes side by side stay apart; the soft cursor turned off on every path). Every read
+  `GetCursorPosition`'s space, same-name hits grouped into separate blips, a cluster of a known
+  node read again at 7 so nodes side by side stay apart, `Scan.Sweep(count)`; the soft cursor turned off on every path). Every read
   is a 2.5 KB table to collect (#11): keep them few.
 - `Learn.lua`: `Learn.Kind(name)`; learning from gathering casts and from the toggle experiment
   (every guard in PLAN.md: the experiment is voided by movement, zone, loading, death, the gamepad,

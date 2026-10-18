@@ -66,6 +66,9 @@ local function sameGeometry(a, b)
     return a and b and math.abs(a.w - b.w) < 0.5 and math.abs(a.h - b.h) < 0.5 and math.abs(a.es - b.es) < 0.001
 end
 
+-- The names the alert counts, so the sweep tells them apart side by side.
+local function isNode(name) return Learn.Kind(name) and true or false end
+
 -- One radar sweep, when everything allows it.
 function NR.Step(now)
     local db = NR.db
@@ -73,7 +76,7 @@ function NR.Step(now)
     local ok, shown = pcall(Minimap.IsVisible, Minimap)
     if not (ok and API.Yes(shown)) then return end
     if not Learn.AnyOn() then return end
-    local result = Scan.Sweep()
+    local result = Scan.Sweep(isNode)
     if not result then return end
     if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset() end
     lastGeometry = result.geometry
