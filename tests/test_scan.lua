@@ -104,29 +104,42 @@ Scan.Sweep()
 C_TooltipInfo.GetMinimapMouseover = real
 eq(reads, 196, "196 points per sweep, not 625 (#11)")
 
--- Two nodes of a name side by side (Codex, PR #12): at (0, 0) and (26, 0) the
+-- Nodes of a name side by side (Codex, PR #12): at (0, 0) and (26, 0) the
 -- grid of 14 hits them in four running columns; the patch read again at 7
--- tells them apart, wherever the pair sits against the grid.
+-- tells them apart, wherever the pair sits against the grid. Only the names
+-- the caller counts (the alert's nodes) are read again.
+local function nodes(name) return name == "Peacebloom" end
 local merged = 0
 for dx = 0, 13 do
     for dy = 0, 13 do
         WoW.blips = { { "Peacebloom", -20 + dx, dy }, { "Peacebloom", 6 + dx, dy } }
-        if Scan.Count(Scan.Sweep(), "Peacebloom") ~= 2 then merged = merged + 1 end
+        if Scan.Count(Scan.Sweep(nodes), "Peacebloom") ~= 2 then merged = merged + 1 end
     end
 end
 eq(merged, 0, "two Peaceblooms 26 units apart: two blips at every offset")
 WoW.blips = { { "Peacebloom", 0, 0 }, { "Peacebloom", 26, 0 } }
-local pair = Scan.Sweep().byName.Peacebloom
+local pair = Scan.Sweep(nodes).byName.Peacebloom
 table.sort(pair, function(a, b) return a.x < b.x end)
 check(math.abs(pair[1].x - 0) < 4 and math.abs(pair[2].x - 26) < 4, ("...each where it is: %.1f, %.1f"):format(pair[1].x, pair[2].x))
+eq(Scan.Count(Scan.Sweep(), "Peacebloom"), 1, "...without `count`, one cluster is one blip (the same grouping every sweep)")
+
+-- A chain of three (Codex again): five running columns, as wide as an area,
+-- still three nodes, at every offset.
+merged = 0
+for dx = 0, 13 do
+    WoW.blips = { { "Peacebloom", -26 + dx, 0 }, { "Peacebloom", dx, 0 }, { "Peacebloom", 26 + dx, 0 } }
+    if Scan.Count(Scan.Sweep(nodes), "Peacebloom") ~= 3 then merged = merged + 1 end
+end
+eq(merged, 0, "three Peaceblooms in a row, 26 apart: three blips at every offset")
 
 -- What reading again costs: nothing for a node one cell wide, a few reads for
--- a wider cluster, nothing for an area wider than REFINE_SPAN cells.
+-- a wider cluster of a node, nothing for a name the caller doesn't count (a
+-- quest's area), however wide.
 local function readsFor(blips)
     WoW.blips = blips
     reads = 0
     C_TooltipInfo.GetMinimapMouseover = function() reads = reads + 1; return real() end
-    local r = Scan.Sweep()
+    local r = Scan.Sweep(nodes)
     C_TooltipInfo.GetMinimapMouseover = real
     return reads, r
 end

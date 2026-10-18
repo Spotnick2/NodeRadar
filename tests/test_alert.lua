@@ -225,6 +225,12 @@ before = sounds()
 table.insert(WoW.blips, { "Peacebloom", 26, 0, kind = "herbs" })
 WoW.advance(1)
 eq(sounds(), before + 1, "a second Peacebloom 26 units from the first alerts")
+-- And a third in the chain (Codex again): five running columns, still a rise.
+WoW.advance(6)
+before = sounds()
+table.insert(WoW.blips, { "Peacebloom", 52, 0, kind = "herbs" })
+WoW.advance(1)
+eq(sounds(), before + 1, "a third Peacebloom in the chain alerts")
 
 -- /nr test.
 NR.db.sound = true
