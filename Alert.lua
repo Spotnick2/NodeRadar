@@ -60,6 +60,7 @@ function Alert.Update(result, now)
             local g = gathered[name]
             if g and now - g <= Alert.GATHERED then
                 gathered[name] = nil
+                hist.drops[name] = nil                 -- an earlier blink no longer holds (Codex, PR #10)
             else
                 hist.drops[name] = now
             end

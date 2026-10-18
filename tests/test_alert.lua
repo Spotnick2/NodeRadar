@@ -178,34 +178,44 @@ for _, f in ipairs({ "Media/SonarRing.tga", "Media/SonarGlow.tga" }) do
 end
 
 -- Gathering a node, then another of its name comes into range: it alerts (not
--- taken for the first one blinking at the edge).
+-- taken for the first one blinking at the edge), even right after a blink.
+local function drop(blip)
+    for i, b in ipairs(WoW.blips) do if b == blip then table.remove(WoW.blips, i) end end
+end
 hideRings()
 WoW.advance(6)
 local herb = { "Peacebloom", 40, 40, kind = "herbs" }
 NR.db.learned.enUS.Peacebloom = { kind = "herbs", source = "gather" }
 table.insert(WoW.blips, herb)
 WoW.advance(0.6)
-before = sounds()
 WoW.advance(6)
-WoW.fire("UNIT_SPELLCAST_SENT", "player", "Peacebloom", "Cast-9", 2366)   -- gathered
-for i, b in ipairs(WoW.blips) do if b == herb then table.remove(WoW.blips, i) end end
+drop(herb)                                                 -- it blinks at the edge
+WoW.advance(1)
+table.insert(WoW.blips, herb)
+WoW.advance(1)
+before = sounds()
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Peacebloom", "Cast-9", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-9", 2366)            -- gathered
+drop(herb)
 WoW.advance(1)
 table.insert(WoW.blips, { "Peacebloom", -70, -30, kind = "herbs" })     -- the next one, 1 s later
 WoW.advance(1)
-eq(sounds(), before + 1, "after gathering one, the next of its name alerts")
--- Without the gather, the same sequence is a blink.
+eq(sounds(), before + 1, "after gathering one, the next of its name alerts, a blink 3 s before or not")
+-- A gather that didn't go through (interrupted; another cast's success): the
+-- node is still there, and leaving the map's edge and coming back is a blink.
 WoW.advance(25)
-before = sounds()
 local edge = { "Peacebloom", 95, 0, kind = "herbs" }
 table.insert(WoW.blips, edge)
 WoW.advance(0.6)
-before = sounds()
 WoW.advance(6)
-for i, b in ipairs(WoW.blips) do if b == edge then table.remove(WoW.blips, i) end end
+before = sounds()
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Peacebloom", "Cast-10", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-11", 2366)
+drop(edge)
 WoW.advance(1)
 table.insert(WoW.blips, edge)
 WoW.advance(1)
-eq(sounds(), before, "...while one that left and came back by itself is a blink")
+eq(sounds(), before, "an interrupted gather: the node that left and came back is a blink")
 
 -- /nr test.
 NR.db.sound = true

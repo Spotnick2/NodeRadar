@@ -1,7 +1,7 @@
 -- NodeRadar.lua: bootstrap, saved settings, the radar loop, /nr.
 --
--- While Find Herbs or Find Minerals is on, the radar sweeps the minimap every
--- half second (Scan), tells the gathering nodes from the other blips (Learn)
+-- While Find Herbs or Find Minerals is on, the radar sweeps the minimap (about
+-- every 2 yards moved; Scan), tells the gathering nodes from the other blips (Learn)
 -- and pings when a new one comes into range (Alert). docs/PLAN.md has the
 -- design, docs/FOREVER-PROBE.md what it rests on.
 
@@ -27,12 +27,24 @@ local DEFAULTS = {
 local V1_KEYS = { "soundEnabled", "pingEnabled", "chatAlert", "mountedOnly", "scanInterval", "soundID",
                   "pingColorR", "pingColorG", "pingColorB", "ringR", "ringG", "ringB" }
 
+-- The first port (#9) saved every default, learning on and a 0.5 s interval
+-- among them. They're dropped once, so today's defaults apply: a saved value
+-- equal to that old default can't be told from one the player chose, and
+-- learning costs a global cooldown, so it goes back to off (Codex, PR #10).
+local SAVED_DEFAULTS = { enabled = true, sound = true, ring = true, chat = false, ping = false,
+                         learn = true, cooldown = 5, interval = 0.5 }
+local SCHEMA = 2
+
 NR.DEFAULTS = DEFAULTS
 
 local function initDB()
     if type(NodeRadarDB) ~= "table" then NodeRadarDB = {} end
     local db = NodeRadarDB
     for _, k in ipairs(V1_KEYS) do db[k] = nil end
+    if db.schema == nil then
+        for k, v in pairs(SAVED_DEFAULTS) do if db[k] == v then db[k] = nil end end
+        db.schema = SCHEMA
+    end
     -- Only what the player set is saved; the rest reads the defaults, so a
     -- default can change in a later version.
     setmetatable(db, { __index = DEFAULTS })
@@ -102,6 +114,8 @@ API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHAN
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_DEAD", "MINIMAP_UPDATE_ZOOM",
     "MINIMAP_UPDATE_TRACKING" })
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
+API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
+local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
 events:SetScript("OnEvent", function(_, event, ...)
     local now = GetTime()
     if event == "ADDON_LOADED" then
@@ -132,10 +146,18 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.OnTrackingChanged()
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
-        local unit, target, _, spellID = ...
+        local unit, target, castGUID, spellID = ...
+        gathering = nil
         if unit == "player" and type(target) == "string" and not API.IsSecret(target)
-            and not API.IsSecret(spellID) and Learn.CastKind(spellID) then
-            Alert.Gathered(target, now)
+            and not API.IsSecret(castGUID) and not API.IsSecret(spellID) and Learn.CastKind(spellID) then
+            gathering = { guid = castGUID, target = target }
+        end
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        -- Only a gather that went through: an interrupted one leaves the node (Codex, PR #10).
+        local unit, castGUID = ...
+        if gathering and unit == "player" and not API.IsSecret(castGUID) and castGUID == gathering.guid then
+            Alert.Gathered(gathering.target, now)
+            gathering = nil
         end
     end
 end)
