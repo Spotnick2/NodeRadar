@@ -87,11 +87,11 @@ For NodeRadar, good things to hand Codex:
 - the public API a minimap skin consumes (#4).
 
 **Always hand it `CLAUDE.md` and `docs/PLAN.md` alongside the diff or plan**, plus
-`C:/Projects/WoW/References/PORTING-TBC-TO-FOREVER.md` and `docs/FOREVER-PROBE.md`. Those findings
+`C:/Projects/WoW/References/Docs/PORTING-TBC-TO-FOREVER.md` and `docs/FOREVER-PROBE.md`. Those findings
 were measured on the live client. Without them, a cold reviewer argues from Classic-era or Retail
 behaviour that doesn't hold here (that tracking blips are frames, that the old global tracking
 functions exist).
-The newest `C:/Projects/WoW/References/forever-api-1.60.1.<build>.md` is the full API surface when a
+The newest `C:/Projects/WoW/References/Forever/api/forever-api-1.60.1.<build>.md` is the full API surface when a
 question turns on whether something exists, and `C:/Projects/WoW/wow-ui-source` is the client's own
 FrameXML (`Blizzard_Minimap`).
 

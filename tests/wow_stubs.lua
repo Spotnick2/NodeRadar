@@ -20,7 +20,7 @@
 --   it's WoW.mouseoverConvention, offsets from the map's centre by default.
 
 WoW = {}
-local DUMP = os.getenv("NODERADAR_API_DUMP") or "C:/Projects/WoW/References/forever-api-1.60.1.70450.md"
+local DUMP = os.getenv("NODERADAR_API_DUMP") or "C:/Projects/WoW/References/Forever/api/forever-api-1.60.1.70450.md"
 WoW.DUMP = DUMP
 WoW.FIXTURE = "tests/events-70450.txt"
 
