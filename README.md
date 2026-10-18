@@ -54,7 +54,9 @@ alert.
 standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
 for the game to clean up); the sound, from a dropdown (the minimap ping, a sonar or radar ping from
 the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sonar, bell chime,
-notification, sci-fi HUD ping), the sonar on the node, a chat line, Blizzard's ping, the time
+notification, sci-fi HUD ping), the sonar on the node, a chat line (each node with its approximate
+map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
+can't be told), Blizzard's ping, the time
 between alerts, a test button; only nodes you can gather; learning by toggling tracking.
 
 ## Commands

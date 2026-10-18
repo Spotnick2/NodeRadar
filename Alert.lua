@@ -92,7 +92,7 @@ function Alert.Update(result, now)
     if #fire == 0 or now - lastAlert < NR.db.cooldown then return nil end
     lastAlert = now
     table.sort(fire)
-    Alert.Fire(fire, blips)
+    Alert.Fire(fire, blips, result)
     return fire
 end
 
@@ -213,7 +213,23 @@ function Alert.PlaySound()
     if not ok or not willPlay then API.Fail("sound", ok and "refused" or willPlay) end
 end
 
-function Alert.Fire(names, blips)
+-- The chat line: each blip of each name with its zone-map coordinates (#27),
+-- "Peacebloom (45.2, 61.8)"; a blip without them, or a name without blips,
+-- is the name alone.
+function Alert.ChatLine(names, blips, result)
+    local parts = {}
+    for _, name in ipairs(names) do
+        local list = blips and blips[name] or {}
+        if #list == 0 then parts[#parts + 1] = name end
+        for _, b in ipairs(list) do
+            local map, x, y = NR.Scan.MapPosition(result, b)
+            parts[#parts + 1] = map and ("%s (%.1f, %.1f)"):format(name, x * 100, y * 100) or name
+        end
+    end
+    return table.concat(parts, ", ")
+end
+
+function Alert.Fire(names, blips, result)
     local db = NR.db
     if db.sound then Alert.PlaySound() end
     local first
@@ -224,7 +240,7 @@ function Alert.Fire(names, blips)
             if db.ring then Alert.Sonar(b.x, b.y, kind) end
         end
     end
-    if db.chat then API.Say(table.concat(names, ", ")) end
+    if db.chat then API.Say(Alert.ChatLine(names, blips, result)) end
     if db.ping and first and not IsInGroup() then
         local ok, err = pcall(Minimap.PingLocation, Minimap, first.x, first.y)
         if not ok then API.Fail("PingLocation", err) end

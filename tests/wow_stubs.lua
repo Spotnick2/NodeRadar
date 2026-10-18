@@ -374,6 +374,30 @@ C_SkillInfo = {
 WoW.knownSpells = {}
 C_SpellBook = { IsSpellKnown = function(id) return WoW.knownSpells[id] == true end }
 
+-- The player on the zone map (#27): WoW.map (a uiMapID, or nil), WoW.mapPos
+-- (0-1, y down), WoW.mapSize (yards); the facing (radians, 0 north,
+-- counter-clockwise; nil in an instance); indoors.
+WoW.map, WoW.mapPos, WoW.mapSize = 1411, { x = 0.5, y = 0.5 }, { 1000, 1000 }
+WoW.facing, WoW.indoors = 0, false
+C_Map = {
+    GetBestMapForUnit = function(unit) return WoW.map end,
+    GetPlayerMapPosition = function(map, unit)
+        assert(type(map) == "number" and unit ~= nil, "GetPlayerMapPosition takes (uiMapID, unitToken)")
+        if map ~= WoW.map or not WoW.mapPos then return nil end
+        local x, y = WoW.mapPos.x, WoW.mapPos.y
+        return { x = x, y = y, GetXY = function() return x, y end }
+    end,
+    GetMapWorldSize = function(map) return WoW.mapSize[1], WoW.mapSize[2] end,
+}
+function GetPlayerFacing() return WoW.facing end
+function IsIndoors() return WoW.indoors == true end
+WoW.instanced = false
+function IsInInstance()
+    if WoW.instanced == "throw" then error("IsInInstance failed") end
+    return WoW.instanced, WoW.instanced == true and "party" or "none"
+end
+C_CVar = { GetCVar = function(name) return WoW.cvars[name] end }
+
 WoW.mounted = false
 function IsMounted() return WoW.mounted end
 WoW.sounds = {}
@@ -551,7 +575,9 @@ C_Minimap = {
         if t then return { name = t.name, texture = 136025, active = t.active, type = "spell", subType = -1,
                            spellID = t.spellID } end
     end,
-    GetViewRadius = function() return 150 end,
+    -- WoW.viewRadius[zoom] when given (#27), else 150 yards.
+    GetViewRadius = function() return WoW.viewRadius and WoW.viewRadius[Minimap._zoom or 0] or 150 end,
+    IsRotateMinimapIgnored = function() return WoW.rotateIgnored == true end,
     -- WoW.refuseTrackingOn / Off: turning a tracking on / off does nothing (a cast the
     -- client refuses). Either way MINIMAP_UPDATE_TRACKING fires.
     SetTracking = function(i, on)
