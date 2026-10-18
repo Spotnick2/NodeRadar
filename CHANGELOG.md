@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **WowUp can install NodeRadar from GitHub** (#35): every release now carries `release.json`, the
+  file WowUp reads to find the Forever download (v1.0.0 and v1.0.1 have it too).
+
 ## v1.0.1
 
 Released 2026-10-18.
