@@ -1,6 +1,6 @@
 # NodeRadar
 
-Gathering while you quest or ride across a zone usually means staring at the minimap. Look away
+Gathering while you walk or ride across a zone usually means staring at the minimap. Look away
 for a second to read a quest, pull a mob or answer guild chat, and that Peacebloom you wanted
 slides right past the edge of the map.
 
