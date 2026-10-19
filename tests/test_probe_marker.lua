@@ -1,4 +1,4 @@
--- The marker procedure (/fp steps nr marker, NodeSight's far sparkles): our
+-- The marker procedure (/fp steps nr marker, a far-node marker, #61): our
 -- waypoint on the nearest node, our gold square anchored to Blizzard's
 -- navigation frame, read with showInGameNavigation as it was and on; turned,
 -- behind, far; everything put back (the option, our waypoint). Runs locally

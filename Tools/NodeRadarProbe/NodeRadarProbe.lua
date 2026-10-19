@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (NodeSight's far sparkles).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -4254,10 +4254,10 @@ end)()
 
 ;(function()
 --------------------------------------------------------------------------------
--- The navigation frame as an anchor (NodeSight's far sparkles): Forever draws
--- no waypoint marker (the waypoint round), but NodeSight anchors its own art
--- to C_Navigation.GetFrame() with showInGameNavigation set. Does that frame
--- follow the node's spot on screen, with the CVar as it is and with it on?
+-- The navigation frame as an anchor for a far-node marker (#61): Forever
+-- draws no waypoint marker (the waypoint round), but art of our own could be
+-- anchored to C_Navigation.GetFrame() with showInGameNavigation set. Does that
+-- frame follow the node's spot on screen, with the CVar as it is and with it on?
 -- Our own marker (a gold square) is anchored to it, and both are read.
 --------------------------------------------------------------------------------
 
@@ -4306,7 +4306,7 @@ end
 local seenAt                     -- the square's x at the last read, to see it move
 local markerSteps = {
     rev = 1,
-    title = "Blizzard's navigation frame as an anchor for a marker on a far node (NodeSight)",
+    title = "Blizzard's navigation frame as an anchor for a marker on a far node (#61)",
     { text = "Remove any map waypoint you have and stop tracking quests on screen (super-track), so the "
           .. "waypoint is free. Your waypoint setting and the navigation option come back as they were.",
       wait = function()
@@ -4324,7 +4324,7 @@ local markerSteps = {
       end, timeout = 8, screenshot = "marker: the option as it was" },
     { text = "Is the gold square (\"NodeRadar probe\") over the node out in the world, where the herb or ore is?",
       ask = true },
-    { text = "Turning the in-game navigation option on (showInGameNavigation 1), as NodeSight does.", auto = true,
+    { text = "Turning the in-game navigation option on (showInGameNavigation 1).", auto = true,
       run = function()
           local ok = wpRead(C_CVar.SetCVar, "showInGameNavigation", "1")
           markOff()
