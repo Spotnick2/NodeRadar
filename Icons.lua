@@ -18,7 +18,9 @@ NR.Icons = Icons
 Icons.MATCH = 8        -- map units: a record and a blip of its name are the same node (5.5 + 2)
 Icons.INSIDE = 18      -- map units: a blip this far inside the rim is whole (5.5 + 12.5)
 Icons.TRIES = 4        -- blips measured a sweep at most
-Icons.RETRY = 5        -- seconds before a blip that failed is tried again
+Icons.MEASURE_READS = 200  -- reads a sweep's measuring stops at (#67), on top of the grid's
+Icons.RETRY = 5        -- seconds before a blip that failed is tried again, doubling each time...
+Icons.BACKOFF = 60     -- ...up to this (#67: a shape peeling can't explain)
 Icons.FORGET = 30      -- seconds unseen before a failed try is forgotten
 Icons.LINGER = 30      -- seconds at most a gathered node's dot is left out while still seen
 Icons.GATHERED = 15    -- yards: a gather drops the records of its name this near the player
@@ -51,7 +53,9 @@ local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local ARROWS = "Interface\\Minimap\\Minimap-PositionArrows"
 
 local records = {}     -- { name, kind, north, west, icon, misses, dim, height, x, y, frame }
-local tries = {}       -- { name, north, west, at, seen }: blips that failed to measure
+local provisional = {} -- the same, misses 0 and provisional: cells no record explains (#67), rebuilt each sweep
+local tries = {}       -- { name, north, west, at, seen, wait, explaining, radius }: blips left
+                       -- unexplained by a measure, by the spot of what they left
 local gone = {}        -- { name, north, west, units | yards, at }: nodes just gathered, their dots
                        -- left out until they vanish (the loot window keeps them)
 local free = {}        -- hidden frames, reused
@@ -321,8 +325,9 @@ local function bind(r)
     end
 end
 
--- Every shown record bound again; once more if the glass latch tripped
--- meanwhile, and then the compass too (its glass is the same latch's, #29).
+-- Every shown record and provisional icon bound again; once more if the glass
+-- latch tripped meanwhile, and then the compass too (its glass is the same
+-- latch's, #29).
 local function bindAll()
     local tripped = false
     for _ = 1, 2 do
@@ -330,6 +335,9 @@ local function bindAll()
         resolve()
         for _, r in ipairs(records) do
             if r.frame and r.misses == 0 then bind(r) end
+        end
+        for _, p in ipairs(provisional) do
+            if p.frame then bind(p) end
         end
         if not restyle then break end
         tripped = true
@@ -347,11 +355,15 @@ end
 -- The choices changed (#47, Track): the records of skipped names go when they
 -- aren't kept, at once; the rest bound again, so a dim follows.
 function Icons.Refilter()
-    local keep, kept = keepsSkipped(), {}
-    for _, r in ipairs(records) do
-        if keep or not NR.Alert.Ignored(r.name) then kept[#kept + 1] = r else release(r) end
+    local keep = keepsSkipped()
+    local function filter(list)
+        local kept = {}
+        for _, r in ipairs(list) do
+            if keep or not NR.Alert.Ignored(r.name) then kept[#kept + 1] = r else release(r) end
+        end
+        return kept
     end
-    records = kept
+    records, provisional = filter(records), filter(provisional)
     if Icons.On() then Icons.Show() end
 end
 
@@ -367,22 +379,30 @@ end
 
 local function hideAll()
     for _, r in ipairs(records) do if r.frame then r.frame:Hide() end end
+    for _, p in ipairs(provisional) do if p.frame then p.frame:Hide() end end
     stop()
 end
 
--- Everything forgotten: the records, the failed tries, the frames hidden;
--- the compass pointing at none of them (#29).
+local function dropProvisional()
+    for _, p in ipairs(provisional) do release(p) end
+    provisional = {}
+end
+
+-- Everything forgotten: the records, the provisional icons, the failed tries,
+-- the frames hidden; the compass pointing at none of them (#29).
 function Icons.Clear()
     for _, r in ipairs(records) do release(r) end
+    dropProvisional()
     records, tries, gone, lastSweep, instance = {}, {}, {}, nil, nil
     stop()
     if NR.Compass then NR.Compass.Reset() end
 end
 
 -- The icons turned off while the compass keeps the records: the frames go,
--- the records stay.
+-- the records stay (provisional icons are only drawn: they go too).
 function Icons.Release()
     for _, r in ipairs(records) do release(r) end
+    dropProvisional()
     stop()
 end
 
@@ -402,7 +422,27 @@ local function iconOf(name, kind)
     if ok and icon ~= nil and not API.IsSecret(icon) then return icon end
 end
 
--- Each frame while an icon shows: where every shown record is now.
+-- A list's shown frames where the player's position puts them, faded at the rim.
+local function place(list, pn, pw, k, edge)
+    for _, r in ipairs(list) do
+        local f = r.frame
+        if f and r.misses == 0 then
+            local x, y = -(r.west - pw) / k, (r.north - pn) / k
+            local alpha = math.max(0, math.min(1, (edge - dist(x, y)) / Icons.FADE))
+            if alpha > 0 then
+                f:ClearAllPoints()
+                f:SetPoint("CENTER", Minimap, "CENTER", x, y)
+                f:SetAlpha(alpha * (r.dim and Icons.DIM or 1))
+                f:Show()
+            else
+                f:Hide()
+            end
+        end
+    end
+end
+
+-- Each frame while an icon shows: where every shown record and provisional
+-- icon is now.
 local function draw()
     local db = NR.db
     if not (Icons.On() and lastSweep) or GetTime() - lastSweep > db.interval + Icons.GRACE then
@@ -421,27 +461,15 @@ local function draw()
     local half = w / 2
     local k = radius / half
     local edge = half - look.extent
-    for _, r in ipairs(records) do
-        local f = r.frame
-        if f and r.misses == 0 then
-            local x, y = -(r.west - pw) / k, (r.north - pn) / k
-            local alpha = math.max(0, math.min(1, (edge - dist(x, y)) / Icons.FADE))
-            if alpha > 0 then
-                f:ClearAllPoints()
-                f:SetPoint("CENTER", Minimap, "CENTER", x, y)
-                f:SetAlpha(alpha * (r.dim and Icons.DIM or 1))
-                f:Show()
-            else
-                f:Hide()
-            end
-        end
-    end
+    place(records, pn, pw, k, edge)
+    place(provisional, pn, pw, k, edge)
 end
 
--- The failed try a blip is, if any: its name within MATCH units.
+-- The failed try a blip is, if any: its name within MATCH units of the spot of
+-- what it leaves unexplained (b.lx, b.ly).
 local function tryOf(b, pn, pw, k)
     for _, t in ipairs(tries) do
-        if t.name == b.name and dist(-(t.west - pw) / k - b.x, (t.north - pn) / k - b.y) <= Icons.MATCH then
+        if t.name == b.name and dist(-(t.west - pw) / k - b.lx, (t.north - pn) / k - b.ly) <= Icons.MATCH then
             return t
         end
     end
@@ -456,11 +484,13 @@ function Icons.Show()
     end
     resolve()
     local any = false
-    for _, r in ipairs(records) do
-        if r.misses == 0 then
-            r.dim = not NR.Alert.Wanted(r.name)         -- beyond the skill, or skipped (#47)
-            if not r.frame then r.frame = acquire() end
-            any = true
+    for _, list in ipairs({ records, provisional }) do
+        for _, r in ipairs(list) do
+            if r.misses == 0 then
+                r.dim = not NR.Alert.Wanted(r.name)     -- beyond the skill, or skipped (#47)
+                if not r.frame then r.frame = acquire() end
+                any = true
+            end
         end
     end
     bindAll()
@@ -470,6 +500,49 @@ function Icons.Show()
     else
         stop()
     end
+end
+
+-- Where provisional icons go for a blip's unexplained cells (#67): the cells
+-- grouped (touching on the sweep's grid, 8 neighbours), one spot at each
+-- group's centre, or two for a group wider than `node` (the centres of its
+-- halves along its wider axis). No error bound: an approximation until measured.
+local function spots(left, node)
+    local out, seen = {}, {}
+    for i = 1, #left do
+        if not seen[i] then
+            local group, stack = {}, { i }
+            seen[i] = true
+            while #stack > 0 do
+                local j = table.remove(stack)
+                group[#group + 1] = left[j]
+                local c = left[j].cell
+                for m, other in ipairs(left) do
+                    local o = other.cell
+                    if not seen[m] and math.abs(o.col - c.col) <= 1 and math.abs(o.row - c.row) <= 1 then
+                        seen[m] = true
+                        stack[#stack + 1] = m
+                    end
+                end
+            end
+            local x1, x2, y1, y2 = math.huge, -math.huge, math.huge, -math.huge
+            for _, p in ipairs(group) do
+                x1, x2, y1, y2 = math.min(x1, p[1]), math.max(x2, p[1]), math.min(y1, p[2]), math.max(y2, p[2])
+            end
+            local axis = (x2 - x1 >= y2 - y1) and 1 or 2
+            local lo, hi = axis == 1 and x1 or y1, axis == 1 and x2 or y2
+            local halves = hi - lo > node and { {}, {} } or { {} }
+            for _, p in ipairs(group) do
+                local h = (#halves == 2 and p[axis] > (lo + hi) / 2) and 2 or 1
+                halves[h][#halves[h] + 1] = p
+            end
+            for _, h in ipairs(halves) do
+                local sx, sy = 0, 0
+                for _, p in ipairs(h) do sx, sy = sx + p[1], sy + p[2] end
+                if #h > 0 then out[#out + 1] = { sx / #h, sy / #h } end
+            end
+        end
+    end
+    return out
 end
 
 -- After each successful radar sweep, before the alert (Codex, #28: the sonar
@@ -543,11 +616,11 @@ function Icons.Update(result, now)
     -- Covered (the owner's two Silverleafs): two of a name a few units apart can
     -- come out of a sweep as one blip, its centroid between them, near neither
     -- record. A record left unmatched stays while a blip of its name has a cell
-    -- in its square; that blip isn't measured. Only the filtered blips count.
-    local reach = NR.Scan.NODE / 2
+    -- in its square (Scan.Explains, #67). Only the filtered blips count.
     local function covers(b, r)
         for _, c in ipairs(b.points or {}) do
-            if math.abs(c[1] - g.w / 2 - r.x) <= reach and math.abs(c[2] - g.h / 2 - r.y) <= reach then return true end
+            local px, py = NR.Scan.Point(g, c)
+            if NR.Scan.Explains(r.x, r.y, px, py) then return true end
         end
         return false
     end
@@ -555,7 +628,7 @@ function Icons.Update(result, now)
         if not matched[r] then
             for _, b in ipairs(blips) do
                 if b.name == r.name and covers(b, r) then
-                    matched[r], b.covers = true, true
+                    matched[r] = true
                     break
                 end
             end
@@ -575,21 +648,49 @@ function Icons.Update(result, now)
     end
     records = kept
 
-    -- New: whole blips with no record. Never tried first, nearest the centre
-    -- first; then those tried RETRY s ago or more, longest ago first.
+    -- Explained (#67): a blip's cells in a record's square of its name. The
+    -- records' centres of a blip's name, and how many explain any of its cells.
+    local function known(b)
+        local list, explaining = {}, 0
+        for _, r in ipairs(records) do
+            if r.name == b.name then
+                list[#list + 1] = { r.x, r.y }
+                if covers(b, r) then explaining = explaining + 1 end
+            end
+        end
+        return list, explaining
+    end
+    local function centroid(left)
+        local sx, sy = 0, 0
+        for _, c in ipairs(left) do sx, sy = sx + c[1], sy + c[2] end
+        return sx / #left, sy / #left
+    end
+
+    -- New: a whole blip with cells no record explains, matched or not (Codex).
+    -- Never tried first, nearest the centre first; then those due again (RETRY,
+    -- doubling to BACKOFF while nothing changes), longest ago first.
     local fresh, again = {}, {}
     for _, b in ipairs(blips) do
-        if not b.record and not b.covers and dist(b.x, b.y) + Icons.INSIDE <= half then
-            local t = tryOf(b, pn, pw, k)
-            if t then
-                t.seen = now
-                if now - t.at >= Icons.RETRY then b.try = t; again[#again + 1] = b end
-            else
-                fresh[#fresh + 1] = b
+        b.known, b.explaining = known(b)
+        b.left = NR.Scan.Unexplained(g, b, b.known)
+        if #b.left > 0 then
+            b.lx, b.ly = centroid(b.left)
+            if dist(b.lx, b.ly) + Icons.INSIDE <= half then
+                b.single = b.explaining == 0           -- a lone blip: its centroid's measure first
+                local t = tryOf(b, pn, pw, k)
+                if t then
+                    t.seen = now
+                    if t.explaining ~= b.explaining or t.radius ~= where.radius then
+                        t.wait, t.explaining, t.radius = Icons.RETRY, b.explaining, where.radius   -- re-armed
+                    end
+                    if now - t.at >= t.wait then b.try = t; again[#again + 1] = b end
+                else
+                    fresh[#fresh + 1] = b
+                end
             end
         end
     end
-    table.sort(fresh, function(a, b) return dist(a.x, a.y) < dist(b.x, b.y) end)
+    table.sort(fresh, function(a, b) return dist(a.lx, a.ly) < dist(b.lx, b.ly) end)
     table.sort(again, function(a, b) return a.try.at < b.try.at end)
     local measure = {}
     for _, list in ipairs({ fresh, again }) do
@@ -597,18 +698,28 @@ function Icons.Update(result, now)
             if #measure < Icons.TRIES then measure[#measure + 1] = b end
         end
     end
-    if #measure > 0 and NR.Scan.Centre(measure) then
+    if #measure > 0 and NR.Scan.Centre(measure, Icons.MEASURE_READS, Icons.MATCH) then
         for _, b in ipairs(measure) do
-            if b.cx then
-                local r = { name = b.name, kind = NR.Learn.Kind(b.name), north = pn + b.cy * k, west = pw - b.cx * k,
-                            misses = 0, x = b.cx, y = b.cy, height = b.height }
+            for _, c in ipairs(b.found or {}) do
+                local r = { name = b.name, kind = NR.Learn.Kind(b.name), north = pn + c[2] * k, west = pw - c[1] * k,
+                            misses = 0, x = c[1], y = c[2], height = b.height }
                 r.icon = iconOf(r.name, r.kind)
                 records[#records + 1] = r
-                b.record = r
-            elseif b.try then
-                b.try.at = now
-            else
-                tries[#tries + 1] = { name = b.name, north = pn + b.y * k, west = pw - b.x * k, at = now, seen = now }
+                b.record = b.record or r
+            end
+            -- Left unexplained by a whole pass: tried again later, less often.
+            if not b.cut and b.left and #b.left > 0 then
+                local lx, ly = centroid(b.left)
+                local t = b.try
+                if t then
+                    t.at, t.wait = now, math.min(t.wait * 2, Icons.BACKOFF)
+                    t.north, t.west = pn + ly * k, pw - lx * k
+                else
+                    t = { name = b.name, north = pn + ly * k, west = pw - lx * k, at = now, seen = now, wait = Icons.RETRY }
+                    tries[#tries + 1] = t
+                end
+                local _, explaining = known(b)
+                t.explaining, t.radius = explaining, where.radius
             end
         end
     end
@@ -617,6 +728,24 @@ function Icons.Update(result, now)
         if now - t.seen < Icons.FORGET then keptTries[#keptTries + 1] = t end
     end
     tries = keptTries
+
+    -- Provisional (#67): what no record explains still gets an icon, at the
+    -- centre of each group of its cells (two for a group wider than a node),
+    -- rebuilt every sweep; never a record (the compass and the alert don't see
+    -- them). Only drawn, so only with the icons on.
+    dropProvisional()
+    if Icons.On() then
+        for _, b in ipairs(blips) do
+            local left = NR.Scan.Unexplained(g, b, (known(b)))
+            for _, spot in ipairs(spots(left, NR.Scan.NODE)) do
+                local p = { name = b.name, kind = NR.Learn.Kind(b.name), north = pn + spot[2] * k,
+                            west = pw - spot[1] * k, misses = 0, x = spot[1], y = spot[2], height = b.height,
+                            provisional = true }
+                p.icon = iconOf(p.name, p.kind)
+                provisional[#provisional + 1] = p
+            end
+        end
+    end
 
     -- Shown: every record seen this sweep, dimmed as the alert's skill rule
     -- and the player's choices say (#26, #47), each frame bound to its record in the look. Only with the icons
@@ -643,6 +772,11 @@ function Icons.Gathered(name)
         end
     end
     records = kept
+    local keptP = {}
+    for _, p in ipairs(provisional) do
+        if p.name == name and dist(p.north - pn, p.west - pw) <= Icons.GATHERED then release(p) else keptP[#keptP + 1] = p end
+    end
+    provisional = keptP
     -- Gathered before it was measured: its dot is somewhere by the player.
     if not dropped then
         gone[#gone + 1] = { name = name, north = pn, west = pw, yards = Icons.GATHERED, at = now }
@@ -658,6 +792,7 @@ function Icons.At(b)
 end
 
 Icons._test = { frames = 0, records = function() return records end, tries = function() return tries end,
+                provisional = function() return provisional end,
                 gone = function() return gone end,
                 draw = draw, driver = driver, look = function() return look end,
                 reset = function() glass, glassMiniMap, restyle, free = nil, nil, nil, {} end }

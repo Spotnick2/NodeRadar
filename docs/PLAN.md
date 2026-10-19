@@ -450,7 +450,7 @@ covering them only in part (Codex's (2.75, 2.75) and (10.95, 10.95)).
 
 **The principle: explain every cell.** A blip's sampled cells (`b.points`, #66) are where its name
 reads. A cell is **explained** when it lies inside a known node's square of its name, with a
-tolerance: `|cell - centre| <= Scan.NODE / 2 + Icons.EXPLAIN_TOL` (1.5 units: the measure's 0.25 and
+tolerance: `|cell - centre| <= Scan.NODE / 2 + Scan.EXPLAIN_TOL` (1.5 units: the measure's 0.25 and
 the projection's drift, Codex's boundary column) on both axes, the cell in the map's coordinates
 minus half its size, as the record's from the centre. One predicate serves the covering (#66, now
 "fully explained"), the measuring and the provisional icons. Matching one to one stays first.
@@ -475,8 +475,10 @@ four blips a sweep and the 5 s retry kept):
   peeling the lower).
 - **Progress:** a candidate counts only if, placed (or matched to the record within `MATCH` it
   dedupes to, at that record's position), it explains a cell that wasn't. One that doesn't is a
-  failed direction. A pass tries the four directions in order, restarting the order after each
-  node that made progress, and ends when four in a row fail or `PEEL` nodes are found.
+  failed direction. A pass tries the four directions in turn, starting along the longer axis of
+  what's left (bottom and top first for a pair one above the other) and going on round after each
+  node found (restarting the order cost a vertical pair 170 reads), and ends when four in a row
+  fail or `PEEL` nodes are found.
 - **Not forever** (Codex): a blip whose pass ended with cells still unexplained is **suspended** by
   its **spot** (its name and the world position of its unexplained cells' centroid, within
   `Icons.MATCH` units converted to yards), with a backoff: retried after 5 s, then 10, 20, 40, then
@@ -488,10 +490,11 @@ four blips a sweep and the 5 s retry kept):
   a pair about 50; a failed direction about as much. A sweep stops measuring at
   `Icons.MEASURE_READS = 200` reads (the blip being peeled finishes its current direction, the
   rest wait for the next sweep), on top of the grid's.
-- **Whole** (Codex): a peel is refused when its outward walk would reach, or its square would
-  extend past, the round map less 2 units (`dist <= half - 2` for the square's corners): near the
-  rim the edge read may be the map's, not the node's. The single measure keeps its centroid +
-  `INSIDE` rule. What's refused gets provisional icons, under the rim exception.
+- **Whole** (Codex): a blip is measured only when the centroid of what it leaves unexplained is
+  `INSIDE` the rim (#28's rule, on those cells: a node entering at the edge isn't peeled four ways
+  on every sweep), and a peel is refused when its square would extend past the round map less 2
+  units (`Scan.RIM_MARGIN`, the square's corners): near the rim the edge read may be the map's, not
+  the node's. What's refused gets provisional icons, under the rim exception.
 - **What it can't tell** (stated, Codex): a node whose square lies wholly inside the union of others'
   (three in a row, 12 apart) leaves no cell unexplained and gets no icon; **a compact triple can
   leave its middle node unpeelable** at some phases of the sweep's grid (every walk across from its

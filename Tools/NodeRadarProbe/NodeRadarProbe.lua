@@ -4232,11 +4232,29 @@ local function iconsDump()
                 b.name, b.x, b.y, b.cells or 0, math.sqrt(b.x ^ 2 + b.y ^ 2),
                 nearD and ("%.1f units away"):format(nearD) or "none", str(n.Alert.Wanted(b.name)),
                 str(n.Alert.Ignored(b.name))))
-            -- No record of it: measured again now, and why it fails.
-            if not (nearD and nearD <= n.Icons.MATCH) then
-                local okC = n.Scan.Centre({ b })
-                say(("    measured now: %s"):format(not okC and "the measure failed" or b.cx
-                    and ("centre %+.1f %+.1f"):format(b.cx, b.cy) or tostring(b.why)))
+            -- Cells no record explains (#67): measured again now as the radar
+            -- does (the centroid first when no record explains any, then
+            -- peeled), what it found and why it stops.
+            local known, explaining = {}, 0
+            for _, r in ipairs(T.records()) do
+                if r.name == b.name and k and okP then
+                    local rx, ry = -(r.west - pw) / k, (r.north - pn) / k
+                    known[#known + 1] = { rx, ry }
+                    for _, c in ipairs(b.points or {}) do
+                        local px, py = n.Scan.Point(g, c)
+                        if n.Scan.Explains(rx, ry, px, py) then explaining = explaining + 1; break end
+                    end
+                end
+            end
+            local left = n.Scan.Unexplained(g, b, known)
+            if #left > 0 then
+                b.known, b.single = known, explaining == 0
+                local okC = n.Scan.Centre({ b }, n.Icons.MEASURE_READS, n.Icons.MATCH)
+                local found = {}
+                for _, c in ipairs(b.found or {}) do found[#found + 1] = ("%+.1f %+.1f"):format(c[1], c[2]) end
+                say(("    %d of %d cells unexplained; measured now: %s, found %s, %s left%s"):format(#left, b.cells or 0,
+                    okC and "ok" or "the measure failed", #found > 0 and table.concat(found, ", ") or "none",
+                    str(b.left and #b.left), b.why and (" (" .. b.why .. ")") or ""))
             end
         end
     end
@@ -4244,12 +4262,94 @@ local function iconsDump()
         say(("  record %s at %+.1f %+.1f: misses %s, dim %s, height %s, shown %s"):format(r.name, r.x or 0, r.y or 0,
             str(r.misses), str(r.dim), str(r.height), str(r.frame and ask(r.frame, "IsShown"))))
     end
+    for _, p in ipairs(T.provisional and T.provisional() or {}) do
+        say(("  provisional %s at %+.1f %+.1f: dim %s, shown %s"):format(p.name, p.x or 0, p.y or 0, str(p.dim),
+            str(p.frame and ask(p.frame, "IsShown"))))
+    end
     local now = GetTime()
     for _, t in ipairs(T.tries()) do
-        say(("  failed measure %s: tried %.0f s ago, seen %.0f s ago"):format(t.name, now - t.at, now - t.seen))
+        say(("  unexplained %s: tried %.0f s ago (next after %s s), seen %.0f s ago"):format(t.name, now - t.at,
+            str(t.wait), now - t.seen))
     end
 end
 Probe:Command("icons", function() iconsDump() end, "NodeRadar's icons against a fresh sweep")
+
+-- Never a yellow dot (#67): the owner's merged pair after a reload, standing
+-- still, then a ride; NodeRadar's icons setting put back at the end.
+local function iconCounts()
+    local n = nr()
+    local T = n and n.Icons and n.Icons._test
+    if not (T and T.provisional) then return nil end
+    local per, recs, prov = {}, 0, 0
+    for _, r in ipairs(T.records()) do
+        per[r.name] = per[r.name] or { 0, 0 }
+        per[r.name][1], recs = per[r.name][1] + 1, recs + 1
+    end
+    for _, p in ipairs(T.provisional()) do
+        per[p.name] = per[p.name] or { 0, 0 }
+        per[p.name][2], prov = per[p.name][2] + 1, prov + 1
+    end
+    local parts = {}
+    for name, c in pairs(per) do parts[#parts + 1] = ("%s %d+%d"):format(name, c[1], c[2]) end
+    table.sort(parts)
+    return recs, prov, #T.tries(), ("%d records, %d provisional, %d unexplained (%s)"):format(recs, prov, #T.tries(),
+        #parts > 0 and table.concat(parts, ", ") or "none")
+end
+local ride = {}
+local nodotsSteps = {
+    rev = 1,
+    title = "Never a yellow dot: merged pairs measured, provisional icons for the rest (#67)",
+    { text = "Have NodeRadar loaded with gathering tracking on. Its icons go on for this round; the setting comes "
+          .. "back as it was at the end.", wait = function()
+          local n = nr()
+          if not (n and iconCounts()) then return false, "NodeRadar (#67's icons) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          if NodeRadarProbeDB.nodotsWas == nil then NodeRadarProbeDB.nodotsWas = n.db.icons and true or false end
+          n.Set("icons", true)
+          return true, "icons on (they were " .. str(NodeRadarProbeDB.nodotsWas) .. ")"
+      end },
+    { text = "Go to two herbs or ores of one name whose yellow dots touch or nearly touch on the minimap (like "
+          .. "your two Silverleafs), away from its edge, and stand still. Then press Ready.", button = "Ready",
+      run = function()
+          iconsDump()
+          return select(4, iconCounts())
+      end },
+    { text = "Standing still, type /reload (or press Reload now).", reload = true },
+    { text = "Stay still: reading NodeRadar's icons for a few seconds after the reload.", wait = function()
+          ride.polls = (ride.polls or 0) + 1
+          if ride.polls < 6 then return false, "reading" end
+          ride.polls = nil
+          iconsDump()
+          return true, select(4, iconCounts())
+      end, timeout = 60, screenshot = "nodots: the pair after a reload" },
+    { text = "Standing still after the reload: does each of the two show an icon, with no yellow dot beside "
+          .. "or under an icon?", ask = true },
+    { text = "Now ride for about three minutes where herbs or ores are. Whenever a herb or ore's yellow dot shows "
+          .. "with no icon on it (away from the minimap's edge), stop there and type /fp nr icons.", wait = function()
+          ride.t0 = ride.t0 or GetTime()
+          local _, prov = iconCounts()
+          ride.polls = (ride.polls or 0) + 1
+          if prov and prov > 0 then ride.withProv = (ride.withProv or 0) + 1 end
+          ride.most = math.max(ride.most or 0, prov or 0)
+          local left = 180 - (GetTime() - ride.t0)
+          if left > 0 then return false, ("riding: %d s left"):format(left) end
+          local text = ("%d of %d reads with provisional icons, at most %d at once; now %s"):format(ride.withProv or 0,
+              ride.polls, ride.most, select(4, iconCounts()))
+          ride = {}
+          return true, text
+      end, timeout = 900 },
+    { text = "While riding, did a herb or ore's yellow dot show with no icon on it, away from the edge (and did "
+          .. "you type /fp nr icons there)?", ask = true },
+    { text = "Putting NodeRadar's icons setting back.", auto = true, run = function()
+          local n = nr()
+          local was = NodeRadarProbeDB.nodotsWas
+          NodeRadarProbeDB.nodotsWas = nil
+          if n and was ~= nil then n.Set("icons", was) end
+          return "icons " .. str(was)
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("nodots", nodotsSteps)
 
 -- Does the minimap's tooltip list a name twice where two dots of it overlap
 -- (#67)? Every point of a grid over the whole map, `step` units apart (4 by
@@ -4432,7 +4532,7 @@ end)()
 --------------------------------------------------------------------------------
 
 local boot = CreateFrame("Frame")
-Probe:RegisterEvents(boot, { "ADDON_LOADED", "PLAYER_LOGIN", "MINIMAP_UPDATE_TRACKING", "MINIMAP_PING",
+Probe:RegisterEvents(boot, { "ADDON_LOADED", "PLAYER_LOGIN", "MINIMAP_UPDATE_TRACKING",
     "VIGNETTE_MINIMAP_UPDATED", "OBJECT_ENTERED_AOI", "OBJECT_LEFT_AOI", "SKILL_LINES_CHANGED", "UI_ERROR_MESSAGE",
     "USER_WAYPOINT_UPDATED", "SUPER_TRACKING_CHANGED", "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED",
     "NAVIGATION_DESTINATION_REACHED" })
@@ -4482,9 +4582,6 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         local on = tracking(true)
         say("MINIMAP_UPDATE_TRACKING; gathering on: " .. (#on > 0 and table.concat(on, ", ") or "none"))
-    elseif event == "MINIMAP_PING" then
-        -- Documented with secret payloads (MinimapDocumentation.lua:260): shown secret-safe.
-        say(("MINIMAP_PING unit=%s x=%s y=%s"):format(str(a1), str(a3), str(a2)))
     elseif event == "VIGNETTE_MINIMAP_UPDATED" then
         local info = not secret(a1) and C_VignetteInfo.GetVignetteInfo(a1) or nil
         say(("VIGNETTE_MINIMAP_UPDATED onMinimap=%s %s type=%s atlas=%s"):format(str(a2),

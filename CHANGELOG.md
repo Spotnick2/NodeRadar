@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **No more yellow dots between the icons** (#67): two herbs or ores of one name side by side now
+  each get their own icon, even right after a reload, and a node not measured yet gets an icon near
+  its dot until it is. Blizzard's dot still shows near the minimap's edge and where nodes of one
+  name pile up (three or more, or two almost on top of each other).
+
 - **Two herbs of one name close together keep their icons** (#28): from some spots the minimap
   reading saw them as one, so their icons turned back into dots, then into icons again as you
   moved. They now stay icons.
