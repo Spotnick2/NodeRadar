@@ -41,7 +41,7 @@ public API for minimap skins (#4). On hold for the live game: fishing pools (#25
 ## Layout
 
 TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Options.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`Icons.lua` → `Options.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
   failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
@@ -55,6 +55,8 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   is a 2.5 KB table to collect (#11): keep them few. Each result carries `where` (`Scan.Where`: the
   player's zone map, position and size, the view radius; nil in an instance or rotating), and
   `Scan.MapPosition(result, blip)` gives a blip's `uiMapID, x, y` (#27, measured within reach).
+  `Scan.Centre(blips)` measures a node's exact centre (its 25-unit square's edges, 29 reads, #28),
+  with the sweep's soft-cursor guarantee.
 - `Learn.lua`: `Learn.Kind(name)`; learning from gathering casts and from the toggle experiment
   (every guard in PLAN.md: the experiment is voided by movement, zone, loading, death, the gamepad,
   a zoom, a failed sweep or the player's own tracking change; tracking is always restored, across a
@@ -63,6 +65,10 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   (`Alert.Gatherable`: `NODE_INFO`'s skill against `API.Skill`, Cultivation for herbs, #26); the sound (`Alert.SOUNDS`: the map ping, two of
   the client's files by FileDataID, six `Media\*.ogg` from Pixabay made by `Tools/import_sounds.py`,
   README "Sounds"), the sonar, chat line, solo-only ping.
+- `Icons.lua` (#28, `icons`, off by default): records of measured nodes in world yards
+  (`UnitPosition`: north, west), matched to each radar sweep's blips by name within 8 units,
+  drawn every frame as unnamed mouse-through children of `Minimap`; `NR.Step` reconciles them
+  before the alert and the learner. Off, nothing runs. docs/PLAN.md has every rule.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

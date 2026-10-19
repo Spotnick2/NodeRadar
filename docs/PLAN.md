@@ -214,6 +214,168 @@ Offline:
   client exit** (CLAUDE.md: persistence needs a full exit).
 - With Glass MiniMap, and with the stock map: the sweep and the ring behave the same.
 
+## Item icons on the minimap's nodes (#28)
+
+Each herb and ore blip gets the icon of what it gives (Peacebloom, Copper Ore) over Blizzard's
+yellow dot; a node the player can't gather gets a dimmed one. A setting, `icons`, **off by
+default** (Blizzard's dots) until the owner decides after the second probe round: `/nr icons`, and
+in Options "Minimap nodes: Blizzard's dots | item icons". Off, nothing of this runs: no records, no
+extra reads, no per-frame update, the sweep exactly as today.
+
+### What it rests on (docs/FOREVER-PROBE.md, "Item icons, first round", 70450)
+
+- A herb's blip answers the mouse over **a square of 25 x 25 units** (eight of eight), around its
+  drawn dot (about 8 units across). A mark at the square's measured centre landed on the dot, 0 to
+  2 units off its centre.
+- The sweep's blip (the centroid of its grid hits) is up to 5.5 units off that centre (a 25-unit
+  square holds one or two samples of a 14-unit grid per axis), about 12 yd at zoom 0: not a
+  position to draw on.
+- `C_Item.GetItemIconByID` answers every `NODE_INFO` item, uncached ones too.
+- A mouseover read costs about 13 µs and 2.5 KB of garbage (#11).
+- `UnitPosition("player")` reads plainly outdoors (porting guide, 70374). Its first value grows
+  north and its second west (HereBeDragons-2.0: `x = left - width * mapX` on the second,
+  `y = top - height * mapY` on the first). The second probe round checks this against a gather.
+- Glass MiniMap resets the zoom when the player moves (owner): zoom changes are frequent.
+
+### Measuring a blip: `Scan.Centre(blips)`
+
+A new function beside `Scan.Sweep`, with the same guarantee: the soft cursor on inside a `pcall`,
+then `putBack` and the soft cursor off on every path; a secret read fails it (`API.Fail`). For each
+blip asked for, from its centroid `c` (inside the square: 5.5 < 12.5):
+1. `c` itself must read the name; then on each axis and each side, the point 24 units out must
+   **not** (a same-name neighbour within about 36 units fails the blip: "crowded");
+2. six halvings between `c` and that point find the edge to 0.4 units: 4 edges, 29 reads in all;
+3. both widths must be within 2 units of **one node's square**, `Scan.NODE = 25` (measured; the
+   bracket's 0.4 and the sampled 24-26 inside it); else "not one node". Two same-name nodes merged
+   into one cluster measure as their union, wider on at least one axis (Codex: two nodes at
+   (-7, -7) and (7, 7) pass a 10-40 range as a 39 x 39 "square" between them); a union narrower
+   than 27 is two dots within 2 units, where one icon between them is still on both.
+
+It sets `b.cx, b.cy` (the edges' midpoints) or `b.why`. `Scan.NODE` is Glass MiniMap's (a
+198-unit map); round 2 measures the stock map. If it differs there, nothing is recorded on it and
+the dots show, until the constant follows the map.
+
+### Records (`Icons.lua`, new, after `Alert.lua` in the TOC)
+
+A record is a node's name, kind, world position (north and west yards in `UnitPosition`'s frame,
+and its instance), its misses, its icon. Only the radar's sweep (`NR.Step`) touches records; the
+learner's sweeps don't, and `Alert`'s count-based detection is unchanged.
+
+After each successful radar sweep, in the same frame (the player hasn't moved):
+1. **Where:** `UnitPosition("player")` (four plain numbers, else clear everything), the view
+   radius and the map's half-width give `k`, yards per unit (#27's conversion). Not in an
+   instance (`IsInInstance`), and not with `rotateMinimap` on (Forever has no such option; any
+   other value: clear).
+2. **Match:** each record is projected to the map (`x = -(west - pw) / k`, `y = (north - pn) / k`)
+   and matched to a node blip (`Learn.Kind`) of the same name within 8 units (the centroid's 5.5
+   plus the measure's 2), one to one, nearest pairs first. A record's position never changes: a node
+   doesn't move.
+3. **New:** an unmatched blip fully inside the round map (its centroid plus 18 units within the
+   half-width) is measured (`Scan.Centre`), four at most per sweep, nearest the centre first;
+   measured, it becomes a record. Not measured (crowded, not one node): no record, Blizzard's dot
+   shows, and its name, world position and the time are remembered (a blip of that name within 8
+   units is the same try). **Which four:** blips never tried first, nearest the centre first; then
+   those tried at least 5 s ago, the longest ago first. So a node never tried is measured at the
+   next sweep whatever crowds nearer the centre (Codex: four crowded nodes starved a fifth, and a
+   5 s skip alone didn't help at a 5 s idle interval), and a crowded one costs its reads once per
+   5 s at most. A try not seen again for 30 s is forgotten; clears forget all.
+4. **Missed:** a record with no blip is hidden at once; two misses in a row in valid sweeps drop
+   it. A record whose icon has faded out past the rim (half-width minus half the icon) is dropped;
+   between the rim band and there it's still matched, so the icon fades rather than pops off.
+5. **Gathered:** the player's successful gather of a name (the cast `Alert.Gathered` already
+   hears) drops that name's records within 15 yd of the player, so a node of that name appearing
+   beside it gets measured, not matched to the gone one.
+
+Matching is by name and distance, not identity: a node gone and another of its name within 8
+units (14 yd at zoom 0) by the next sweep, gathered by someone else, keeps the old icon until the
+new one leaves (Codex). Accepted: a respawn that close that fast is rare, and the icon is still a
+node of that name, one dot-width off.
+
+**Order in `NR.Step`:** the icons reconcile after the sweep and **before** `Alert.Update` (so the
+sonar finds an alerted blip's record) and `Learn.Consider` (which can turn tracking off at once,
+clearing them).
+
+**Cleared** (records gone, icons hidden): the setting or the radar off; a loading screen,
+`PLAYER_ENTERING_WORLD`, a new instance (`UnitPosition`'s fourth value), death; tracking changed
+(`MINIMAP_UPDATE_TRACKING`, the learner's toggle among them); a position that reads nil or secret;
+an instance or rotation. A zone change in the same world isn't one: positions carry over.
+**Hidden, kept:** while no radar sweep succeeded for the idle interval plus 2 s (`db.interval`, up
+to 5 s in Options: a fixed 4 s blinked them off between idle sweeps, Codex), so the learner's
+pause, the Gamepad UI, the minimap hidden, every sweep failing; shown again after the next one
+reconciles.
+
+### Drawing
+
+- One unnamed child of `Minimap` per shown record, `EnableMouse(false)` (the player's own hover
+  tooltip keeps working: the round-2 probe checks it). Frames are reused from a free list, as the
+  sonar's are: records come and go all ride long, and a hidden frame is never freed. Never `Minimap:SetBlipTexture` or anything
+  that changes Blizzard's blips for everyone.
+- **Each frame while an icon shows** (an `OnUpdate` on our frame, unset when none show): one
+  `UnitPosition("player")`, `C_Minimap.GetViewRadius()` and `Minimap:GetWidth()` (numbers, no
+  table: not `C_Map.GetPlayerMapPosition`), then each icon's `SetPoint` from its record. A record
+  keeps its world position, made with the radius at its sweep; drawing uses the current one, so a
+  zoom, indoors/outdoors or a resize between sweeps is picked up the next frame. Any of them secret or
+  nil: hide all until the next sweep.
+- **The icon:** `C_Item.GetItemIconByID(NODE_INFO.item)`, its border trimmed (`SetTexCoord`
+  0.08-0.92); no item: the profession's tracking icon (Find Herbs or Find Minerals). 12 units
+  square by default (the dot is 8; the measure's 2), settled on round 2's screenshots.
+- **Dimmed** (`SetDesaturated`, alpha 0.6) when `Alert.Gatherable(name)` says no (#26's rule, so
+  the same as what alerts), re-read each sweep (Cultivation changes it).
+- **The rim:** full alpha to 10 units inside the half-width, fading to none at 6 (the icon's
+  half), hidden beyond. Round maps only (the stock map, Glass MiniMap); square skins with #4.
+- **Above and below:** the engine draws a small triangle under the dot of a node below the player,
+  inside the hit square (round 1). Round 2 shows whether a 12-unit icon leaves it visible. If it
+  hides it, `Scan` keeps the arrow's texture rows before `Scan.Plain` strips them (lower half =
+  below, measured; upper half = above, to confirm) and the icon gets a small chevron. Else nothing.
+- **The sonar** plays at an alerted blip's record when it has one (`Icons.At(blip)`), else at the
+  blip as today.
+
+### Cost
+
+Steady riding: no extra reads (records matched, nothing measured), but a crowded blip: up to 5
+reads (the centre and a far point or four) every 5 s. A new node: 29 reads once (0.4 ms, 72 KB of
+garbage). Entering a dense area: at most 4 a sweep, 116 reads on top of the grid's 196.
+Per frame: three API calls and one `SetPoint` per shown icon, no allocation. Round 2 measures it
+against today on the same route: reads per second, garbage per second, the worst sweep.
+
+### Tests
+
+The stubs' blips get centres the stub knows exactly, `UnitPosition`, and a player who moves. Offline:
+- `Scan.Centre`: a square measured to 0.4 units from any centroid offset up to 5.5; a same-name
+  neighbour (crowded); a quest area's non-square or too-big box; a secret read (fails, soft cursor
+  off); the far point beside a different name (still measured).
+- Records: match one to one with two of a name side by side; a new blip measured once, then
+  matched without reads (reads counted); misses hide then drop; the rim band; a gather drops the
+  near record; the tries' order (four crowded and an isolated fifth, over repeated sweeps at a
+  5 s idle interval: the fifth is measured at the second);
+  every clear and hide trigger, the hide limit with a 5 s idle interval; frames reused; the order
+  in `NR.Step`; the learner's sweeps never touch records; dots: no records, no `OnUpdate`, no extra
+  reads.
+- `Scan.Centre` also: two same-name nodes merged diagonally (Codex's (-7, -7), (7, 7)) and along
+  one axis, both refused.
+- Drawing: position per frame as the player moves (the stub's `UnitPosition`), a zoom between
+  sweeps, the rim fade, dimmed by the skill rule, the fallback icon, `EnableMouse(false)`.
+- The sonar at the record.
+
+### Probe round 2 (`/fp steps nr icons`, the feature on)
+
+Icons over the dots standing still, riding and turning (screenshots, notes read); right after a
+zoom, and across an indoors/outdoors change; hovering an icon (Blizzard's tooltip unchanged); standing on a node (the player arrow); a node
+above the player (the arrow's raw text); a gathered node's record against `UnitPosition` at the
+cast (the axes); the cost, icons off then on along the same route; the stock map (Glass MiniMap
+off): the square's size there. Defaults (the setting, the icon's size) are the owner's call after it.
+
+**Done** (docs/FOREVER-PROBE.md, "Item icons, second round"): the icons on their dots standing,
+zoomed, running and turning, on Glass MiniMap and the stock map; the hover tooltip unchanged; the
+12-unit icon over the player's arrow acceptable; Blizzard's arrow for a node above still shows
+(upper half, measured): no chevron; a gather put the record 2.6 yd from the player, so the axes
+hold; about 2% more reads and garbage per sweep. The stock map's square is 25 too.
+
+### Not in this issue
+
+The compass (#29) reuses the records later. Alternating tracking for dual gatherers, nodes beyond
+the tracking range (GatherMate2), replacing the count-based alert with records.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock

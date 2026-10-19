@@ -265,7 +265,7 @@ Our user waypoint on the nearest node (NodeRadar's `Scan.MapPosition`), then sup
 |---|---|
 | Setting it from addon code | `C_Map.CanSetUserWaypointOnMap(1411)` true, `C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(...))` **true**, `C_SuperTrack.SetSuperTrackedUserWaypoint(true)` took; no `ADDON_ACTION_*` |
 | The navigation frame | `C_Navigation.GetFrame()` present, `HasValidScreenPosition` true, `GetDistance` followed the player in (93, 66, 11 yd), `WasClampedToScreen` true when the node was behind |
-| **The on-screen marker** | **not drawn as Retail draws it**: the screenshots and the owner see the waypoint's pin on the minimap and no marker with a distance. Yet `SuperTrackedFrame` (Blizzard_QuestNavigation, loaded) **is shown** while the waypoint is super-tracked (`waypointframe`, 3 s after Set, the node 11 yd ahead). The first run's reads all said hidden whatever the state (a Lua 5.1 `and` dropped `IsShown`'s value, Codex on #39). That screenshot shows one small grey square, unexplained, right of the character. Forever removes the In-Game Navigation option (`Blizzard_SettingsDefinitions_Frame/Camelot/InterfaceOverrides.lua`: `AdjustInGameNavigationSettings` is empty) |
+| **The on-screen marker** | **not drawn as Retail draws it**: the screenshots and the owner see the waypoint's pin on the minimap and no marker with a distance. Yet `SuperTrackedFrame` (Blizzard_QuestNavigation, loaded) **is shown** while the waypoint is super-tracked (`waypointframe`, 3 s after Set, the node 11 yd ahead). The first run's reads all said hidden whatever the state (a Lua 5.1 `and` dropped `IsShown`'s value, Codex on #39). Nothing else on that screenshot (its one small square is Decursive's, the owner). Forever removes the In-Game Navigation option (`Blizzard_SettingsDefinitions_Frame/Camelot/InterfaceOverrides.lua`: `AdjustInGameNavigationSettings` is empty) |
 | Arrival, standing on the node | nothing visible, no `NAVIGATION_DESTINATION_REACHED` |
 | The events, ours | `USER_WAYPOINT_UPDATED` inside `SetUserWaypoint` (synchronous); `SUPER_TRACKING_CHANGED` **after** our setter returned, or not at all (it's a `UniqueEvent`) |
 | The player's own waypoint (Ctrl-click on the world map) over ours | it replaced ours, `USER_WAYPOINT_UPDATED` and `SUPER_TRACKING_CHANGED`, and it was **not** super-tracked |
@@ -278,3 +278,46 @@ Our user waypoint on the nearest node (NodeRadar's `Scan.MapPosition`), then sup
 
 So on Forever the user waypoint works but draws no marker on screen: #29's first choice is out
 unless Forever turns the navigation on.
+
+### Item icons, first round: `icons`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#28)
+
+Glass MiniMap on, its map 198 x 198 units at an effective scale of 0.64, zoom 0 (233 yd radius).
+
+| What | Measured |
+|---|---|
+| **A herb's hit area** (Earthroot x7, Peacebloom x1; every unit over ±30) | a **square of 25 x 25** sample points every time: 625 hits, the box full, all four corners. Never a disc, never another size. The 17 of #11 was a lower bound |
+| Its centre against the drawn dot | **within about 2 units**. Our crosses (4 x 1 units) were too small to see in game: the owner saw only the boxes (note at the first: "it's a blue square not a red cross"), and the boxes sat around the dots (yes, three times). Zoomed in, the screenshots show a red + inside each dot, drawn over it, on the dot's centre for some and 1 to 2 units right and below for others (a fixed piece of the dot's art would sit the same in every dot). The dot is about 8 units across, a third of the box |
+| Its centre against the sweep's grid | off by up to 5 units (+4 +2, +3 -5, +2 +3), about 12 yd at this zoom: the grid's centroid isn't a position to draw on |
+| Overlapping hit areas | another blip's line (a quest's objective area, "Legging It") under the same point didn't change the herb's square: hits are by name |
+| Two nodes of a name, a node at the rim | not met (one group every time, none at the rim) |
+| A second zoom | **not measured**: the zoom read 4 when the step saw it, and 0 again by Measure. Glass MiniMap resets the zoom when the player moves (owner), so a measure has to follow the zoom at once. #11 found a quest object's square the same at zoom 5 and 4 |
+| The cost | 3721 reads per blip; 2 blips in 97 ms, 3 in 154 ms: **about 13 µs a read** |
+| **A node below the player** (the owner stood on top of it) | `\|TInterface\Minimap\Minimap-PositionArrows:0:0:0:0:16:32:0:16:16:32\|tEarthroot`: a 16 x 32 file, its **lower half** (texels 0-16 by 16-32). The minimap drew a small white **downward** triangle under that node's dot, inside its hit area. (The procedure's step asked for a node above; it takes any arrow) |
+| A node above | not met (the step was done by hand); presumably the upper half (`0:16:0:16`), not seen |
+| `C_Item.GetItemIconByID` for the 40 NODE_INFO items (enUS) | **all 40 answered, the 37 uncached too**, the same file IDs as `C_Item.GetItemInfoInstant`'s icon (Mageroyal 785: 133436; Copper Ore 2770: 134566) |
+
+So a node's blip answers over a fixed 25-unit square around its dot: one edge per axis, found by
+halving inside the grid's 14-unit bracket, places it within about 2 units; and the icon needs no
+item cache. Whether the 1-2 units are the dot's own offset or our rounding waits for marks big
+enough to see (the icons themselves).
+
+### Item icons, second round: `iconcheck`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#28)
+
+NodeRadar's icons on (`Icons.lua` as committed), Glass MiniMap on, then the stock map for four steps.
+
+| What | Measured |
+|---|---|
+| Icons over the dots, standing still | yes (owner); the screenshot shows each node's item icon where its dot was, no dot beside one |
+| Hovering an icon | Blizzard's tooltip as without icons: `GameTooltip`'s first line read the node (`Earthroot`, with its arrow escape), the owner said yes. The icons are mouse-through |
+| Standing on a node | the 12-unit icon covers the player's arrow; **acceptable** at this size (owner) |
+| **A node above the player** | `\|TInterface\Minimap\Minimap-PositionArrows:0:0:0:0:16:32:0:16:0:16\|tSilverleaf`: the file's **upper half**, drawn as a small white **upward** triangle above the dot. With the icon on, it shows just above the icon's top edge: "barely but yes" (owner). No chevron of our own |
+| Right after a zoom (to 4), running, turning while running | the icons on their dots (owner, three yes); the screenshots agree |
+| Indoors | no nodes in view there, no icons: nothing to compare |
+| **A gather** (Earthroot) | its record **2.6 yd** from `UnitPosition` at the cast (north +2.5, west +0.6), within gathering reach. A flipped axis would put it tens of yards off: the first value is north and the second west, as HereBeDragons-2.0 has it |
+| **The cost**, the same loop for 60 s each | icons off: 105 sweeps, 30677 reads (292 a sweep), 67 MB allocated by all addons (640 KB a sweep), worst sweep 11.7 ms. Icons on: 86 sweeps, 25560 reads (297 a sweep), 56 MB (653 KB a sweep), worst sweep 9.0 ms. So **about 2% more per sweep**, within the noise of two rides (fewer sweeps the second time: a slower ride) |
+| **The stock map** (Glass MiniMap off) | the map 198 x 198 units at the same scale and zoom: Silverleaf x2 and Earthroot, each **a 25 x 25 square**. The probe's red crosses (the measured centre) are visible here, on each icon's centre; the icons on their dots there too (owner's yes; note "blue square not red cross" for the boxes, as in round 1) |
+| The setting put back | `icons` back to the player's default (nil) after the reloads |
+
+So the icons sit on their nodes standing, zooming, running and turning, cost nothing noticeable, and
+leave Blizzard's above and below arrows visible; the 25-unit square holds on the stock map, which is
+also 198 units here, so whether it scales with a map's size is still unknown.

@@ -189,6 +189,9 @@ function Methods.GetWidth(w) return w._width end
 function Methods.GetHeight(w) return w._height end
 function Methods.GetSize(w) return w._width, w._height end
 function Methods.GetEffectiveScale(w) return w._effScale or 1 end
+function Methods.GetTop(w) return w._top end              -- nil until a test lays it out
+function Methods.GetBottom(w) return w._bottom end
+function Methods.SetScrollChild(sf, child) sf._scrollChild = child end
 function Methods.SetAlpha(w, a) w._alpha = a end
 function Methods.GetAlpha(w) return w._alpha or 1 end
 function Methods.GetParent(w) return w._parent end
@@ -252,6 +255,8 @@ function Methods.GetObjectType(w) return w._type end
 function Methods.SetTexture(t, file) t._file = file; return true end
 function Methods.SetColorTexture(t, r, g, b, a) t._color = { r, g, b, a } end
 function Methods.SetVertexColor(t, r, g, b, a) t._vertex = { r, g, b, a } end
+function Methods.SetTexCoord(t, ...) t._texCoord = { ... } end
+function Methods.SetDesaturated(t, v) t._desaturated = v end
 -- Animations: groups record whether they play.
 function Methods.CreateAnimationGroup(w) return newWidget("AnimationGroup", w) end
 function Methods.CreateAnimation(ag, atype) return newWidget(atype or "Animation", ag) end
@@ -335,6 +340,15 @@ function GetUnitSpeed(unit) return WoW.speed, 7, 7, 4.72 end
 function UnitCastingInfo(unit) if unit == "player" and WoW.casting then return WoW.casting, WoW.casting end end
 function UnitChannelInfo(unit) return nil end
 function UnitIsDeadOrGhost(unit) return WoW.dead end
+-- The player's world position (#28): WoW.pos = { north, west, instance } in
+-- UnitPosition's frame, its first value north and its second west
+-- (HereBeDragons-2.0); WoW.posSecret makes it secret.
+WoW.pos = { 0, 0, 1 }
+function UnitPosition(unit)
+    if unit ~= "player" or not WoW.pos then return nil end
+    if WoW.posSecret then return WoW.Secret("north"), WoW.Secret("west"), 0, WoW.pos[3] end
+    return WoW.pos[1], WoW.pos[2], 0, WoW.pos[3]
+end
 function IsInGroup() return WoW.group end
 function GetLocale() return WoW.locale end
 
@@ -343,6 +357,7 @@ WoW.spellNames = { [2366] = "Herb Gathering", [2368] = "Herb Gathering", [2575] 
                    [2383] = "Find Herbs", [2580] = "Find Minerals" }
 WoW.cooling = {}
 C_Spell = {
+    GetSpellTexture = function(id) if WoW.spellNames[id] then return 136000 + id, 136000 + id end end,
     GetSpellInfo = function(id)
         local n = WoW.spellNames[id]
         if n then return { name = n, spellID = id, iconID = 1, originalIconID = 1, castTime = 0, minRange = 0, maxRange = 0 } end
@@ -436,6 +451,15 @@ C_SuperTrack = {
     IsSuperTrackingUserWaypoint = function() return WoW.superTracked == "waypoint" end,
     GetSuperTrackedQuestID = function() return WoW.superTracked == "quest" and 783 or nil end,
 }
+-- Items (#28): WoW.itemCached[id] says which are cached; GetItemIconByID
+-- answers only those (a model: what the client does is the probe's question),
+-- GetItemInfoInstant every one.
+WoW.itemCached = {}
+C_Item = {
+    IsItemDataCachedByID = function(id) return WoW.itemCached[id] == true end,
+    GetItemIconByID = function(id) if WoW.itemCached[id] then return 130000 + id end end,
+    GetItemInfoInstant = function(id) return id, "Trade Goods", "Herb", "", 130000 + id, 7, 9 end,
+}
 C_Navigation = {
     GetFrame = function() return WoW.superTracked == "waypoint" and WoW.navFrame or nil end,
     HasValidScreenPosition = function() return WoW.superTracked == "waypoint" end,
@@ -509,9 +533,11 @@ function Methods.GetRect(w)
     if r then return r[1], r[2], r[3], r[4] end
 end
 function Methods.GetZoom(w) return w._zoom or 0 end
-function Methods.IsMouseOver(w) return w == Minimap and WoW.cursorOnMap == true end
+-- WoW.mouseOver: another frame under the cursor (#28's icons).
+function Methods.IsMouseOver(w) return (w == Minimap and WoW.cursorOnMap == true) or (w == WoW.mouseOver) end
 function Methods.UpdateMouseoverAtPoint(w, x, y)
     assert(type(x) == "number" and type(y) == "number", "UpdateMouseoverAtPoint takes two numbers")
+    WoW.reads = WoW.reads + 1                      -- every point the mouseover is moved to
     if WoW.mouseoverStuck then return end
     WoW.mouseoverPoint = { x, y }
 end
@@ -532,6 +558,7 @@ function Methods.GetPingPosition(w)
     return p[1], p[2]
 end
 
+WoW.reads = 0
 WoW.cursor = { 0, 0 }
 WoW.cursorOnMap = false
 WoW.blips = {}
@@ -573,13 +600,17 @@ local function kindOn(kind)
 end
 
 -- A blip's hit area: a square, 17 units wide (a herb's narrowest, #11); a
--- blip's own `half` makes it larger (a quest's objective area).
+-- blip's own `half` makes it larger (a quest's objective area), `disc` round.
 WoW.BLIP_HALF = 8.5
+local function inside(b, dx, dy)
+    local half, x, y = b.half or WoW.BLIP_HALF, b[2] - dx, b[3] - dy
+    if b.disc then return x * x + y * y <= half * half end
+    return math.abs(x) <= half and math.abs(y) <= half
+end
 local function blipsAt(dx, dy)
     local lines = {}
     for _, b in ipairs(WoW.blips) do
-        local half = b.half or WoW.BLIP_HALF
-        if math.abs(b[2] - dx) <= half and math.abs(b[3] - dy) <= half
+        if inside(b, dx, dy)
             and (not b.kind or kindOn(b.kind)) then
             local c = b.colour or { 1, 1, 1 }
             local text = WoW.secretNames and WoW.Secret("name") or b.text or b[1]

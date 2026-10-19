@@ -11,12 +11,21 @@ local API = NR.API
 local Scan = {}
 NR.Scan = Scan
 
--- The map's own units between samples. A node's blip is a square at least 17
--- units wide (herbs read 3 x 3 at a step of 8; a quest object measured 15 x 15,
--- at every zoom: docs/FOREVER-PROBE.md, "Memory"), so 14 never misses one, with
--- room for a smaller icon. Each read is a new table (2.5 KB), even empty: 225
--- reads a sweep, not 625 at 8 (#11).
+-- The map's own units between samples. A node's blip is a square 25 units wide
+-- (docs/FOREVER-PROBE.md, "Item icons, first round"; a quest object's is 15, at
+-- every zoom: "Memory"), so 14 never misses one, with room for a smaller one.
+-- Each read is a new table (2.5 KB), even empty: 196 reads a sweep, not 625 at
+-- 8 (#11).
 Scan.STEP = 14
+
+-- One node's hit area (#28): a square this wide around its dot, eight of eight
+-- on Glass MiniMap's 198-unit map. Scan.Centre measures within NODE_SLACK of it.
+Scan.NODE = 25
+Scan.NODE_SLACK = 2
+-- From a blip's centroid (at most 5.5 off its node's centre: one or two samples
+-- of the grid per axis), a point this far out is past the node's edge.
+Scan.FAR = 24
+Scan.HALVINGS = 6      -- 24 / 64: an edge to 0.4 units
 
 -- The map's rect in its own units and its effective scale; nil and why when
 -- any part is missing or secret.
@@ -242,6 +251,69 @@ function Scan.Sweep(count)
         list[#list + 1] = b
     end
     return { byName = byName, blips = list, geometry = g, where = Scan.Where(), ms = debugprofilestop() - t0 }
+end
+
+-- Whether a point (map units from its centre) reads that name.
+local function reads(g, x, y, name)
+    Minimap:UpdateMouseoverAtPoint((g.l + g.w / 2 + x) * g.es, (g.b + g.h / 2 + y) * g.es)
+    local found = names()
+    if found then
+        for _, n in ipairs(found) do if n == name then return true end end
+    end
+    return false
+end
+
+-- How far from the blip, along (dx, dy), its name stops; nil when the far
+-- point reads it too (another of its name there).
+local function edge(g, b, dx, dy)
+    if reads(g, b.x + dx * Scan.FAR, b.y + dy * Scan.FAR, b.name) then return nil end
+    local lo, hi = 0, Scan.FAR
+    for _ = 1, Scan.HALVINGS do
+        local mid = (lo + hi) / 2
+        if reads(g, b.x + dx * mid, b.y + dy * mid, b.name) then lo = mid else hi = mid end
+    end
+    return (lo + hi) / 2
+end
+
+-- A blip's node centre, or nil and why. Both widths must be one node's square:
+-- two of a name merged into one cluster measure as their union, wider (Codex,
+-- #28: a pair at (-7, -7) and (7, 7) read 39 x 39 between them).
+local function centre(g, b)
+    if not reads(g, b.x, b.y, b.name) then return nil, "its centroid reads nothing" end
+    local r = edge(g, b, 1, 0)
+    local l = r and edge(g, b, -1, 0)
+    local u = l and edge(g, b, 0, 1)
+    local d = u and edge(g, b, 0, -1)
+    if not d then return nil, "crowded" end
+    if math.abs(r + l - Scan.NODE) > Scan.NODE_SLACK or math.abs(u + d - Scan.NODE) > Scan.NODE_SLACK then
+        return nil, "not one node"
+    end
+    return b.x + (r - l) / 2, b.y + (u - d) / 2
+end
+
+-- Measures each blip's centre from this frame's sweep (#28): sets b.cx, b.cy
+-- or b.why. About 29 reads a blip. True, or nil and why; the soft cursor is
+-- turned off on every path, as after a sweep.
+function Scan.Centre(blips)
+    local g, why = Scan.Geometry()
+    if not g then return nil, why end
+    local okOn, errOn = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
+    local ok, err = okOn, errOn
+    if okOn then
+        ok, err = pcall(function()
+            for _, b in ipairs(blips) do
+                local x, y = centre(g, b)
+                if x then b.cx, b.cy = x, y else b.why = y end
+            end
+        end)
+    end
+    putBack(g)
+    pcall(Minimap.SetUsingSoftCursor, Minimap, false)
+    if not ok then
+        API.Fail("centre", err)
+        return nil, "measuring failed: " .. tostring(err)
+    end
+    return true
 end
 
 -- How many blips of a name a sweep saw.

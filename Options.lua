@@ -12,6 +12,7 @@ local Options = {}
 NR.Options = Options
 
 local RADIO_ART = "Interface\\Buttons\\UI-RadioButton"   -- 4 cells: normal, checked, highlight, pushed
+Options.HEIGHT = 1000  -- the scroll child's height until fit() reads the real one
 
 local panel = CreateFrame("Frame")
 panel.name = "NodeRadar"
@@ -150,52 +151,75 @@ local function note(parent, anchor, text)
     return fs
 end
 
+-- The page grew past the Options window (#28, Codex on PR #40): everything
+-- sits on a scroll child, GlassPanel's recipe (UIPanelScrollFrameTemplate
+-- exists on Forever: porting guide), its height fitted to what it holds.
+local page, last
+local function fit()
+    local top, bottom = API.Num(page:GetTop()), last and API.Num(last:GetBottom())
+    if top and bottom and top > bottom then page:SetHeight(top - bottom + 16) end
+end
+
 local function build()
-    local title = label(panel, "NodeRadar", "GameFontNormalHuge")
-    title:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
-    local version = label(panel, "", "GameFontDisableSmall")
+    local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -4)
+    scroll:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -26, 4)
+    page = CreateFrame("Frame", nil, scroll)
+    page:SetSize(620, Options.HEIGHT)
+    scroll:SetScrollChild(page)
+    Options._test.scroll, Options._test.page = scroll, page
+    local title = label(page, "NodeRadar", "GameFontNormalHuge")
+    title:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -16)
+    local version = label(page, "", "GameFontDisableSmall")
     version:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     refreshers[#refreshers + 1] = function()
         version:SetText("Version " .. NR.VersionText() .. " for World of Warcraft: Forever, by Spotnick")
     end
-    local on = checkbox(panel, version, "Radar on (with Find Herbs or Find Minerals on)", "enabled")
+    local on = checkbox(page, version, "Radar on (with Find Herbs or Find Minerals on)", "enabled")
     on:SetPoint("TOPLEFT", version, "BOTTOMLEFT", 0, -12)
 
-    local looks = heading(panel, on, "How often it looks")
-    local still = radios(panel, looks, "Standing still, every", "interval",
+    local looks = heading(page, on, "How often it looks")
+    local still = radios(page, looks, "Standing still, every", "interval",
         { { 1, "1 s" }, { 2, "2 s" }, { 5, "5 s" } }, "s")
-    local moving = radios(panel, still, "Moving, about every", "yards",
+    local moving = radios(page, still, "Moving, about every", "yards",
         { { 2, "2 yards" }, { 4, "4 yards" }, { 8, "8 yards" } }, "yards")
-    local cost = note(panel, moving, "Moving, never more often than every half second, nor less often than "
+    local cost = note(page, moving, "Moving, never more often than every half second, nor less often than "
         .. "standing still. More often finds a node a moment sooner, and makes more memory for the game to clean "
         .. "up: every look reads the whole minimap.")
 
-    local alert = heading(panel, cost, "The alert")
-    local skill = checkbox(panel, alert, "Only nodes I can gather (my Herbalism or Mining skill)", "skillOnly")
-    local sound = checkbox(panel, skill, "A sound", "sound")
-    local which = dropdown(panel, sound, "Which sound (it plays when chosen)", "soundKind",
+    local alert = heading(page, cost, "The alert")
+    local skill = checkbox(page, alert, "Only nodes I can gather (my Herbalism or Mining skill)", "skillOnly")
+    local sound = checkbox(page, skill, "A sound", "sound")
+    local which = dropdown(page, sound, "Which sound (it plays when chosen)", "soundKind",
         { { "ping", "The minimap ping" }, { "sonarping", "Sonar ping" }, { "radar", "Radar ping" },
           { "sonar", "Sonar" }, { "radarblip", "Radar blip" }, { "deepsea", "Deep-sea sonar" },
           { "bell", "Bell chime" }, { "notify", "Notification" }, { "hud", "Sci-fi HUD ping" } },
         function() NR.Alert.PlaySound() end)
-    local sonar = checkbox(panel, which, "The sonar on the node (green for herbs, gold for ore)", "ring")
-    local chat = checkbox(panel, sonar, "A line in chat", "chat")
-    local ping = checkbox(panel, chat, "Blizzard's ping on the node too (solo only: in a group it shows on everyone's map)", "ping")
-    local cd = radios(panel, ping, "Between alerts, at least", "cooldown",
+    local sonar = checkbox(page, which, "The sonar on the node (green for herbs, gold for ore)", "ring")
+    local chat = checkbox(page, sonar, "A line in chat", "chat")
+    local ping = checkbox(page, chat, "Blizzard's ping on the node too (solo only: in a group it shows on everyone's map)", "ping")
+    local cd = radios(page, ping, "Between alerts, at least", "cooldown",
         { { 3, "3 s" }, { 5, "5 s" }, { 10, "10 s" } }, "s")
-    local test = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local test = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
     test:SetSize(120, 22)
     test:SetText("Test the alert")
     test:SetPoint("TOPLEFT", cd, "BOTTOMLEFT", 0, -12)
     test:SetScript("OnClick", function() NR.Alert.Test() end)
     Options._test.test = test
 
-    local learning = heading(panel, test, "Learning")
-    local learn = checkbox(panel, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
-    local why = note(panel, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
+    local map = heading(page, test, "The minimap")
+    local icons = radios(page, map, "Nodes on the minimap", "icons",
+        { { false, "Blizzard's dots" }, { true, "Each node's item icon" } }, "")
+    local iconsWhy = note(page, icons, "An icon covers Blizzard's dot once NodeRadar has measured where the node "
+        .. "is; near the map's edge the dot shows. Dimmed: your skill can't gather it yet.")
+
+    local learning = heading(page, iconsWhy, "Learning")
+    local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
+    local why = note(page, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
         .. "it's off by default; NodeRadar also learns every node you gather.")
-    local hint = note(panel, why, "Type /nr help for every command.")
+    local hint = note(page, why, "Type /nr help for every command.")
     hint:SetPoint("TOPLEFT", why, "BOTTOMLEFT", 0, -16)
+    last = hint
 end
 
 panel:SetScript("OnShow", function()
@@ -204,6 +228,8 @@ panel:SetScript("OnShow", function()
         build()
     end
     for _, refresh in ipairs(refreshers) do refresh() end
+    fit()
+    C_Timer.After(0, fit)                              -- once the layout has resolved
 end)
 
 -- Called once at PLAYER_LOGIN by NodeRadar.lua.

@@ -26,6 +26,22 @@ eq(WoW.openedCategory, 1, "/nr options opens the page")
 -- First show: built, and every control reads the settings.
 O.panel:Show()
 check(NR.Options.built, "built on the first show")
+-- It scrolls (#41: the owner saw it overflow the Options window).
+check(O.scroll and O.scroll._type == "ScrollFrame" and O.scroll._template == "UIPanelScrollFrameTemplate",
+    "the page is a scroll frame")
+check(O.scroll._parent == O.panel and O.scroll._scrollChild == O.page, "...on the panel, the controls its child")
+local loose = 0
+for _, w in ipairs(WoW.frames) do
+    if w._parent == O.panel and w ~= O.scroll then loose = loose + 1 end
+end
+eq(loose, 0, "nothing else sits on the panel itself")
+eq(O.page._height, NR.Options.HEIGHT, "...its height a guess until the layout reads")
+O.page._top = 900                                          -- laid out: the help line's bottom 100
+for _, child in ipairs({ O.page:GetRegions() }) do
+    if type(child._text) == "string" and child._text:find("/nr help", 1, true) then child._bottom = 100 end
+end
+O.panel:Hide(); O.panel:Show()
+eq(O.page._height, 816, "...then fitted: the help line and 16 below")
 local function checked(key)
     for _, rb in ipairs(O.radios[key]) do if rb:GetChecked() then return rb.value end end
 end
@@ -50,6 +66,18 @@ NR.Alert.PlaySound()
 eq(WoW.sounds[#WoW.sounds][1], 3175, "...and it's what plays")
 db.soundKind = nil
 eq(checked("cooldown"), 5, "5 s between alerts checked")
+-- The minimap's nodes (#28): Blizzard's dots by default, item icons by choice, /nr icons too.
+eq(checked("icons"), false, "Blizzard's dots checked")
+WoW.click(O.radios.icons[2])
+eq(rawget(db, "icons"), true, "item icons chosen")
+WoW.click(O.radios.icons[1])
+eq(rawget(db, "icons"), false, "...and back to the dots")
+SlashCmdList.NODERADAR("icons")
+eq(db.icons, true, "/nr icons: on")
+O.panel:Hide(); O.panel:Show()
+eq(checked("icons"), true, "...shown on the page")
+SlashCmdList.NODERADAR("icons")
+eq(db.icons, false, "/nr icons again: off")
 
 -- A click saves the choice, raw (only what the player sets is saved).
 WoW.click(O.radios.interval[3])
@@ -68,7 +96,7 @@ O.panel:Show()
 eq(checked("cooldown"), nil, "/nr cd 7: no cooldown choice checked")
 eq(db.cooldown, 7, "...and 7 kept by the refresh")
 local named = false
-for _, child in ipairs({ O.panel:GetRegions() }) do
+for _, child in ipairs({ O.page:GetRegions() }) do
     if type(child._text) == "string" and child._text:find("now 7 s", 1, true) then named = true end
 end
 check(named, "...named after its title (now 7 s)")
@@ -144,7 +172,7 @@ SlashCmdList.NODERADAR("sound")
 -- The checkboxes: the radar's mirrors /nr.
 local on
 for _, w in ipairs(WoW.frames) do
-    if w._parent == O.panel and w._type == "CheckButton" and w._template == "UICheckButtonTemplate" then
+    if w._parent == O.page and w._type == "CheckButton" and w._template == "UICheckButtonTemplate" then
         on = on or w
     end
 end
