@@ -269,7 +269,7 @@ local function help()
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
     API.Say("/nr iconstyle auto | plain | glass | bronze | yellow: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
-    API.Say("/nr compass: experimental, a ring under your character pointing at the nearest node (off by default). "
+    API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
         .. "/nr compasssize small | medium | large")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")

@@ -557,6 +557,14 @@ NR.db.compassSize = nil
 NR.Options._test.panel:Show()
 local cb = NR.Options._test.checks.compass
 check(cb and cb:GetChecked(), "Options: the experimental checkbox reads on")
+-- Its own heading, saying experimental, right above the checkbox; the label says what it does.
+local head = cb._points[1][2]
+eq(head and head._text, "The compass (experimental)", "...under its own heading, labelled experimental")
+local cbLabel
+for _, r in ipairs({ NR.Options._test.page:GetRegions() }) do
+    if r._points and r._points[1] and r._points[1][1] == "LEFT" and r._points[1][2] == cb then cbLabel = r end
+end
+check(cbLabel and cbLabel._text:find("^Show the compass"), "...its label: " .. tostring(cbLabel and cbLabel._text))
 WoW.click(cb)
 eq(NR.db.compass, false, "...a click turns it off")
 
