@@ -13,3 +13,6 @@ luac.out
 
 # The CurseForge description: kept beside README.md, pasted into CurseForge by hand.
 README.curseforge.md
+
+# Private notes, never committed.
+.local/

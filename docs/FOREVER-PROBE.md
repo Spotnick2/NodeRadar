@@ -579,24 +579,24 @@ First by hand ("alt-drag works in game"), then the round:
 | Locked, Alt held | no grip |
 | `/nr compass reset` | works (the owner, tried before the round; the round's step was passed before the command). The put-back, the same `place()` with the spot cleared, brought it home too: `anchored CENTER 0, -160` |
 
-### The navigation frame as an anchor: `marker`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (NodeSight)
+### The navigation frame as an anchor: `marker`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#61)
 
-NodeSight 1.4.0 (another Forever addon, Krelock) draws sparkles on far nodes: it puts the user
-waypoint on one, sets `showInGameNavigation` to 1 and anchors its own art to
-`C_Navigation.GetFrame()`, hiding Blizzard's marker (`SuperTrackedFrame.UpdateAlpha` hooked to
-alpha 0). Our gold square anchored to the same frame, our waypoint on the nearest node:
+The technique tested: put the user waypoint on a node, set `showInGameNavigation` to 1, and anchor
+our own art to `C_Navigation.GetFrame()` (Blizzard's marker could be hidden by hooking
+`SuperTrackedFrame.UpdateAlpha` to alpha 0). Our gold square anchored to that frame, our waypoint
+on the nearest node:
 
 | What | Measured |
 |---|---|
-| `showInGameNavigation` | already **1** when the round started (not 0: something had set it before, NodeSight or the waypoint round's `/console`); `C_CVar.SetCVar` -> true; put back to 1 |
+| `showInGameNavigation` | already **1** when the round started (not 0: something had set it before, another addon or the waypoint round's `/console`); `C_CVar.SetCVar` -> true; put back to 1 |
 | Blizzard's own drawing | with the option at 1, **Blizzard's distance text ("22 yds") under our square**, no marker icon in the screenshot ("i see blizzard's distance") |
-| **Our square on the frame** | out in the world at the node's spot, 22 yd ahead (the compass read 20 yd to the same Silverleaf); "close, not right on it", "very close": the pin has no height and the spot is projected at the player's (NodeSight's own comment), so on uneven ground it's off by the slope |
+| **Our square on the frame** | out in the world at the node's spot, 22 yd ahead (the compass read 20 yd to the same Silverleaf); "close, not right on it", "very close": the pin has no height and the spot is projected at the player's, so on uneven ground it's off by the slope |
 | **Turning** | the square moved across the screen with the node (from -99 to +263 units) and stayed on it (yes) |
 | Behind | `WasClampedToScreen` true, the square held at the screen's edge (1054, -97) (yes) |
 | 102 yd away | clamped at the screen's bottom (-53, -587): the node was off screen; "doesn't look like it" (no) |
 | Setting it | `SetUserWaypoint` -> true, super-tracked; the first read's distance (644 yd) was stale, the navigation updating a moment later |
 
 So a marker on a far node is possible on Forever: our own art on `C_Navigation.GetFrame()`, at the
-player's height, following the camera, clamped at the edge. Its price, as NodeSight pays it: the
+player's height, following the camera, clamped at the edge. Its price: the
 player's map pin and tracked quest are borrowed (NodeRadar has kept off them so far), the option
 must be 1, and Blizzard's distance text shows unless hidden.
