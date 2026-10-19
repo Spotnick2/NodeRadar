@@ -4250,6 +4250,59 @@ local function iconsDump()
     end
 end
 Probe:Command("icons", function() iconsDump() end, "NodeRadar's icons against a fresh sweep")
+
+-- Does the minimap's tooltip list a name twice where two dots of it overlap
+-- (#67)? Every point of a grid over the whole map, `step` units apart (4 by
+-- default): each name's count in one read. Logs the most each name reached,
+-- and the points where a name was read more than once.
+local function twice(step)
+    local n = nr()
+    if not (n and n.Scan) then say("twice: NodeRadar isn't loaded"); return end
+    local g = n.Scan.Geometry()
+    if not g then say("twice: the map's geometry is unreadable"); return end
+    step = tonumber(step) or 4
+    local most, where, reads = {}, {}, 0
+    local okOn = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
+    local ok, err = pcall(function()
+        for x = step / 2, g.w, step do
+            for y = step / 2, g.h, step do
+                Minimap:UpdateMouseoverAtPoint((g.l + x) * g.es, (g.b + y) * g.es)
+                reads = reads + 1
+                local data = C_TooltipInfo.GetMinimapMouseover()
+                local count = {}
+                for _, line in ipairs(type(data) == "table" and type(data.lines) == "table" and data.lines or {}) do
+                    local t = line.leftText
+                    if type(t) == "string" and not secret(t) then
+                        for row in t:gmatch("[^\n]+") do
+                            local name = n.Scan.Plain(row)
+                            if name ~= "" then count[name] = (count[name] or 0) + 1 end
+                        end
+                    end
+                end
+                for name, c in pairs(count) do
+                    most[name] = math.max(most[name] or 0, c)
+                    if c > 1 then
+                        where[name] = where[name] or {}
+                        local list = where[name]
+                        if #list < 12 then
+                            list[#list + 1] = ("(%.0f, %.0f)x%d"):format(x - g.w / 2, y - g.h / 2, c)
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    pcall(Minimap.UpdateMouseoverAtPoint, Minimap, (g.l - 3 * g.w) * g.es, (g.b - 3 * g.h) * g.es)
+    if okOn then pcall(Minimap.SetUsingSoftCursor, Minimap, false) end
+    if not ok then say("twice: failed: " .. str(err)); return end
+    local parts = {}
+    for name, c in pairs(most) do
+        parts[#parts + 1] = ("%s at most x%d%s"):format(name, c, where[name] and (": " .. table.concat(where[name], " ")) or "")
+    end
+    table.sort(parts)
+    say(("twice (%d reads, step %s): %s"):format(reads, str(step), #parts > 0 and table.concat(parts, "; ") or "nothing read"))
+end
+Probe:Command("twice", function(args) twice(args) end, "[step]: a name read more than once at a point (overlapping dots)")
 end)()
 
 ;(function()
