@@ -433,59 +433,72 @@ standing still, the pair is one blip from the start and can't be measured ("crow
 two dots. Nothing on 70450 hides only the gathering dots (no blip-texture API; `Minimap:SetIconScale`
 resizes every minimap dot, quests and party included, and minimap skins may set it: not used). So
 every node's dot gets an icon over it. Other addons doing the same split merged groups (a fine grid
-and the outline's circles) and place an icon per node; none hides the dots.
+and the outline) and place an icon per node; none hides the dots.
 
-**1. A merged pair is measured as a pair** (`Scan.Centre`):
-- **When:** a blip is measured as now (single first). If that fails and its cells (`b.points`)
-  spread more than `Scan.NODE` (25) units along their wider axis, and no more than `2 * NODE + 7`
-  (two squares and the widest gap refining at 7 can miss), it's tried as two nodes along that
-  axis. Wider: three or more, not tried (provisional icons, below).
-- **How**, along x (y the same, turned): the cell with the least x (the median y among those) is
-  inside the left node, the one with the most x inside the right. From the left cell, `edge` walks
-  left to the union's left edge `xL`: the left node's centre x is `xL + NODE / 2`. Its y: at
-  `x = xL + 3` (inside the left node only, the right one starting further right), the walk up and
-  down finds its top and bottom, which must span `NODE` within `NODE_SLACK` (else that column is
-  two nodes: fail). The right node the same from the right cell (`xR - NODE / 2`, its column at
-  `xR - 3`). The two centres must be at least `NODE / 2` apart along the axis (else it was one node
-  merged with something else: fail). About 50 reads, once per pair: the pair walks never step into
-  the gap between the two, so a gap narrower than a step doesn't matter.
-- **The result:** `b.pair = { { x, y }, { x, y } }` (map units, from the centre); a centre within
-  `Icons.MATCH` of an existing record of the name is that record (no duplicate). Failing: `b.why`
-  as now ("pair: ..." with what was read).
-- **Whole:** a pair is measured only when its cells' extent plus a node's half and the margin fits
-  inside the round map (the single blip's `INSIDE` rule, on the extent rather than the centroid).
+**The principle: explain every cell.** A blip's sampled cells (`b.points`, #66) are where its name
+reads. A cell is **explained** when it lies inside a known node's square of its name, with a
+tolerance: `|cell - centre| <= Scan.NODE / 2 + Icons.EXPLAIN_TOL` (1.5 units: the measure's 0.25 and
+the projection's drift, Codex's boundary column) on both axes, the cell in the map's coordinates
+minus half its size, as the record's from the centre. One predicate serves the covering (#66, now
+"fully explained"), the measuring and the provisional icons. Matching one to one stays first.
 
-**2. Fully covered, not partly** (amends #66's rule): a blip covering records isn't measured only when
-**every** one of its cells lies in a same-name record's square. One with cells outside every covered
-square holds a node with no record: it's measured (single, then as a pair), and only the new
-centres become records. So a pair with one icon already gets its second.
+**1. A blip with unexplained cells is measured, a node at a time** (`Scan.Centre`, Icons' budget of
+four blips a sweep and the 5 s retry kept):
+- **Peel from the outside.** Of the unexplained cells, take the outermost one along each of the
+  four directions in turn (least x, most x, least y, most y; the median of the others' coordinate
+  among ties). That cell lies in a node whose edge on that side is the union's there. From it,
+  `edge` walks outward to that edge (`xL`), and 3 units inside it (`xL + 3`) the walk across finds
+  the node's other two edges, which must span `Scan.NODE` within `NODE_SLACK` (else that row or
+  column crosses two nodes: this direction fails, the next is tried). The centre: `xL + NODE / 2`
+  on the walked axis, the middle of the two edges on the other. The new square must contain its
+  starting cell.
+- **Then the rest:** the new node explains its cells; with unexplained cells left, peel again, up to
+  `Icons.PEEL = 4` nodes a blip. A centre within `Icons.MATCH` of a record of the name is that
+  record (no duplicate). The single measure from the centroid stays the first try for a lone blip
+  (cheap, exact), and its result is accepted only if it leaves no unexplained cells; else peeling
+  goes on from what it left (Codex's lopsided diagonal: the single measure finds the upper node,
+  peeling the lower).
+- **Cost:** about 25 reads a node peeled (an outward walk, a read, two walks across), so a pair about
+  50, once; a blip is retried every 5 s at most while cells stay unexplained.
+- **What it can't tell** (stated, Codex): a node whose square lies wholly inside the union of others'
+  (three in a row, 12 apart) leaves no cell unexplained and gets no icon; a same-name area that
+  isn't a node, shaped like squares, would be peeled as nodes.
 
-**3. Provisional icons for whatever stays unmeasured:** after the sweep's measuring, each filtered
-node blip that is neither matched nor fully covered gets **provisional** icons from its cells not in
-any record's square: one at their centroid, or, when they spread more than `NODE` along their wider
-axis, two (the centroids of the halves split at the midpoint of that axis). Provisional icons:
-- are drawn like records (the look, the size, the dim from `Alert.Wanted`, the rim fade, the height
-  from the blip), following the player between sweeps (their world spot fixed at the sweep);
-- are **rebuilt every sweep** (never matched, never covering, never kept), and vanish when the blip
-  is measured (its exact icon takes over) or gone;
-- are not records: `Icons.Records()` (the compass) and the alert don't see them;
-- skip what the filters skip (a lingering gathered dot, #47's skipped names with Blizzard's dot);
-- cover the rim band too (a blip cut by the edge, never measured, gets one near its visible part).
-Their spot is the sweep's (about 5 units off at worst), so an icon may not hide its dot entirely
-until the measure snaps it: the cases left are the rim, clusters of three or more, and the moment
-before a measure.
+**2. Provisional icons for cells still unexplained** after the sweep's measuring, whatever matched or
+covered the rest of the blip (Codex): the unexplained cells, grouped (8-neighbour, at the sweep's
+step), each group gets one provisional icon at its centroid, or two when it spreads more than
+`NODE` along its wider axis (the halves' centroids). No error bound for those (a group of three
+can put one between two dots: Codex): an approximation until measured. Provisional icons:
+- are drawn like records (the look, the size, the dim from `Alert.Wanted`, the height from the
+  blip), their world spot fixed at the sweep, following the player between sweeps;
+- are **rebuilt at every sweep**: their frames go back to the pool first, then new ones are taken,
+  so frames plateau; only their spot, name, icon, dim and height are kept, never the cells;
+- take part in everything a record's frame does: `Icons.Show`, `draw`, `Restyle`, `Refilter`,
+  `Release`, `Clear` (the learner's same-frame clear included), hidden with the icons off;
+- are not records: `Icons.Records()` (the compass) and the alert never see them;
+- skip what the filters skip (a lingering gathered dot, #47's skipped names with Blizzard's dot).
 
-**Tests:** a pair 26 and 30 apart on x, on y and diagonal (the squares overlapping on one axis):
-measured as two exact records from a merged blip, from a standing start (no prior records); a
-pair with one record: the other measured, no duplicate; a column crossing both (overlapping
-diagonally): fail, provisional; three in a row (too wide): not tried, provisional; a fully
-covered blip not measured, a partly covered one measured; provisional icons: one per lone
-unmeasured blip, two for a wide one, none for a measured or fully covered blip, none for filtered
-ones, not in `Icons.Records()`, gone at the next sweep when measured; the rim band; the reads
-(about 50 for a pair, once).
+**3. The rim, an explicit exception:** within `half - extent` of the map's edge (the band where an
+icon fades out, about 11 units with the medium bronze ring) a dot can still show: a record fades
+there, and a provisional icon at a clipped blip's centroid would be faded out too (Codex). Icons
+aren't drawn past the round map's edge (they'd hang over the frame), so the outermost band keeps
+Blizzard's dots, as the README already says.
 
-**Look round** (`/fp steps nr nodots`): at a pair after a reload, standing still: two icons at once;
-around the rim: provisional icons over the dots; `/fp nr icons` lists provisional ones.
+**Tests** (25-unit squares, `WoW.BLIP_HALF = 12.5`; `test_scan`'s separations use 17): pairs merged
+on x, on y and on the diagonal, measured from a standing start into two exact records; Codex's
+lopsided diagonal ((-19, -16) and (-6, 11)): both; a pair with one record already: the other
+peeled, no duplicate; the boundary column ((-10, -5) and (16, -5)): explained, no retry past RETRY,
+no stray provisional; a compact triple ((0, 0), (13, 13), (26, 26)): three; three in a row 12
+apart: the middle one not found (the stated limit); a lone unmeasured blip: one provisional, a
+wide one: two, a matched partial blip: provisional for its unexplained cells; provisional frames
+reused (the frame count plateaus over sweeps), gone when measured, none for filtered blips, not
+in `Icons.Records()`, cleared by `Icons.Clear` and the learner, hidden with the icons off and the
+compass on; the rim: a clipped blip's provisional faded, as records (the exception); a secret read
+or a failure inside a peel: no record, the soft cursor off; the reads (about 25 a node).
+
+**Look round** (`/fp steps nr nodots`): at the owner's pair after a reload, standing still: two icons
+at once; elsewhere, moving: no dot without an icon but in the outer band; `/fp nr icons` lists the
+provisional ones and the peels.
 
 ## Icon styles and sizes (#41)
 
