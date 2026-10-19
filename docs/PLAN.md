@@ -425,6 +425,68 @@ hold; about 2% more reads and garbage per sweep. The stock map's square is 25 to
 The compass (#29) reuses the records later. Alternating tracking for dual gatherers, nodes beyond
 the tracking range (GatherMate2), replacing the count-based alert with records.
 
+### Never a yellow dot (#67)
+
+The owner (2026-10-19), after #66: "reloading and not moving that is. We really want to never see
+yellow dots." #66 keeps icons measured before two same-name nodes merged in a sweep; after a reload,
+standing still, the pair is one blip from the start and can't be measured ("crowded"), so it stays
+two dots. Nothing on 70450 hides only the gathering dots (no blip-texture API; `Minimap:SetIconScale`
+resizes every minimap dot, quests and party included, and minimap skins may set it: not used). So
+every node's dot gets an icon over it. Other addons doing the same split merged groups (a fine grid
+and the outline's circles) and place an icon per node; none hides the dots.
+
+**1. A merged pair is measured as a pair** (`Scan.Centre`):
+- **When:** a blip is measured as now (single first). If that fails and its cells (`b.points`)
+  spread more than `Scan.NODE` (25) units along their wider axis, and no more than `2 * NODE + 7`
+  (two squares and the widest gap refining at 7 can miss), it's tried as two nodes along that
+  axis. Wider: three or more, not tried (provisional icons, below).
+- **How**, along x (y the same, turned): the cell with the least x (the median y among those) is
+  inside the left node, the one with the most x inside the right. From the left cell, `edge` walks
+  left to the union's left edge `xL`: the left node's centre x is `xL + NODE / 2`. Its y: at
+  `x = xL + 3` (inside the left node only, the right one starting further right), the walk up and
+  down finds its top and bottom, which must span `NODE` within `NODE_SLACK` (else that column is
+  two nodes: fail). The right node the same from the right cell (`xR - NODE / 2`, its column at
+  `xR - 3`). The two centres must be at least `NODE / 2` apart along the axis (else it was one node
+  merged with something else: fail). About 50 reads, once per pair: the pair walks never step into
+  the gap between the two, so a gap narrower than a step doesn't matter.
+- **The result:** `b.pair = { { x, y }, { x, y } }` (map units, from the centre); a centre within
+  `Icons.MATCH` of an existing record of the name is that record (no duplicate). Failing: `b.why`
+  as now ("pair: ..." with what was read).
+- **Whole:** a pair is measured only when its cells' extent plus a node's half and the margin fits
+  inside the round map (the single blip's `INSIDE` rule, on the extent rather than the centroid).
+
+**2. Fully covered, not partly** (amends #66's rule): a blip covering records isn't measured only when
+**every** one of its cells lies in a same-name record's square. One with cells outside every covered
+square holds a node with no record: it's measured (single, then as a pair), and only the new
+centres become records. So a pair with one icon already gets its second.
+
+**3. Provisional icons for whatever stays unmeasured:** after the sweep's measuring, each filtered
+node blip that is neither matched nor fully covered gets **provisional** icons from its cells not in
+any record's square: one at their centroid, or, when they spread more than `NODE` along their wider
+axis, two (the centroids of the halves split at the midpoint of that axis). Provisional icons:
+- are drawn like records (the look, the size, the dim from `Alert.Wanted`, the rim fade, the height
+  from the blip), following the player between sweeps (their world spot fixed at the sweep);
+- are **rebuilt every sweep** (never matched, never covering, never kept), and vanish when the blip
+  is measured (its exact icon takes over) or gone;
+- are not records: `Icons.Records()` (the compass) and the alert don't see them;
+- skip what the filters skip (a lingering gathered dot, #47's skipped names with Blizzard's dot);
+- cover the rim band too (a blip cut by the edge, never measured, gets one near its visible part).
+Their spot is the sweep's (about 5 units off at worst), so an icon may not hide its dot entirely
+until the measure snaps it: the cases left are the rim, clusters of three or more, and the moment
+before a measure.
+
+**Tests:** a pair 26 and 30 apart on x, on y and diagonal (the squares overlapping on one axis):
+measured as two exact records from a merged blip, from a standing start (no prior records); a
+pair with one record: the other measured, no duplicate; a column crossing both (overlapping
+diagonally): fail, provisional; three in a row (too wide): not tried, provisional; a fully
+covered blip not measured, a partly covered one measured; provisional icons: one per lone
+unmeasured blip, two for a wide one, none for a measured or fully covered blip, none for filtered
+ones, not in `Icons.Records()`, gone at the next sweep when measured; the rim band; the reads
+(about 50 for a pair, once).
+
+**Look round** (`/fp steps nr nodots`): at a pair after a reload, standing still: two icons at once;
+around the rim: provisional icons over the dots; `/fp nr icons` lists provisional ones.
+
 ## Icon styles and sizes (#41)
 
 The owner's choices after three probe rounds (docs/FOREVER-PROBE.md, "Glass discs" and "Bronze
