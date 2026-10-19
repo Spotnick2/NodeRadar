@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.2.0
+
+Released 2026-10-19.
 
 - **The compass moves on at once after a gather** (#29): it showed the next node, then hid for a
   few seconds while the loot window was open, taking the herb still on the minimap for the nearest.

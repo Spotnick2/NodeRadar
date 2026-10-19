@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.1.0, after v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.2.0, after v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -24,10 +24,13 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 - v1.0.1: only nodes the player can gather alert (#26), and the chat line's map coordinates (#27);
 - v1.1.0: `release.json` for WowUp (#35); item icons on the minimap's nodes, off by default (#28);
   their frames following the minimap (glass with Glass MiniMap, else bronze), three sizes and a
-  height arrow (#41). Checked in game on 70450.
+  height arrow (#41). Checked in game on 70450;
+- v1.2.0: choosing which herbs and ores, with presets and smart following the skill, per character
+  (#47); a yellow icon frame, the tracking dots' colour (#50); the experimental compass, off by
+  default (#29: Forever draws no waypoint marker, so it became a compass). Checked in game on 70450.
 
-Next: the experimental compass (#29: Forever draws no waypoint marker, so it became a compass); then
-the public API for minimap skins (#4). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+Next: skipping a node out of reach for the compass (#46); then the public API for minimap skins
+(#4). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
