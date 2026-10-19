@@ -115,12 +115,16 @@ function Track.ItemName(row)
     if ok and type(name) == "string" and not API.IsSecret(name) and name ~= "" then return name end
 end
 
--- A row by an item ID, or a node's or the item's name (any case).
+-- A row by an item ID, or a node's or the item's name (any case); nothing for
+-- empty text, and an item's name only once the client has it (Codex, PR #53:
+-- an uncached name read as "" matched a bare /nr track).
 function Track.Find(text)
     local id, want = tonumber(text), (text or ""):lower()
+    if want == "" then return nil end
     for _, kind in ipairs(Track.KINDS) do
         for _, row in ipairs(Track.List(kind)) do
-            if row.item == id or (Track.ItemName(row) or ""):lower() == want then return row end
+            local itemName = Track.ItemName(row)
+            if row.item == id or (itemName and itemName:lower() == want) then return row end
             for _, n in ipairs(row.nodes) do
                 if n.name:lower() == want then return row end
             end

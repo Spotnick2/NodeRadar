@@ -324,6 +324,17 @@ check(not skipped(THORIUM), "/nr track by item ID")
 WoW.itemNames[PEACE] = "Peacebloom Flower"
 SlashCmdList.NODERADAR("ignore peacebloom flower")
 check(skipped(PEACE), "/nr ignore by the item's name")
+-- A bare /nr track with an uncached item skipped: nothing changes (Codex, PR #53).
+WoW.itemCached[BRIAR] = nil
+Track.Set(BRIAR, false)
+newChat()
+SlashCmdList.NODERADAR("track")
+check(skipped(BRIAR), "/nr track alone: the uncached Briarthorn stays skipped")
+check(newChat()[1]:find("/nr track <node or item>"), "...the usage said")
+eq(Track.Find(""), nil, "Find: empty text finds nothing")
+eq(Track.Find(nil), nil, "...nor nil")
+Track.Set(BRIAR, true)
+WoW.itemCached[BRIAR] = true
 SlashCmdList.NODERADAR("ignore Stranglethorn")
 check(chatHas("no herb or ore called Stranglethorn"), "an unknown name: said")
 newChat()

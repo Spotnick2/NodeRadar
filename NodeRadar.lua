@@ -326,6 +326,8 @@ SlashCmdList.NODERADAR = function(msg)
             end
         end
         if not any then API.Say("nothing skipped: every herb and ore is followed") end
+    elseif cmd == "track" and rest == "" then
+        API.Say("/nr track <node or item>: a node's name, an item's, or an item ID")
     elseif cmd == "ignore" or cmd == "track" then
         local row = Track.Find(rest)
         if row then
