@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3657,9 +3657,10 @@ local function c4Angle()
     if not (b and f) then return nil end
     return wrap(b - f)
 end
-local function headingStep(label, want)
-    return { text = "Turn so the node is " .. label .. " of you, and hold still.", wait = function()
-                 local ok, why = c4Shown("medium", "auto")()
+local function headingStep(label, want, style, round)
+    return { text = "Turn so the node is " .. label .. " of you, and hold still until the next step shows.",
+             wait = function()
+                 local ok, why = c4Shown("medium", style or "auto")()
                  if not ok then return false, why end
                  local a = c4Angle()
                  if not a then return false, "no target" end
@@ -3667,7 +3668,7 @@ local function headingStep(label, want)
                      return false, ("the node %.1f rad from straight ahead (%s: %.1f)"):format(a, label, want)
                  end
                  return true, ("%s: %.2f rad"):format(label, a)
-             end, screenshot = "compass5: " .. label }
+             end, screenshot = (round or "compass5") .. ": " .. label }
 end
 local steps5 = {
     rev = 1,
@@ -3718,6 +3719,58 @@ local steps5 = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("compass5", steps5)
+
+-- The yellow frame (#50): the dots' colour measured, the icons and the
+-- compass in yellow, the narrower arrow at the diagonals.
+local yellowSteps = {
+    rev = 1,
+    title = "A yellow frame, the tracking dots' colour, and a narrower compass arrow (#50)",
+    { text = "Have NodeRadar loaded with gathering tracking on. NodeRadar's icons go off for a moment (to see "
+          .. "Blizzard's dots), then on in yellow, and its compass on; your settings come back at the end.",
+      wait = function()
+          local n, T = nr(), c4()
+          if not (n and T and T.style and n.Icons.STYLES.yellow) then return false, "NodeRadar (#50) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          lookOn(n, "yellow", "medium")
+          n.Set("icons", false)
+          c4On(n, "medium", "yellow")
+          return true, "icons off for the dots, the frame yellow, the compass on"
+      end },
+    { text = "Stand still where a few herb or ore dots show on the minimap (Blizzard's yellow dots: NodeRadar's "
+          .. "icons are off), then press Next.", screenshot = "yellow: the dots" },
+    { text = "Now NodeRadar's icons in yellow, medium: stay still until they cover the dots.",
+      wait = showLook("yellow", "medium", "yellow"), screenshot = "yellow: medium" },
+    { text = "Small.", wait = showLook("yellow", "small", "yellow"), screenshot = "yellow: small" },
+    { text = "Large.", wait = showLook("yellow", "large", "yellow"), screenshot = "yellow: large" },
+    { text = "Does the rings' yellow match the dots you just saw, and does it read at each size? (Note box: "
+          .. "lighter, darker, more orange, thicker...)", ask = true },
+    { text = "Optional: a node above or below you, until NodeRadar's small arrow shows by its ring. Skip if none.",
+      wait = function()
+          local n = nr()
+          if n then lookOn(n, "yellow", "medium") end
+          local r = shownWhere(function(r) return r.height ~= nil end)
+          if not r then return false, "no icon with an arrow yet" end
+          return true, ("%s %s"):format(r.name, r.height)
+      end, screenshot = "yellow: the height arrow" },
+    { text = "Optional: a node your skill can't gather in view (dimmed). Skip if none.", wait = function()
+          local r = shownWhere(function(r) return r.dim end)
+          if not r then return false, "no dimmed icon in view" end
+          return true, r.name .. " dimmed"
+      end, screenshot = "yellow: dimmed" },
+    { text = "Ride until the compass shows under your character, then stand still.",
+      wait = c4Shown("medium", "yellow", "yellow"), screenshot = "yellow: the compass", timeout = 600 },
+    { text = "The compass's rim in yellow: like it? (Note box.)", ask = true },
+    headingStep("ahead-left", math.pi / 4, "yellow", "yellow"),
+    headingStep("ahead-right", -math.pi / 4, "yellow", "yellow"),
+    headingStep("behind-left", 3 * math.pi / 4, "yellow", "yellow"),
+    headingStep("behind-right", -3 * math.pi / 4, "yellow", "yellow"),
+    { text = "At those four slants, did the narrower arrow clearly point at the node?", ask = true },
+    { text = "Putting NodeRadar's icons, compass, size and frame back.", auto = true, run = function()
+          return c4Back() .. "; " .. lookBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("yellow", yellowSteps)
 end)()
 
 --------------------------------------------------------------------------------

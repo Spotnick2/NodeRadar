@@ -85,13 +85,25 @@ local function fresh(style, size)
     NR.db.iconStyle, NR.db.iconSize = style, size
     WoW.now = WoW.now + 30
 end
--- What a frame shows: "plain", "glass", "bronze", or nil.
+-- What a frame shows: "plain", "glass", "bronze", "yellow", or nil.
 local function shows(f)
     local s
     if f.tex._shown then s = "plain" end
     if f.glass and f.glass._shown then s = s and "many" or "glass" end
     if f.bronze and f.bronze._shown then s = s and "many" or "bronze" end
+    if f.ring and f.ring._shown then s = s and "many" or "yellow" end
     return s
+end
+-- A pixel of a generated texture (Tools/make_media.py: 32-bit BGRA, top-left
+-- origin, an 18-byte header): r, g, b, a in 0..255.
+local function pixel(path, x, y)
+    local fh = assert(io.open(path, "rb"))
+    local data = fh:read("*a")
+    fh:close()
+    local w = data:byte(13) + 256 * data:byte(14)
+    local i = 18 + (y * w + x) * 4 + 1
+    local b, g, r, a = data:byte(i, i + 3)
+    return r, g, b, a
 end
 
 local ABOVE = "|TInterface\\Minimap\\Minimap-PositionArrows:0:0:0:0:16:32:0:16:0:16|t"
@@ -309,6 +321,58 @@ eq(f._width, 14, "...at the large size")
 NR.Set("iconSize", "medium")
 
 --------------------------------------------------------------------------------
+-- Yellow (#50): our ring, the tracking dots' colour, needing nothing loaded
+--------------------------------------------------------------------------------
+
+-- The art: a band from 24.5 to 31.5 px, dark at both edges, white between.
+local RING = "Media/IconRing.tga"
+eq(select(4, pixel(RING, 32, 32)), 0, "the ring's art: clear in the middle")
+eq(select(4, pixel(RING, 32 + 22, 32)), 0, "...clear inside the band")
+check(select(4, pixel(RING, 32 + 28, 32)) > 250 and pixel(RING, 32 + 28, 32) > 240, "...white across the band")
+check(pixel(RING, 32 + 25, 32) < 60 and pixel(RING, 32 + 31, 32) < 60, "...dark at its inner and outer edges")
+fresh("yellow", nil)
+local loaded = G.loaded
+G.loaded = nil                                             -- no LibGlass: yellow needs none
+node("Silverleaf", 31, -23)
+step()
+f = rec("Silverleaf").frame
+eq(shows(f), "yellow", "yellow chosen: the ring")
+eq(NR.failures.glass, nil, "...no glass failure")
+eq(Icons.Style(), "yellow", "...the effective style yellow")
+host = f.ring
+check(near(host._width, 12 * 1.3) and near(host._height, 12 * 1.3), "the ring 1.3 of the icon, built at medium")
+check(host._points[1][1] == "CENTER" and host._points[1][2] == f, "...centred on the node")
+eq(host.ring._file, "Interface\\AddOns\\NodeRadar\\Media\\IconRing.tga", "...our ring's art")
+check(near(host.ring._vertex[1], Icons.YELLOW[1]) and near(host.ring._vertex[2], Icons.YELLOW[2])
+      and near(host.ring._vertex[3], Icons.YELLOW[3]), "...tinted the dots' yellow")
+eq(host.icon._file, 130765, "...the item's icon in it")
+eq(host.icon._width, 12, "...the icon 12")
+check(host.icon._mask and host.icon._mask._file == "Interface\\CharacterFrame\\TempPortraitAlphaMask", "...masked round")
+check(near(host.icon._texCoord[1], 0.08) and near(host.icon._texCoord[2], 0.92), "...its border cropped")
+eq(host._mouse, false, "...no mouse")
+for name, size in pairs({ small = 10, large = 14, medium = 12 }) do
+    NR.Set("iconSize", name)
+    check(near(f.ring:GetScale(), size / 12) and f.ring == host, name .. ": the ring scaled, not rebuilt")
+end
+NR.Set("iconStyle", "bronze")
+eq(shows(f), "bronze", "yellow to bronze: the ring hidden")
+NR.Set("iconStyle", "yellow")
+eq(shows(f), "yellow", "...and back: the same ring")
+check(f.ring == host, "...not rebuilt")
+NR.Set("iconStyle", "plain")
+eq(shows(f), "plain", "yellow to plain: the ring hidden")
+NR.Set("iconStyle", "auto")
+eq(shows(f), "bronze", "auto never yellow (no Glass MiniMap here: bronze)")
+-- The dim, on the ring's icon.
+WoW.skillLines[182] = { skillID = 182, rank = 10, modifier = 0, maxRank = 300 }
+fresh("yellow", nil)
+node("Mageroyal", -30, -30)
+step()
+eq(rec("Mageroyal").frame.ring.icon._desaturated, true, "a node the skill can't gather: dimmed in yellow")
+WoW.skillLines[182] = nil
+G.loaded = loaded
+
+--------------------------------------------------------------------------------
 -- Binding: a reused frame switched to a cached look between sweeps (Codex)
 --------------------------------------------------------------------------------
 
@@ -348,6 +412,8 @@ check(near(f.arrow._texCoord[3], 0.5) and near(f.arrow._texCoord[4], 1), "...Bli
 sl.text = ABOVE .. "Silverleaf"
 step()
 check(near(f.arrow._points[1][5], 12 * 31 / 34 + 2) and near(f.arrow._texCoord[3], 0), "above: over it, the upper half")
+NR.Set("iconStyle", "yellow")
+check(near(f.arrow._points[1][5], 12 * 0.65 + 2), "yellow: the arrow over the ring")
 sl.text = nil
 step()
 eq(rec("Silverleaf").height, nil, "level again: no height")
@@ -357,7 +423,7 @@ eq(f.arrowFrame._shown, false, "...no arrow")
 -- The rim at each look's extent: dropped only once faded out
 --------------------------------------------------------------------------------
 
-for _, case in ipairs({ { "plain", 6 }, { "bronze", 12 * 31 / 34 } }) do
+for _, case in ipairs({ { "plain", 6 }, { "bronze", 12 * 31 / 34 }, { "yellow", 12 * 0.65 } }) do
     fresh(case[1], nil)
     sl = node("Silverleaf", 60, 0)
     step()
@@ -380,7 +446,7 @@ local mouse, under = true, 0
 for _, w in ipairs(WoW.frames) do
     local p, top = w._parent, w
     while p and not (p.tex and p.arrowFrame) do top, p = p, p._parent end
-    local kept = p and (top == p.glass or top == p.bronze or top == p.arrowFrame)
+    local kept = p and (top == p.glass or top == p.bronze or top == p.ring or top == p.arrowFrame)
     if kept and w._type == "Frame" then
         under = under + 1
         if w._mouse ~= false then mouse = false end

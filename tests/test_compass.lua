@@ -286,6 +286,17 @@ eq(C.icon._rotation, nil, "...never turned")
 -- The look: our own art, the rim following the icons' frame, three sizes, the tooltip
 --------------------------------------------------------------------------------
 
+-- A pixel of a generated texture (Tools/make_media.py: 32-bit BGRA, top-left
+-- origin, an 18-byte header): r, g, b, a in 0..255.
+local function pixel(path, x, y)
+    local fh = assert(io.open(path, "rb"))
+    local data = fh:read("*a")
+    fh:close()
+    local w = data:byte(13) + 256 * data:byte(14)
+    local i = 18 + (y * w + x) * 4 + 1
+    local b, g, r, a = data:byte(i, i + 3)
+    return r, g, b, a
+end
 -- The layers: the shadow, the lens, the icon, the rim, the arc, the arrow, the capsule.
 local function file(t) return t._file and t._file:match("[^\\]+$") end
 eq(file(C.shadow), "CompassShadow.tga", "the shadow")
@@ -299,6 +310,19 @@ check(near(C.shadow._width, Compass.DISC * 1.25) and near(C.shadow._points[1][5]
 eq(C.style(), "bronze", "auto without Glass MiniMap: bronze")
 check(C.rim._shown and near(C.rim._vertex[1], Compass.TINTS.bronze[1]), "...the rim tinted bronze")
 eq(C.arrow._vertex, nil, "...the arrow never tinted")
+-- Yellow (#50): the rim the tracking dots' colour.
+NR.Set("iconStyle", "yellow")
+eq(C.style(), "yellow", "yellow chosen: yellow")
+check(C.rim._shown and C.arc._shown and near(C.rim._vertex[1], NR.Icons.YELLOW[1])
+      and near(C.rim._vertex[2], NR.Icons.YELLOW[2]) and near(C.rim._vertex[3], NR.Icons.YELLOW[3]),
+    "...the rim the dots' yellow, the arc on it")
+NR.Set("iconStyle", "auto")
+check(near(C.rim._vertex[1], Compass.TINTS.bronze[1]), "...auto: bronze again")
+-- The arrow's art (#50): 30 px of base, so it reads at a slant; apex and base where they were.
+eq(select(4, pixel("Media/CompassArrow.tga", 12, 50)), 0, "the arrow's art: clear where a 44 px base reached")
+check(select(4, pixel("Media/CompassArrow.tga", 24, 50)) > 0, "...inside its 30 px base")
+check(select(4, pixel("Media/CompassArrow.tga", 32, 10)) > 0, "...the apex still at the top")
+eq(select(4, pixel("Media/CompassArrow.tga", 32, 54)), 0, "...nothing below the base")
 -- The capsule: fixed whatever the number.
 eq(C.pill._width, Compass.PILL[1], "the capsule 56 wide")
 WoW.pos[1] = WoW.pos[1] - 60 * K()

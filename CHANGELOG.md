@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A yellow frame for the icons** (#50): a ring the colour of the minimap's own tracking dots,
+  beside glass and bronze (`/nr iconstyle yellow`, or Options). The compass's rim follows it.
 - **Experimental: a compass toward the nearest node** (#29), off by default (`/nr compass`, or
   Options): under your character, the nearest node you can gather as its item's icon on a small
   dark lens with a thin pearl or bronze rim (as the minimap icons' frame), a white arrow circling it
