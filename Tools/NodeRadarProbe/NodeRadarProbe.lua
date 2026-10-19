@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (NodeSight's far sparkles).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -4250,6 +4250,128 @@ local function iconsDump()
     end
 end
 Probe:Command("icons", function() iconsDump() end, "NodeRadar's icons against a fresh sweep")
+end)()
+
+;(function()
+--------------------------------------------------------------------------------
+-- The navigation frame as an anchor (NodeSight's far sparkles): Forever draws
+-- no waypoint marker (the waypoint round), but NodeSight anchors its own art
+-- to C_Navigation.GetFrame() with showInGameNavigation set. Does that frame
+-- follow the node's spot on screen, with the CVar as it is and with it on?
+-- Our own marker (a gold square) is anchored to it, and both are read.
+--------------------------------------------------------------------------------
+
+local mark                       -- our gold square on the navigation frame
+local function markOn()
+    local nav = wpRead(C_Navigation.GetFrame)
+    if nav == nil or type(nav) == "string" then return nil, "no navigation frame" end
+    if not mark then
+        mark = CreateFrame("Frame", nil, UIParent)
+        mark:SetSize(24, 24)
+        mark:SetFrameStrata("HIGH")
+        local t = mark:CreateTexture(nil, "OVERLAY")
+        t:SetAllPoints(mark)
+        t:SetColorTexture(1, 0.82, 0, 0.85)
+        local label = mark:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("BOTTOM", mark, "TOP", 0, 2)
+        label:SetText("NodeRadar probe")
+    end
+    if mark.on ~= nav then
+        mark:ClearAllPoints()
+        local ok, err = pcall(mark.SetPoint, mark, "CENTER", nav, "CENTER", 0, 0)
+        if not ok then return nil, "can't anchor to it: " .. str(err) end
+        mark.on = nav
+    end
+    mark:Show()
+    return true
+end
+local function markOff()
+    if mark then mark:Hide(); mark.on = nil end
+end
+
+-- Where our square is on screen (from UIParent's centre), the CVar, the nav state.
+local function markRead(label)
+    local x, y = "?", "?"
+    if mark and mark:IsShown() then
+        local ok, cx, cy = pcall(mark.GetCenter, mark)
+        local ux, uy = UIParent:GetCenter()
+        if ok and num(cx) and num(cy) and ux and uy then x, y = ("%.0f"):format(cx - ux), ("%.0f"):format(cy - uy) end
+    end
+    local line = ("%s: our square at %s, %s from the screen's centre; showInGameNavigation %s; %s"):format(label, x, y,
+        str(wpRead(C_CVar.GetCVar, "showInGameNavigation")), navState())
+    say("marker " .. line)
+    return line
+end
+
+local seenAt                     -- the square's x at the last read, to see it move
+local markerSteps = {
+    rev = 1,
+    title = "Blizzard's navigation frame as an anchor for a marker on a far node (NodeSight)",
+    { text = "Remove any map waypoint you have and stop tracking quests on screen (super-track), so the "
+          .. "waypoint is free. Your waypoint setting and the navigation option come back as they were.",
+      wait = function()
+          if NodeRadarProbeDB.markerCVar == nil then
+              NodeRadarProbeDB.markerCVar = wpRead(C_CVar.GetCVar, "showInGameNavigation") or "unset"
+          end
+          return waypointFree()
+      end },
+    { text = "Stand still outdoors with a herb or ore 40-80 yards away on the minimap, facing it, then press Set.",
+      button = "Set", run = function() return setOurs(nearestNode()) end },
+    { text = "Putting our gold square on the navigation frame, the option as it was.", wait = function()
+          local ok, why = markOn()
+          if not ok then return false, why end
+          return true, markRead("as it was")
+      end, timeout = 8, screenshot = "marker: the option as it was" },
+    { text = "Is the gold square (\"NodeRadar probe\") over the node out in the world, where the herb or ore is?",
+      ask = true },
+    { text = "Turning the in-game navigation option on (showInGameNavigation 1), as NodeSight does.", auto = true,
+      run = function()
+          local ok = wpRead(C_CVar.SetCVar, "showInGameNavigation", "1")
+          markOff()
+          return "SetCVar -> " .. str(ok)
+      end },
+    { text = "Reading again (a moment).", wait = function()
+          local ok, why = markOn()
+          if not ok then return false, why end
+          seenAt = nil
+          return true, markRead("the option on")
+      end, timeout = 8, screenshot = "marker: the option on" },
+    { text = "Now: is the gold square over the node? Do you also see Blizzard's own marker or a distance?",
+      ask = true },
+    { text = "Turn slowly a little to one side, so the node moves across your screen.", wait = function()
+          if not (mark and mark:IsShown()) then markOn() end
+          local ok, cx = pcall(mark.GetCenter, mark)
+          cx = ok and num(cx)
+          if not cx then return false, "the square isn't on screen" end
+          if not seenAt then seenAt = cx; return false, "turn a little" end
+          if math.abs(cx - seenAt) < 120 then return false, "turn a little more" end
+          return true, markRead("turned")
+      end, screenshot = "marker: turned" },
+    { text = "Did the square stay on the node as it moved across the screen?", ask = true },
+    { text = "Turn until the node is behind you.", wait = function()
+          if wpRead(C_Navigation.WasClampedToScreen) == true then return true, markRead("behind") end
+          return false, "not clamped yet"
+      end, screenshot = "marker: behind" },
+    { text = "Where is the square now? (Note box: at the screen's edge, gone, somewhere odd.)", ask = true },
+    { text = "Optional: ride away until the node is 100 yards or more behind or around you, then face it.",
+      wait = function()
+          local d = num(wpRead(C_Navigation.GetDistance))
+          if not d or d < 100 then return false, "distance " .. str(d) end
+          return true, markRead("far")
+      end, screenshot = "marker: far" },
+    { text = "Far away, was the square still on the node? (Skip if you skipped the ride.)", ask = true },
+    { text = "Putting everything back: our square off, the option as it was, our waypoint cleared.", auto = true,
+      run = function()
+          markOff()
+          local was = NodeRadarProbeDB.markerCVar
+          if was and was ~= "unset" then wpRead(C_CVar.SetCVar, "showInGameNavigation", was) end
+          NodeRadarProbeDB.markerCVar = nil
+          return clearOurs("tracking first") .. "; showInGameNavigation " .. str(wpRead(C_CVar.GetCVar,
+              "showInGameNavigation"))
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("marker", markerSteps)
 end)()
 
 --------------------------------------------------------------------------------
