@@ -575,9 +575,10 @@ The compass aims at #28's records, so they're kept while icons **or** the compas
 setting does only its own part (Codex, #29):
 - `Icons.Keeping()` (radar on, and `icons` or `compass`) gates `Icons.Update`'s matching and
   measuring and `Icons.Gathered`.
-- `Icons.On()` (radar on and `icons`) alone gates **everything drawn**: in `Icons.Update`'s last
-  part, acquiring frames, `bindAll` (so no look is resolved and no glass is built for the compass
-  alone) and the driver's `OnUpdate`. Not just `draw()`: by then the frames would exist.
+- `Icons.On()` (radar on and `icons`) alone gates **every minimap icon drawn**: in `Icons.Update`'s
+  last part, acquiring frames, `bindAll` (so no icon look is built for the compass alone) and the
+  driver's `OnUpdate`. Not just `draw()`: by then the frames would exist. The compass's own ring
+  resolves the style itself (`Icons.Style()`, below).
 - **Settings:** the radar off, or both off: records cleared. `icons` off with the compass on: the
   icon frames released and the driver stopped, the records kept. `icons` on: the records kept are
   bound and drawn at once. `compass` off: the ring hidden, the records kept while icons are on.
@@ -612,18 +613,59 @@ past the rim is dropped, and the next nearest is the target at the next sweep.
 
 ### The ring
 
-- An unnamed child of **`UIParent`**, centred 160 units below the screen's centre, 120 units across
-  (the probe's draft, which the owner followed). Not movable in this issue. **This amends the UI
-  contract** in CLAUDE.md ("our frames are unnamed children of `Minimap`"): that rule is about never
-  touching the minimap, and the ring isn't on it. It takes no mouse.
-- The ring (`Media\SonarRing.tga`, tinted as the sonar: green for herbs, gold for ore), an arrow on
-  it (Blizzard's upward triangle, `Minimap-PositionArrows`' upper half, 28 units: its zero is up,
-  measured) at `a = wrap(bearing - facing)`, placed at `(-48 sin a, 48 cos a)` and turned by
-  `SetRotation(a)`, and the distance in the middle (`"73 yd"`, updated when the whole number
-  changes).
+The owner's choices after two look rounds (docs/FOREVER-PROBE.md, "The compass's look", first and
+second rounds): **the node's item icon in a disc just around it, the arrow orbiting outside the
+disc, the distance in a pill under it, the item's tooltip on hover**; the disc's frame **follows the
+icons' frame setting** (#41), and a **size option**.
+
+- **Where:** an unnamed child of **`UIParent`**, centred 160 units below the screen's centre. Not
+  movable in this issue. **This amends the UI contract** in CLAUDE.md ("our frames are unnamed
+  children of `Minimap`"): that rule is about never touching the minimap, and the ring isn't on it.
+- **The frame** is #41's effective style, resolved by `Icons` (one rule, one LibGlass latch):
+  - **glass**: a LibGlass disc (`disc_small`; the plain glass rim, round 2's E: Glass MiniMap's
+    `ring_rim` art left a light edge at this size, D), the icon round in it;
+  - **bronze**: the icon in Blizzard's round button (#41's `MiniMap-TrackingBorder` layout);
+  - **plain**: the icon alone, masked round.
+  `Icons` exposes the resolution without drawing icons (`Icons.Style()`: the style, resolving and
+  latching glass as `resolve()` does). So with the compass on and the icons off, the compass may build
+  glass (it draws it); the icons still build no **minimap icon** frame, host or driver.
+- **One latch for both** (Codex): a glass failure in either consumer (an icon's `Disc`; the
+  compass's `Disc`, pill `Apply`, mask or font) trips `Icons`' latch, and when the pass that tripped it
+  ends, **both** rebind to bronze: `bindAll` for the icons, `Compass.Restyle()` for the compass. No
+  recursion; cached glass is never selected again. `NR.Set` calls `Compass.Restyle()` on `iconStyle`
+  and `compassSize` too (with the icons off, `Icons.Restyle()` does nothing).
+- **Sizes**, `compassSize`: `"small"`, `"medium"` (the default) or `"large"`: the **outer
+  diameter** 44, 52 or 60 units in every style, built at medium and resized with `SetScale`
+  (LibGlass's rule for discs), so the icon and the arrow scale with it (about 30/36/42 and
+  12/14/16). Nothing under 44: F's 36 had rough edges (the small disc textures). One host per style,
+  built when first needed.
+  - Glass: the icon about 0.69 of the disc.
+  - Bronze: LibDBIcon's proportions at that outer size (the button 31 = the diameter, the icon 17/31
+    of it, about 0.55: smaller than glass's), not #41's icon-first scaling (Codex: 36 by 31/17 would
+    be 66 across).
+  - Plain: the icon fills the diameter, masked round.
+- **The arrow:** Blizzard's upward triangle (`Minimap-PositionArrows`' upper half; its zero is up,
+  measured), at `a = wrap(bearing - facing)`, on an orbit just outside the disc (radius = half the
+  disc + 0.7 × the arrow), turned by `SetRotation(a)`, on a frame above the glass's top (host + 10).
+- **The distance pill:** under the disc, **below the arrow's orbit** (its top half the disc + 1.5 ×
+  the arrow under the centre: D put the arrow on the pill when pointing behind; Codex's bound: 3 to 4
+  units clear at every angle and size, the glass pill's soft shadow aside). Glass: a LibGlass
+  `small` surface with the instance's font (Glass MiniMap's coordinates pill). Bronze and plain: the
+  same text on a dark rounded backdrop. `"73 yd"`, updated when the whole number changes.
+- **The tooltip:** on hover over the disc, `GameTooltip:SetItemByID(item)` (FrameXML's secure
+  accessor; the item from `NODE_INFO` through `API.Num`), anchored above; the accessor shows it, and
+  on a refusal or no data it hides it (no unconditional `Show`). No item: no tooltip. **When the
+  target changes under a still cursor** the owned tooltip is set again, or hidden if the new target
+  has no item (Codex). Leaving, hiding or restyling hides it **only if the compass owns it**. The
+  disc takes **mouse motion only**: `SetMouseMotionEnabled(true)`, `SetMouseClickEnabled(false)`
+  (both in the 70450 dump; Blizzard's cooldown viewer uses this split), set after the handlers, so a
+  click on the disc reaches the world (round 2: with the mouse on, it didn't). The pill, the arrow
+  and every glass `top` frame take none.
 - **Per frame while shown** (an `OnUpdate` unset when hidden): one `UnitPosition`, one
   `GetPlayerFacing`, the 15-yard and hide checks, a `SetPoint` and a `SetRotation`. Nothing
-  allocated. Hidden, it shows again at the next usable sweep.
+  allocated. Hidden, it shows again at the next usable sweep. The icon, the style and the size are
+  set when the target, the style or the size changes, not per frame.
+- The green ring of the first rounds (`Media\SonarRing.tga`) goes.
 
 ### Shown, hidden
 
@@ -654,13 +696,33 @@ past the rim is dropped, and the next nearest is the target at the next sweep.
   (its height nil) hidden; the position or facing unreadable; no recent sweep; dead; a taxi; the compass off; the
   radar off; the learner starting in the same step.
 - The settings split (kept from the reviewed plan): icons off with the compass on keeps the records
-  and draws nothing (no frame, no look, no glass, no icon `OnUpdate`); icons on shows them; compass
-  off hides the ring and keeps the records for the icons; both off clears them.
+  and draws no **minimap icon** (no icon frame, no icon host, no icon `OnUpdate`; the compass's own
+  glass is its own); icons on shows them; compass off hides the ring and keeps the records for the
+  icons; both off clears them.
 - The ring: the arrow's point and rotation ahead, left, right, behind, north-east, across the 0/2π
-  wrap; the distance text; tinted by the target's kind; no mouse; a child of `UIParent`.
+  wrap, on its orbit outside the disc at each size; the pill below the orbit; the distance text; the
+  target's icon; each style (glass with Glass MiniMap, bronze, plain; a glass that fails: bronze, the
+  icons' latch); the size by `SetScale`, not a rebuild; a child of `UIParent`.
+- The tooltip: the target's item on hover, anchored above, hidden on leave (only if owned); no
+  item, no tooltip; the target changing under a still cursor: set again, or hidden; mouse motion on,
+  clicks off; the pill, the arrow and the glass tops take no mouse.
+- The latch both ways: the compass glass, then an icon's `Disc` failing: the compass bronze too; the
+  icons glass, then the compass's pill `Apply` failing after its `Disc` built: both bronze; a style
+  or size change with the icons off reaches the compass.
+- The compass alone with glass resolves the style and builds the compass's glass, and still no icon
+  frame.
 - Off: nothing measured, no ring, no `OnUpdate`.
 - Options and `/nr compass`.
 - Every new test mutation-tested.
+
+### Probe round 4 (`/fp steps nr compass4`, the compass's look)
+
+- Each style (glass with Glass MiniMap; bronze and plain chosen) at each size, screenshots.
+- The tooltip on hover; **left and right clicks on the disc reaching the world**, and a camera drag
+  started on it (motion only).
+- Combat and Edit Mode, in and out, with the hover on.
+- The arrow pointing behind: clear of the pill.
+- Riding: readable.
 
 ### Probe round 3 (`/fp steps nr compass3`, the nearest-node compass)
 
