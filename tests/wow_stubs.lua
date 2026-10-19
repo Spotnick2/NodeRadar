@@ -189,6 +189,9 @@ function Methods.GetWidth(w) return w._width end
 function Methods.GetHeight(w) return w._height end
 function Methods.GetSize(w) return w._width, w._height end
 function Methods.GetEffectiveScale(w) return w._effScale or 1 end
+function Methods.GetTop(w) return w._top end              -- nil until a test lays it out
+function Methods.GetBottom(w) return w._bottom end
+function Methods.SetScrollChild(sf, child) sf._scrollChild = child end
 function Methods.SetScale(w, s) w._scale = s end
 function Methods.GetScale(w) return w._scale or 1 end
 function Methods.AddMaskTexture(t, m) t._mask = m end

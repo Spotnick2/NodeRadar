@@ -363,3 +363,20 @@ minimap's own border. **The ring hides Blizzard's arrow for a node below the pla
 screenshot shows the downward triangle under three nodes (Earthroot, two Peacebloom), and with any ring
 on they're gone. The upward triangle above a node above stayed visible at F's size. So with a ring (or
 a large icon) the height has to be drawn by us. No icon blinked in the running screenshot.
+
+### NodeRadar's own icon frames: `styles`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#41)
+
+The #41 build: `iconStyle` and `iconSize`, Glass MiniMap on, then off for the last steps.
+
+| What | Measured |
+|---|---|
+| Following the minimap, Glass MiniMap on | glass, medium (read back: `glass 12`); each disc on its node (yes) |
+| Glass small and large; bronze small, medium and large; no frame | each read back as set (`glass 10`, `glass 14`, `bronze 10`/`12`/`14`, `plain 12`); right at every size (yes, yes) |
+| Our arrow | shown for a node below (Peacebloom, bronze): the screenshot shows a small downward triangle under each ring of a node below, an upward one over a node above. The owner answered "unsure", with no note |
+| Hovering a framed icon | Blizzard's tooltip as without icons (`Peacebloom` with its arrow escape); yes |
+| A dimmed node | none in view (skipped); Blizzard's minimap step later showed Mageroyal dimmed |
+| The rim | the framed icon faded out at the edge (yes); the step was done by hand, its wait never saw an icon below 0.95 alpha |
+| **The Options page** | **it overflows** (owner's note): from "Each icon's frame" down, the page draws past the Options window's bottom. Fixed after the run: the page scrolls (GlassPanel's `UIPanelScrollFrameTemplate` recipe) |
+| The cost, 60 s each on one loop | off: 102 sweeps, 270 reads and 670 KB a sweep, worst 14.8 ms. Glass: 104 sweeps, 264 reads, 699 KB, worst 11.7 ms. Bronze: 97 sweeps, 253 reads, 682 KB, **worst 100.8 ms**: one spike, the rest as the others; not explained (a full garbage collection or a texture's first load would look like it) |
+| Following the minimap, Glass MiniMap off | bronze, medium (`bronze 12`), on their nodes (yes) |
+| Settings put back | `icons`, `iconStyle`, `iconSize` back to the player's (nil) |

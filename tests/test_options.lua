@@ -26,6 +26,22 @@ eq(WoW.openedCategory, 1, "/nr options opens the page")
 -- First show: built, and every control reads the settings.
 O.panel:Show()
 check(NR.Options.built, "built on the first show")
+-- It scrolls (#41: the owner saw it overflow the Options window).
+check(O.scroll and O.scroll._type == "ScrollFrame" and O.scroll._template == "UIPanelScrollFrameTemplate",
+    "the page is a scroll frame")
+check(O.scroll._parent == O.panel and O.scroll._scrollChild == O.page, "...on the panel, the controls its child")
+local loose = 0
+for _, w in ipairs(WoW.frames) do
+    if w._parent == O.panel and w ~= O.scroll then loose = loose + 1 end
+end
+eq(loose, 0, "nothing else sits on the panel itself")
+eq(O.page._height, NR.Options.HEIGHT, "...its height a guess until the layout reads")
+O.page._top = 900                                          -- laid out: the help line's bottom 100
+for _, child in ipairs({ O.page:GetRegions() }) do
+    if type(child._text) == "string" and child._text:find("/nr help", 1, true) then child._bottom = 100 end
+end
+O.panel:Hide(); O.panel:Show()
+eq(O.page._height, 816, "...then fitted: the help line and 16 below")
 local function checked(key)
     for _, rb in ipairs(O.radios[key]) do if rb:GetChecked() then return rb.value end end
 end
@@ -102,7 +118,7 @@ O.panel:Show()
 eq(checked("cooldown"), nil, "/nr cd 7: no cooldown choice checked")
 eq(db.cooldown, 7, "...and 7 kept by the refresh")
 local named = false
-for _, child in ipairs({ O.panel:GetRegions() }) do
+for _, child in ipairs({ O.page:GetRegions() }) do
     if type(child._text) == "string" and child._text:find("now 7 s", 1, true) then named = true end
 end
 check(named, "...named after its title (now 7 s)")
@@ -178,7 +194,7 @@ SlashCmdList.NODERADAR("sound")
 -- The checkboxes: the radar's mirrors /nr.
 local on
 for _, w in ipairs(WoW.frames) do
-    if w._parent == O.panel and w._type == "CheckButton" and w._template == "UICheckButtonTemplate" then
+    if w._parent == O.page and w._type == "CheckButton" and w._template == "UICheckButtonTemplate" then
         on = on or w
     end
 end
