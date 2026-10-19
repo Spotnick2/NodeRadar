@@ -545,11 +545,13 @@ compass's rim, the colour of the minimap's own herb and ore tracking dots.
   (glass with Glass MiniMap, else bronze): yellow is only ever chosen. It needs nothing loaded, so it
   never falls back, and the glass latch doesn't touch it.
 - **The colour** (`Icons.YELLOW`, one constant both use): measured from the dots in game, from the
-  look round's screenshot of a dot with the icons off (the dot's lit centre, sampled). Until then a
+  look round's screenshot of a dot with the icons off (several pixels of the yellow interior of more than one dot, at native resolution, away from the
+  highlight, the outline and the antialiased edge: an estimate, JPEG mixing a small feature's colour,
+  so the round's side-by-side of the dots and the yellow icons is what accepts it; Codex). Until then a
   provisional `{ 1, 0.82, 0 }`, the client's gold text colour; the measured value replaces it in
   the round's fix-up commit, and docs/FOREVER-PROBE.md records it.
 - **The icons' look: our own ring.** `Media/IconRing.tga` (`Tools/make_media.py`, 64 × 64): a white
-  band from radius 24.5 to 31.5 px with a 1.5 px dark edge on both sides, tinted by vertex colour (the
+  band from radius 24.5 to 31.5 px with a 1.5 px dark edge on both sides inside those bounds, tinted by vertex colour (the
   white takes the yellow, the dark edges stay dark, so it holds over a bright map). A third host per
   pooled frame, `f.ring`, built once when first needed like `f.bronze`: the icon masked round
   (`TempPortraitAlphaMask`, texcoords 0.08 to 0.92) at the medium size, the ring 1.3 times the icon

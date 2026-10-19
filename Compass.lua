@@ -38,7 +38,8 @@ Compass.ORBIT = Compass.DISC / 2 + 1 + 0.3125 * Compass.ARROW
 Compass.REACH = Compass.ORBIT + 0.375 * Compass.ARROW           -- its farthest point, the apex
 Compass.PILL_TOP = Compass.REACH + 3                             -- the capsule 3 units below that
 Compass.PILL = { 56, 18 }                                        -- fixed: no width change with the number
-Compass.TINTS = { glass = { 0.97, 0.97, 1 }, bronze = { 0.80, 0.62, 0.38 } }   -- the rim: pearl, bronze
+Compass.TINTS = { glass = { 0.97, 0.97, 1 }, bronze = { 0.80, 0.62, 0.38 },    -- the rim: pearl, bronze,
+                  yellow = NR.Icons.YELLOW }                                    -- the dots' yellow (#50)
 
 local MEDIA = NR.Alert.MEDIA
 local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"

@@ -214,9 +214,11 @@ local function build()
         .. "is; near the map's edge the dot shows. Dimmed: your skill can't gather it yet.")
     -- #41: the icon's frame and size, for when icons are on.
     local style = radios(page, iconsWhy, "Each icon's frame", "iconStyle",
-        { { "auto", "Follow the minimap" }, { "plain", "None" }, { "glass", "Glass" }, { "bronze", "Bronze" } }, "")
+        { { "auto", "Follow the minimap" }, { "plain", "None" }, { "glass", "Glass" }, { "bronze", "Bronze" },
+          { "yellow", "Yellow" } }, "")
     local styleWhy = note(page, style, "Following the minimap: glass with Glass MiniMap, else a bronze ring like "
-        .. "Blizzard's minimap buttons. Glass needs Glass MiniMap (or another Glass addon); without it, bronze.")
+        .. "Blizzard's minimap buttons. Glass needs Glass MiniMap (or another Glass addon); without it, bronze. "
+        .. "Yellow: a ring the colour of the minimap's tracking dots.")
     local size = radios(page, styleWhy, "Icon size", "iconSize",
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
 

@@ -30,12 +30,21 @@ any file at the same size and layout.
                  with the arrow around the disc's centre.
   CompassArrow   64 x 64, display 16. A solid white triangle with a 3 px dark
                  outline inside its bounds, flat base down, apex up, no stem:
-                 the apex at (32, 8), the base from (10, 52) to (54, 52). So the
+                 the apex at (32, 8), the base from (17, 52) to (47, 52) (30 px
+                 wide, #50: 44 read sideways at a slant). So the
                  apex is 24 px above the centre (0.375 of the size) and the base
                  20 px below (0.3125). Never tinted.
   CompassPill    128 x 64, the capsule from (2, 12) to (126, 52) (124 x 40),
                  drawn cropped to it at 56 x 18. Fill RGB 0.04, alpha 0.68; a
                  2 px subdued grey outline (0.55, alpha 0.55).
+
+The yellow frame (#50, docs/PLAN.md, "A yellow frame"):
+
+  IconRing       64 x 64, display 1.3 x the minimap icon (15.6 at medium). A
+                 white band from radius 24.5 to 31.5 px (its inner edge the
+                 icon's), a 1.5 px dark edge on both sides inside those bounds.
+                 Tinted in game the tracking dots' yellow (the white takes it,
+                 the dark edges stay dark).
 
 The sounds come from Tools/import_sounds.py.
 
@@ -173,7 +182,7 @@ def _edge(px, py, ax, ay, bx, by):
 
 
 def compass_arrow(x, y):
-    apex, left, right = (32.0, 8.0), (10.0, 52.0), (54.0, 52.0)
+    apex, left, right = (32.0, 8.0), (17.0, 52.0), (47.0, 52.0)
     inside = min(_edge(x, y, *apex, *right), _edge(x, y, *right, *left), _edge(x, y, *left, *apex))
     if inside <= 0:
         return 0.0, 0.0, 0.0, 0.0
@@ -196,6 +205,16 @@ def compass_pill(x, y):
     return 0.04, 0.04, 0.045, 0.68
 
 
+def icon_ring(x, y):
+    d = polar(x, y, 32.0)[0]
+    a = smooth(24.0, 25.0, d) * (1.0 - smooth(31.0, 32.0, d))
+    if a <= 0:
+        return 0.0, 0.0, 0.0, 0.0
+    v = smooth(25.5, 26.5, d) * (1.0 - smooth(29.5, 30.5, d))          # white, dark at both edges
+    v = 0.08 + 0.92 * v
+    return v, v, v, a
+
+
 def main():
     os.makedirs(MEDIA, exist_ok=True)
     for name, fn in (("SonarRing", ring), ("SonarGlow", glow)):
@@ -204,7 +223,8 @@ def main():
         print("wrote", os.path.relpath(path, ROOT))
     for name, w, h, fn in (("CompassShadow", 128, 128, compass_shadow), ("CompassLens", 128, 128, compass_lens),
                            ("CompassRim", 128, 128, compass_rim), ("CompassArc", 128, 128, compass_arc),
-                           ("CompassArrow", 64, 64, compass_arrow), ("CompassPill", 128, 64, compass_pill)):
+                           ("CompassArrow", 64, 64, compass_arrow), ("CompassPill", 128, 64, compass_pill),
+                           ("IconRing", 64, 64, icon_ring)):
         path = os.path.join(MEDIA, name + ".tga")
         write_rgba(path, w, h, fn)
         print("wrote", os.path.relpath(path, ROOT))

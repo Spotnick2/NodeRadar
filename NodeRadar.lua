@@ -17,7 +17,7 @@ local DEFAULTS = {
     soundKind = "ping", -- which: a key of Alert.SOUNDS (the map ping, the sonar, two FileDataIDs)
     skillOnly = true,   -- alert only for nodes the player's skill can gather (#26)
     icons    = false,   -- the item's icon over each node's dot (#28)
-    iconStyle = "auto", -- its frame (#41): auto (glass with Glass MiniMap, else bronze), plain, glass, bronze
+    iconStyle = "auto", -- its frame (#41): auto (glass with Glass MiniMap, else bronze), plain, glass, bronze, yellow (#50)
     iconSize = "medium", -- small, medium or large: Icons.SIZES
     compass  = false,   -- experimental (#29): a ring under the character toward the nearest node
     compassSize = "medium", -- its disc: small, medium or large (Compass.SIZES)
@@ -267,7 +267,7 @@ local function help()
     API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea | bell | notify | hud: which sound.")
     API.Say("/nr skill: alert only for nodes your skill can gather (on by default)")
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
-    API.Say("/nr iconstyle auto | plain | glass | bronze: the icon's frame (auto: glass with Glass MiniMap, "
+    API.Say("/nr iconstyle auto | plain | glass | bronze | yellow: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
     API.Say("/nr compass: experimental, a ring under your character pointing at the nearest node (off by default). "
         .. "/nr compasssize small | medium | large")

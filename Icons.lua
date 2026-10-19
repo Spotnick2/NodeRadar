@@ -6,7 +6,8 @@
 -- world yards (UnitPosition: north, west). Later sweeps match records to blips
 -- by name and distance; every frame draws them from the player's position.
 -- Off (the default, Blizzard's dots), none of this runs. Each icon's frame
--- follows the minimap (#41): glass with Glass MiniMap, else bronze.
+-- follows the minimap (#41): glass with Glass MiniMap, else bronze; or a
+-- yellow ring, the tracking dots' colour (#50).
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
@@ -29,7 +30,8 @@ Icons.FALLBACK = { herbs = 2383, ore = 2580 }   -- Find Herbs, Find Minerals: th
 -- The look (#41, docs/PLAN.md "Icon styles and sizes"): the icon's size, and
 -- its frame following the minimap: glass with Glass MiniMap, bronze otherwise.
 Icons.SIZES = { small = 10, medium = 12, large = 14 }
-Icons.STYLES = { auto = true, plain = true, glass = true, bronze = true }
+Icons.STYLES = { auto = true, plain = true, glass = true, bronze = true, yellow = true }
+Icons.YELLOW = { 1, 0.82, 0 }   -- the tracking dots' (#50): provisional, the client's gold text, until measured
 Icons.GLASS_MINOR = 6  -- LibGlass-1.0's clean preset (r6); Disc is r2
 Icons.ARROW = 8        -- map units: our height arrow (Blizzard's is hidden by a ring, #41)
 -- Half of what each look draws, at an icon of `s`: the rim fades and drops by it.
@@ -37,6 +39,7 @@ Icons.EXTENT = {
     plain = function(s) return s / 2 end,
     glass = function(s) return s * 0.75 end,        -- the disc, 1.5 times the icon
     bronze = function(s) return s * 31 / 34 end,    -- the button, 31/17 times the icon
+    yellow = function(s) return s * 0.65 end,       -- the ring, 1.3 times the icon
 }
 
 -- Blizzard's round minimap button as LibDBIcon lays it out on a 31-unit button
@@ -183,7 +186,8 @@ local function resolve()
 end
 
 -- For the compass's ring (#29), which follows the icons' frame setting: the
--- effective style (glass: a pearl rim, bronze: a bronze one, plain: none; the
+-- effective style (glass: a pearl rim, bronze: a bronze one, yellow: a yellow
+-- one, plain: none; the
 -- compass draws our own art). Resolving may latch glass off; it draws no
 -- minimap icon.
 function Icons.Style()
@@ -249,6 +253,30 @@ local function buildBronze(f)
     return host
 end
 
+-- Our yellow ring (#50, Media/IconRing.tga, its inner edge the icon's) around
+-- the icon masked round, at the medium size.
+local function buildRing(f)
+    local host = CreateFrame("Frame", nil, f)
+    host:Hide()
+    host:EnableMouse(false)
+    host:SetSize(Icons.SIZE * 1.3, Icons.SIZE * 1.3)
+    host:SetPoint("CENTER", f, "CENTER")
+    local ring = host:CreateTexture(nil, "OVERLAY")
+    ring:SetAllPoints(host)
+    ring:SetTexture(NR.Alert.MEDIA .. "IconRing.tga")
+    ring:SetVertexColor(Icons.YELLOW[1], Icons.YELLOW[2], Icons.YELLOW[3])
+    local icon = host:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(Icons.SIZE, Icons.SIZE)
+    icon:SetPoint("CENTER", host, "CENTER")
+    local mask = host:CreateMaskTexture()
+    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(icon)
+    icon:AddMaskTexture(mask)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    host.ring, host.icon = ring, icon
+    return host
+end
+
 -- A frame shows its record in the effective look: the look built if needed,
 -- the others hidden, its icon, dim and arrow set, then shown (Codex, #41: a
 -- cached look switched to between sweeps never shows another record's state).
@@ -261,9 +289,12 @@ local function bind(r)
     end
     if style == "glass" and not (f.glass and glass) then style = "bronze" end
     if style == "bronze" and not f.bronze then f.bronze = buildBronze(f) end
-    local host = style == "glass" and f.glass or style == "bronze" and f.bronze or nil
+    if style == "yellow" and not f.ring then f.ring = buildRing(f) end
+    local host = style == "glass" and f.glass or style == "bronze" and f.bronze
+                 or style == "yellow" and f.ring or nil
     if f.glass and f.glass ~= host then f.glass:Hide() end
     if f.bronze and f.bronze ~= host then f.bronze:Hide() end
+    if f.ring and f.ring ~= host then f.ring:Hide() end
     f:SetSize(size, size)
     if host then
         host:SetScale(size / Icons.SIZE)

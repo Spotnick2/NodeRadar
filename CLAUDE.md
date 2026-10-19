@@ -77,11 +77,12 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   before the alert and the learner. Off, nothing runs. docs/PLAN.md has every rule.
   The look (#41, `iconStyle`, `iconSize`): plain, a glass disc (LibGlass borrowed from Glass
   MiniMap, nothing embedded; any failure latches to bronze) or a bronze ring (Blizzard's
-  `MiniMap-TrackingBorder` as LibDBIcon lays it out); auto follows the minimap. One `bind` sets a
+  `MiniMap-TrackingBorder` as LibDBIcon lays it out) or a yellow ring (#50, our `Media/IconRing.tga`
+  tinted `Icons.YELLOW`, the tracking dots' colour; never auto's); auto follows the minimap. One `bind` sets a
   frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
 - `Compass.lua` (#29, `compass`, experimental, off by default): under the character, the nearest
   gatherable record's item icon on our own art (`Media/Compass*.tga` from `Tools/make_media.py`: a
-  shadow, a dark lens, a rim tinted pearl or bronze as the icons' frame resolves, `Icons.Style()`;
+  shadow, a dark lens, a rim tinted pearl, bronze or yellow as the icons' frame resolves, `Icons.Style()`;
   no LibGlass), the arrow and a rim highlight orbiting toward it (`atan2(-east, north) - GetPlayerFacing()`,
   measured), the distance in a pill, the item's tooltip on hover (mouse motion only, clicks
   through), `compassSize`; chosen again every sweep with a 5-yard hysteresis and after a gather;
