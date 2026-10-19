@@ -282,6 +282,24 @@ After each successful radar sweep, in the same frame (the player hasn't moved):
    and matched to a node blip (`Learn.Kind`) of the same name within 8 units (the centroid's 5.5
    plus the measure's 2), one to one, nearest pairs first. A record's position never changes: a node
    doesn't move.
+
+   **Then covered** (the owner's two Silverleafs, 2026-10-19: about 32 units apart, they were icons,
+   then dots, then icons again as the player moved): two same-name nodes a few units apart can come
+   out of one sweep as **one** blip, its centroid between them (`/fp nr icons`: 21 cells, about two
+   nodes' worth; refining at 7 units doesn't always find a gap that narrow). Neither record is
+   within 8 units of that centroid, so both missed and dropped; the merged blip couldn't be
+   measured either ("crowded"); a later sweep from elsewhere split them and they came back. So
+   each blip keeps its sampled cells (`b.points`: the sweep's own cell list, no new table), and a
+   record left unmatched is **covered** when a blip of its name has a cell inside the record's
+   square (`|cell - record| <= Scan.NODE / 2` on both axes): it isn't missed, its height left as
+   it was. A blip that covers any record is not measured (it's a merged one, or one already
+   known): no `Scan.Centre` reads every 5 s on it. One blip can cover several records; the one-to-
+   one match still comes first.
+
+   The limit, accepted: a record stays while a same-name neighbour's square overlaps its own, so a
+   node gathered by someone else beside another of its name (within 25 units) keeps its icon until
+   that neighbour goes too. Such a pair overlaps and couldn't be measured apart anyway; the
+   player's own gather drops its record (step 5).
 3. **New:** an unmatched blip fully inside the round map (its centroid plus 18 units within the
    half-width) is measured (`Scan.Centre`), four at most per sweep, nearest the centre first;
    measured, it becomes a record. Not measured (crowded, not one node): no record, Blizzard's dot
@@ -360,6 +378,9 @@ The stubs' blips get centres the stub knows exactly, `UnitPosition`, and a playe
   dumps); 26 apart (a gap under a step): measured from a centroid 1 off (it steps into the gap),
   refused from one on the centre (it steps over it), never off-centre; a quest area's non-square or too-big box; a secret read (fails, soft cursor
   off); the far point beside a different name (still measured).
+- Records covered (the merged pair): two records, then one blip between them: both kept (no
+  miss), the blip not measured; split again: matched one to one as before; a record whose square no
+  cell covers still missed; another name's cells cover nothing.
 - Records: match one to one with two of a name side by side; a new blip measured once, then
   matched without reads (reads counted); misses hide then drop; the rim band; a gather drops the
   near record; the tries' order (four crowded and an isolated fifth, over repeated sweeps at a
