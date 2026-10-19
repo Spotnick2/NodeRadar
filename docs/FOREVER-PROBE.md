@@ -572,7 +572,7 @@ First by hand ("alt-drag works in game"), then the round:
 | Alt over the compass | the grip up, the icon's tooltip gone under it; "Drag to move" over the compass while Alt is held, gone when it's let go (yes) |
 | A drag | dropped at (-341.1, 337.8): saved and anchored there |
 | **After a `/reload`** | anchored at the same (-341.1, 337.8); where it was left (yes) |
-| **Past the right edge** | the screen 2133.3 units wide here: saved at 1028.7, exactly 2133.3 / 2 - 38 (the footprint's half-width at medium): fully on screen (yes), "under the smart bars, but yes" (another addon's bars over it there) |
+| **Past the right edge** | the screen 2133.3 units wide here: saved at 1028.7, exactly 2133.3 / 2 - 38 (the footprint's half-width at medium): fully on screen (yes), "under the smart bars, but yes": Glass Action Bars' bars drew over it there (a higher strata than the compass's; left as is) |
 | Alt let go mid-drag | it stopped following the mouse (yes) |
 | Locked, Alt held | no grip |
-| `/nr compass reset` | **not seen**: the step was passed by hand before the command (the chat's last NodeRadar line, "the compass's position locked", 10 s before the screenshot, which still shows it at the edge). The round's put-back, the same `place()` with the spot cleared, brought it home: `anchored CENTER 0, -160` |
+| `/nr compass reset` | works (the owner, tried before the round; the round's step was passed before the command). The put-back, the same `place()` with the spot cleared, brought it home too: `anchored CENTER 0, -160` |
