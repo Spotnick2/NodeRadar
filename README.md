@@ -63,7 +63,8 @@ turn on Find Herbs or Find Minerals.
   medium or large (`/nr compasssize`). It moves on as you gather, points only at nodes NodeRadar has
   measured (where nodes of one name crowd together, it may miss some), and hides within 15 yards
   (for a glow on the node itself, Lueur does that well). It follows your character's facing, not the
-  camera's: turning the camera alone doesn't turn it.
+  camera's: turning the camera alone doesn't turn it. Hold Alt and drag it to move it (lock it in
+  Options, `/nr compass reset` puts it back).
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not
@@ -97,7 +98,8 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
 - `/nr iconstyle auto | plain | glass | bronze | yellow`: the icon's frame (auto: glass with Glass MiniMap,
   else bronze); `/nr iconsize small | medium | large`
 - `/nr compass`: the experimental compass toward the nearest node (off by default);
-  `/nr compasssize small | medium | large`
+  `/nr compasssize small | medium | large`; `/nr compass lock | unlock | reset`: its position (Alt-drag
+  moves it)
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`

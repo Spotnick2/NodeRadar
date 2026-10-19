@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Move the compass** (#57): hold Alt over it and drag it where you like, as with Apotheca's bar.
+  Without Alt, clicks still go through it to the world. Lock it in Options or with
+  `/nr compass lock`; `/nr compass reset` puts it back under your character.
+
 ## v1.2.0
 
 Released 2026-10-19.

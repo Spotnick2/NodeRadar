@@ -38,6 +38,8 @@ Compass.ORBIT = Compass.DISC / 2 + 1 + 0.3125 * Compass.ARROW
 Compass.REACH = Compass.ORBIT + 0.375 * Compass.ARROW           -- its farthest point, the apex
 Compass.PILL_TOP = Compass.REACH + 3                             -- the capsule 3 units below that
 Compass.PILL = { 56, 18 }                                        -- fixed: no width change with the number
+Compass.FOOT = Compass.PILL_TOP + Compass.PILL[2]                -- the footprint's reach below the centre (59)
+Compass.HOME = { 0, -160 }                                       -- the default place: under the character
 Compass.TINTS = { glass = { 0.97, 0.97, 1 }, bronze = { 0.80, 0.62, 0.38 },    -- the rim: pearl, bronze,
                   yellow = NR.Icons.YELLOW }                                    -- the dots' yellow (#50)
 
@@ -137,6 +139,28 @@ pillArt:SetTexCoord(2 / 128, 126 / 128, 12 / 64, 52 / 64)
 local text = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 text:SetPoint("CENTER", pill, "CENTER")
 
+-- Moving it (#57): Alt-drag, as Apotheca. The hit area is the footprint, the
+-- arrow's reach above the centre to the capsule's bottom below it (it takes no
+-- mouse: it's only asked IsMouseOver); the grip over it takes clicks, and is
+-- shown only while Alt is held over the compass.
+local hit = CreateFrame("Frame", nil, body)
+hit:SetSize(2 * Compass.REACH, Compass.REACH + Compass.FOOT)
+hit:SetPoint("TOP", body, "CENTER", 0, Compass.REACH)
+hit:EnableMouse(false)
+local grip = CreateFrame("Frame", nil, hit)
+grip:SetAllPoints(hit)
+grip:SetFrameLevel(over:GetFrameLevel() + 1)             -- above the arrow (Codex)
+grip:EnableMouse(true)
+grip:RegisterForDrag("LeftButton")
+grip:Hide()
+local gripFill = grip:CreateTexture(nil, "BACKGROUND")
+gripFill:SetAllPoints(grip)
+gripFill:SetColorTexture(0, 0, 0, 0.45)
+local gripText = grip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+gripText:SetPoint("CENTER", body, "CENTER")
+gripText:SetText("Drag to move")
+root:SetMovable(true)
+
 -- The item a record gives (NODE_INFO), or nil.
 local function itemOf(t)
     local info = t and NR.Learn.Info(t.name)
@@ -171,7 +195,86 @@ disc:EnableMouse(false)
 disc:SetMouseMotionEnabled(true)
 disc:SetMouseClickEnabled(false)
 
+--------------------------------------------------------------------------------
+-- Moving it (#57)
+--------------------------------------------------------------------------------
+
+local function scale()
+    return (Compass.SIZES[NR.db.compassSize] or Compass.SIZES[NR.DEFAULTS.compassSize]) / Compass.DISC
+end
+
+-- An offset from UIParent's centre kept so the whole footprint, at the size
+-- now, is on UIParent (Codex's bounds). By the numbers: the root is a 1-unit
+-- frame, the footprint its scaled child's.
+local function clamp(x, y)
+    local w, h = API.Num(UIParent:GetWidth()), API.Num(UIParent:GetHeight())
+    if not (w and h) then return x, y end
+    local s = scale()
+    local side, up, down = Compass.REACH * s, Compass.REACH * s, Compass.FOOT * s
+    return math.max(-w / 2 + side, math.min(w / 2 - side, x)), math.max(-h / 2 + down, math.min(h / 2 - up, y))
+end
+
+-- The root where it's saved (compassX, compassY; else HOME), clamped.
+local dragging = false
+local function place()
+    if dragging or not NR.db then return end
+    local x, y = API.Num(NR.db.compassX), API.Num(NR.db.compassY)
+    if not (x and y) then x, y = Compass.HOME[1], Compass.HOME[2] end
+    x, y = clamp(x, y)
+    root:ClearAllPoints()
+    root:SetPoint("CENTER", UIParent, "CENTER", x, y)
+end
+
+-- A drag ends: stopped, its spot read (the root's centre minus UIParent's, both
+-- in UIParent's units, the root at scale 1 under it), clamped, saved, placed.
+-- Idempotent: the grip's OnHide calls it too.
+local function stopDrag()
+    if not dragging then return end
+    dragging = false
+    root:StopMovingOrSizing()
+    local rx, ry = root:GetCenter()
+    local ux, uy = UIParent:GetCenter()
+    rx, ry, ux, uy = API.Num(rx), API.Num(ry), API.Num(ux), API.Num(uy)
+    if rx and ry and ux and uy then
+        NR.db.compassX, NR.db.compassY = clamp(rx - ux, ry - uy)
+    end
+    place()
+end
+
+local function altDown()
+    local ok, down = pcall(IsAltKeyDown)
+    return ok and API.Yes(down)
+end
+
+-- The grip from live input (never one key event: a missed key-up can't leave
+-- it on): Alt held over the shown compass, not locked. A drag ends when Alt
+-- is let go or the lock is set; the mouse leaving the compass doesn't end it.
+local function updateGrip()
+    if dragging then
+        if not altDown() or NR.db.compassLock then
+            stopDrag()
+            grip:Hide()
+        end
+        return
+    end
+    local want = altDown() and not NR.db.compassLock and root:IsVisible() and hit:IsMouseOver()
+    grip:SetShown(want and true or false)
+end
+
+grip:SetScript("OnDragStart", function()
+    if NR.db.compassLock then return end
+    dragging = true
+    root:StartMoving()
+end)
+grip:SetScript("OnDragStop", function()
+    stopDrag()
+    updateGrip()
+end)
+grip:SetScript("OnHide", stopDrag)
+grip:SetScript("OnMouseDown", function() end)            -- a click on the grip stays on it
+
 local function hide()
+    grip:Hide()                                        -- its OnHide ends a drag under way
     root:Hide()
     shownDist = nil
     if ownsTooltip() then GameTooltip:Hide() end
@@ -204,8 +307,24 @@ local function frame()
         shownDist = whole
         text:SetText(whole .. " yd")
     end
+    updateGrip()                                       -- after the show-or-hide decision (Codex)
 end
 root:SetScript("OnUpdate", frame)
+
+-- Alt pressed or let go; the UI's scale or the display's size changed (a drag
+-- under way ended first, then placed again so it stays on screen: Codex).
+local input = CreateFrame("Frame")
+API.RegisterEvents(input, { "MODIFIER_STATE_CHANGED", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" })
+input:SetScript("OnEvent", function(_, event, key)
+    if not NR.db then return end
+    if event == "MODIFIER_STATE_CHANGED" then
+        if key == "LALT" or key == "RALT" then updateGrip() end
+        return
+    end
+    stopDrag()
+    grip:Hide()
+    place()
+end)
 
 -- The rim for the icons' frame (Icons.Style()), the size, the icon: set at
 -- each sweep and when the style or the size changes.
@@ -216,7 +335,8 @@ local function dress()
     rim:SetShown(tint ~= nil)                               -- none: the lens and the icon only
     arc:SetShown(tint ~= nil)
     if tint then rim:SetVertexColor(tint[1], tint[2], tint[3]) end
-    body:SetScale((Compass.SIZES[NR.db.compassSize] or Compass.SIZES[NR.DEFAULTS.compassSize]) / Compass.DISC)
+    body:SetScale(scale())
+    place()                                            -- the size changes the footprint's clamp
     icon:SetTexture(target.icon)
     if target ~= dressedFor then
         dressedFor = target
@@ -277,6 +397,18 @@ function Compass.Restyle()
     frame()
 end
 
+-- Back to the default place (/nr compass reset, /nr reset), shown or not.
+function Compass.ResetPosition()
+    stopDrag()
+    NR.db.compassX, NR.db.compassY = nil, nil
+    place()
+end
+
+-- The lock set or lifted (NR.Set): a drag under way ends, the grip follows.
+function Compass.UpdateGrip()
+    updateGrip()
+end
+
 -- The records cleared (Icons.Clear), or the compass turned off: no target.
 function Compass.Reset()
     target = nil
@@ -285,7 +417,8 @@ end
 
 Compass._test = {
     root = root, body = body, disc = disc, arrow = arrow, arc = arc, rim = rim, lens = lens, icon = icon,
-    shadow = shadow, pill = pill, text = text, frame = frame,
+    shadow = shadow, pill = pill, text = text, frame = frame, hit = hit, grip = grip, place = place,
+    dragging = function() return dragging end,
     target = function() return target end,
     style = function() return style end,
 }

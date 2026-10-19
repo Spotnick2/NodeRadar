@@ -96,7 +96,8 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   shadow, a dark lens, a rim tinted pearl, bronze or yellow as the icons' frame resolves, `Icons.Style()`;
   no LibGlass), the arrow and a rim highlight orbiting toward it (`atan2(-east, north) - GetPlayerFacing()`,
   measured), the distance in a pill, the item's tooltip on hover (mouse motion only, clicks
-  through), `compassSize`; chosen again every sweep with a 5-yard hysteresis and after a gather;
+  through), `compassSize`; Alt-drag moves it (#57, as Apotheca: a grip over its footprint while Alt is
+  held over it, from live input; `compassX, compassY` clamped on screen, `compassLock`); chosen again every sweep with a 5-yard hysteresis and after a gather;
   hidden within 15 yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);
   `Icons.On` alone draws icons. `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` →
   `Learn.Consider`, then a learner experiment just started clears the records.

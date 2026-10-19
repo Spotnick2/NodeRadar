@@ -585,6 +585,144 @@ check(cbLabel and cbLabel._text:find("^Show the compass"), "...its label: " .. t
 WoW.click(cb)
 eq(NR.db.compass, false, "...a click turns it off")
 
+--------------------------------------------------------------------------------
+-- Moving it (#57): Alt-drag, as Apotheca
+--------------------------------------------------------------------------------
+
+NR.Set("compass", true)
+fresh()
+node("Silverleaf", 0, 60)
+step(1)
+check(shown(), "the compass shown")
+local root, grip, hit = C.root, C.grip, C.hit
+local function at() local p = root._points[#root._points]; return p and p[4], p and p[5] end
+local function nearly(a, b) return type(a) == "number" and math.abs(a - b) < 0.01 end
+local x0, y0 = at()
+check(nearly(x0, 0) and nearly(y0, -160), "home: under the character, 0, -160")
+-- The hit area: the footprint, 76 by 97 at medium, its top the arrow's reach above the centre.
+check(nearly(hit._width, 76) and nearly(hit._height, 97), "the hit area 76 by 97 (the reach, the capsule's bottom)")
+local hp = hit._points[1]
+check(hp[1] == "TOP" and hp[2] == C.body and hp[3] == "CENTER" and nearly(hp[5], 38), "...its top 38 above the centre")
+eq(hit._mouse, false, "...takes no mouse")
+check(grip:GetFrameLevel() > C.arrow:GetParent():GetFrameLevel(), "the grip above the arrow")
+-- The grip from live input.
+C.frame()
+eq(grip._shown, false, "no Alt: no grip")
+WoW.altDown = true
+WoW.mouseOver = nil
+C.frame()
+eq(grip._shown, false, "Alt with the mouse elsewhere: no grip")
+WoW.mouseOver = hit
+C.frame()
+eq(grip._shown, true, "Alt over the compass: the grip")
+eq(grip._mouse, true, "...it takes clicks")
+WoW.altDown = false
+C.frame()
+eq(grip._shown, false, "Alt let go (no key event): gone at the next frame")
+WoW.altDown = true
+WoW.fire("MODIFIER_STATE_CHANGED", "LALT", 1)
+eq(grip._shown, true, "Alt's key event: at once")
+NR.Set("compassLock", true)
+eq(grip._shown, false, "locked: gone at once")
+C.frame()
+eq(grip._shown, false, "...and stays gone")
+grip._scripts.OnDragStart(grip)
+eq(C.dragging(), false, "locked: a drag start (a click racing the lock) moves nothing")
+eq(root._moving, nil, "...the root never moving")
+NR.Set("compassLock", false)
+C.frame()
+eq(grip._shown, true, "unlocked: back")
+eq(C.disc._click, false, "the disc still lets clicks through (only the grip catches them)")
+-- A drag: moved, dropped, saved, placed.
+local stops = 0
+local stopImpl = WoW.Methods.StopMovingOrSizing
+WoW.Methods.StopMovingOrSizing = function(w) stops = stops + 1; return stopImpl(w) end
+grip._scripts.OnDragStart(grip)
+eq(root._moving, true, "the drag starts: the root moves")
+eq(C.dragging(), true, "...dragging")
+local pts = root._points
+step(1)                                                    -- a sweep mid-drag
+check(root._points == pts, "a sweep during the drag doesn't re-anchor it")
+WoW.dropAt = { 960 + 300, 540 + 100 }
+grip._scripts.OnDragStop(grip)
+eq(stops, 1, "dropped: stopped once")
+check(nearly(NR.db.compassX, 300) and nearly(NR.db.compassY, 100), "...its offset saved: 300, 100")
+local px, py = at()
+check(nearly(px, 300) and nearly(py, 100) and #root._points == 1, "...placed there, one anchor")
+-- Each edge: clamped so the whole footprint stays on the screen (1920 by 1080).
+for _, case in ipairs({ { 2100, 540, 922, 0 }, { -200, 540, -922, 0 }, { 960, 1200, 0, 502 }, { 960, -200, 0, -481 } }) do
+    grip._scripts.OnDragStart(grip)
+    WoW.dropAt = { case[1], case[2] }
+    grip._scripts.OnDragStop(grip)
+    check(nearly(NR.db.compassX, case[3]) and nearly(NR.db.compassY, case[4]),
+        ("dropped at %d, %d: clamped to %d, %d"):format(case[1], case[2], case[3], case[4]))
+end
+-- A saved spot off screen comes back on at the next placing; the size re-clamps.
+NR.db.compassX, NR.db.compassY = 5000, 0
+C.place()
+px = at()
+check(nearly(px, 922), "a saved spot off screen: placed on it")
+NR.db.compassX = 922
+NR.Set("compassSize", "large")
+px = at()
+check(nearly(px, 960 - 38 * 60 / 52), "large: re-clamped to the bigger footprint")
+NR.Set("compassSize", "medium")
+-- The UI's scale changed: placed again on the new screen.
+UIParent._width = 1600
+WoW.fire("UI_SCALE_CHANGED")
+px = at()
+check(nearly(px, 800 - 38), "UI_SCALE_CHANGED: placed on the smaller screen")
+UIParent._width = 1920
+WoW.fire("DISPLAY_SIZE_CHANGED")
+-- A drag ends when Alt is let go, the lock is set, or the compass hides: stopped,
+-- placed and saved, once.
+local function midDrag(label, interrupt, restore)
+    WoW.altDown, WoW.mouseOver = true, hit
+    C.frame()
+    stops = 0
+    grip._scripts.OnDragStart(grip)
+    WoW.dropAt = { 960 + 50, 540 + 20 }
+    interrupt()
+    eq(C.dragging(), false, label .. ": the drag ended")
+    eq(stops, 1, "...stopped once")
+    check(nearly(NR.db.compassX, 50) and nearly(NR.db.compassY, 20), "...where it was, saved")
+    eq(grip._shown, false, "...the grip gone")
+    restore()
+end
+midDrag("Alt let go", function() WoW.altDown = false; C.frame() end, function() end)
+midDrag("locked", function() NR.Set("compassLock", true) end, function() NR.Set("compassLock", false) end)
+midDrag("hidden (dead)", function() WoW.dead = true; C.frame() end, function() WoW.dead = false; step(1) end)
+midDrag("the UI's scale", function() WoW.fire("UI_SCALE_CHANGED") end, function() end)
+grip._scripts.OnHide(grip)
+eq(stops, 1, "the grip's OnHide after a stop: nothing more (idempotent)")
+WoW.Methods.StopMovingOrSizing = stopImpl
+WoW.altDown, WoW.mouseOver = false, nil
+-- The commands, with the compass off.
+NR.Set("compass", false)
+SlashCmdList.NODERADAR("compass reset")
+eq(rawget(NR.db, "compassX"), nil, "/nr compass reset, the compass off: the offset cleared")
+px, py = at()
+check(nearly(px, 0) and nearly(py, -160), "...home again")
+eq(NR.db.compass, false, "...the compass left off")
+SlashCmdList.NODERADAR("compass lock")
+eq(NR.db.compassLock, true, "/nr compass lock")
+SlashCmdList.NODERADAR("compass unlock")
+eq(NR.db.compassLock, false, "/nr compass unlock")
+NR.db.compassX, NR.db.compassY = 120, 40
+SlashCmdList.NODERADAR("reset")
+eq(rawget(NR.db, "compassX"), nil, "/nr reset: the position cleared too (Codex)")
+px, py = at()
+check(nearly(px, 0) and nearly(py, -160), "...home")
+-- Options: the lock.
+NR.Options._test.panel:Hide()
+NR.Options._test.panel:Show()
+local lock = NR.Options._test.checks.compassLock
+check(lock and not lock:GetChecked(), "Options: Lock its position, unchecked")
+WoW.click(lock)
+eq(NR.db.compassLock, true, "...a click locks it")
+WoW.click(lock)
+eq(NR.db.compassLock, false, "...and unlocks it")
+
 eq(WoW.softCursor, false, "the soft cursor is off")
 checkMethods({ "Texture:SetRotation", "FontString:SetText", "Frame:SetMouseMotionEnabled",
                "Frame:SetMouseClickEnabled", "GameTooltip:SetItemByID" })
