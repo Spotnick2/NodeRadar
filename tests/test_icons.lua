@@ -157,9 +157,123 @@ for k, v in pairs(records()[1]) do twin[k] = v end
 twin.frame, twin.north = nil, twin.north + 5 * K()          -- a record 5 units off the same blip
 table.insert(records(), twin)
 step()
-local shownCount = 0
-for _, rr in ipairs(records()) do if rr.misses == 0 then shownCount = shownCount + 1 end end
-eq(shownCount, 1, "one blip matches one record")
+local original = records()[1]
+local _, swept = step()
+local b1 = swept.byName.Silverleaf[1]
+check(b1.record == original, "one blip matches one record (the nearer), one to one")
+eq(twin.misses, 0, "...the twin, 5 units off inside its square, is covered, not missed (the merged-pair rule)")
+
+-- The owner's two Silverleafs: two of a name whose squares nearly touch come out
+-- of a sweep as one blip between them (26 apart, here from x = 3; 7.5 units on,
+-- the same pair splits). Their records stay, covered; the merged blip isn't measured.
+reset()
+NR.db.interval = 5
+WoW.pos = { 0, 0, 1 }
+local pa = node("Silverleaf", 3, 0)
+step()
+local ra = records()[1]
+check(ra and near(ra.x, 3), "A measured alone")
+local pb = node("Silverleaf", 29, 0)
+local rb = {}
+for k, v in pairs(ra) do rb[k] = v end                     -- B's record, as if measured from elsewhere
+rb.frame, rb.west = nil, pb.west
+table.insert(records(), rb)
+NR.Set("compass", true)
+local plainMerged = plainReads()
+local readsMerged, sweptMerged = step()
+local compassTarget = NR.Compass._test.target()
+check(compassTarget == ra or compassTarget == rb, "the compass on one of the pair")
+eq(#sweptMerged.byName.Silverleaf, 1, "the sweep merges them: one Silverleaf blip")
+local mb = sweptMerged.byName.Silverleaf[1]
+check(mb.points and #mb.points == mb.cells, "...its cells kept (b.points)")
+local c1 = mb.points[1]
+check(c1[1] - 99 > -40 and c1[1] - 99 < 60, "...in the map's coordinates (from the bottom left): " .. tostring(c1[1]))
+eq(ra.misses, 0, "A covered, not missed")
+eq(rb.misses, 0, "B covered, not missed")
+eq(readsMerged, plainMerged, "...the merged blip not measured (no reads)")
+for _ = 1, 7 do step() end                                 -- past RETRY
+eq(#records(), 2, "over sweeps past RETRY: both records kept")
+eq(NR.Compass._test.target(), compassTarget, "...the compass on the same record throughout (no flip)")
+NR.Set("compass", false)
+local readsLater = step()
+eq(readsLater, plainReads(), "...and still no measuring reads")
+-- One miss, then covered again: shown again, its height kept.
+ra.misses, ra.height = 1, "above"
+step()
+eq(ra.misses, 0, "a record with one miss recovered by covering")
+eq(ra.height, "above", "...its height kept")
+check(ra.frame and ra.frame._shown, "...its icon shown")
+ra.height = nil
+-- Split again (the player 7.5 units on): matched one to one, the same records.
+WoW.pos[2] = WoW.pos[2] + 7.5 * K()                        -- the dots 7.5 units left: from 10.5
+local _, sweptSplit = step()
+eq(#sweptSplit.byName.Silverleaf, 2, "7.5 units on: two blips")
+local ka, kb
+for _, bb in ipairs(sweptSplit.byName.Silverleaf) do
+    if bb.record == ra then ka = true elseif bb.record == rb then kb = true end
+end
+check(ka and kb and #records() == 2, "...each matched to its own record, the same objects")
+-- A record no cell covers is still missed.
+pb.gone = true
+local function placeLive() local l = {}; for _, n in ipairs(nodes) do if not n.gone then l[#l + 1] = n end end; return l end
+nodes = placeLive()
+step()
+eq(rb.misses, 1, "B's node gone: missed (no cell in its square)")
+step()
+eq(#records() == 1 and records()[1] == ra, true, "...dropped at the second, A left")
+-- A Silverleaf straight above, its column but not its square: covers nothing.
+nodes = {}
+local above = node("Silverleaf", 3, 30)
+local _, sweptAbove = step()
+eq(#sweptAbove.byName.Silverleaf, 1, "A gone, a Silverleaf 30 above its spot")
+eq(ra.misses, 1, "...A not covered by it (same column, not its square)")
+local _ = above
+nodes = { pa }
+step()
+-- Another name's cells cover nothing.
+local stale = {}
+for k, v in pairs(ra) do stale[k] = v end
+stale.frame, stale.name = nil, "Wilted Peacebloom"
+table.insert(records(), stale)
+step(); step()
+local stillStale = false
+for _, rr in ipairs(records()) do if rr == stale then stillStale = true end end
+eq(stillStale, false, "a Silverleaf's cells don't keep a Wilted Peacebloom record")
+-- The accepted limit: a stale record kept by a neighbour on the diagonal (12, 12 off;
+-- up to 25 on each axis when a sample lands in the overlap).
+reset()
+WoW.pos = { 0, 0, 1 }
+local gone1 = node("Silverleaf", 0, 30)
+step()
+local rg = records()[1]
+nodes = {}
+local nb = node("Silverleaf", 12, 42)                      -- 12 right and 12 up of the gone one
+step(); step()
+local keptStale = false
+for _, rr in ipairs(records()) do if rr == rg then keptStale = true end end
+check(keptStale, "the accepted limit: a gone node's record kept while a neighbour's square overlaps it (diagonal)")
+local _ = gone1, nb
+-- The rim: covered in the band, dropped past it.
+reset()
+WoW.pos = { 0, 0, 1 }
+local inner = node("Silverleaf", 50, 0)
+step()
+local rr0 = records()[1]
+nodes = {}
+local rim = node("Silverleaf", 88, 0)
+local band = {}
+for k, v in pairs(rr0) do band[k] = v end
+band.frame, band.west = nil, rim.west                      -- a record at the rim node, as if measured before
+table.insert(records(), band)
+step()
+eq(band.misses, 0, "a record in the rim band (88 out) covered by its blip")
+WoW.pos[2] = WoW.pos[2] + 6 * K()                          -- the node now 94 out: past the drop
+step()
+local stillBand = false
+for _, rx in ipairs(records()) do if rx == band then stillBand = true end end
+eq(stillBand, false, "...past the rim (94 out): dropped, covered or not")
+local _ = inner
+NR.db.interval = nil
 
 -- Crowded: two of a name 30 apart; no record, Blizzard's dots.
 reset()
