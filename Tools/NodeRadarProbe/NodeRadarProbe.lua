@@ -2764,6 +2764,160 @@ for _, s in ipairs({
 Probe:Steps("bronze", bronzeSteps)
 
 --------------------------------------------------------------------------------
+-- NodeRadar's own looks in game (#41): /fp steps nr styles
+--------------------------------------------------------------------------------
+
+-- NodeRadar's icons, style and size, raw, put back by the last step.
+local function lookOn(n, style, size)
+    if NodeRadarProbeDB.restoreLook == nil then
+        NodeRadarProbeDB.restoreLook = { icons = rawget(n.db, "icons"), style = rawget(n.db, "iconStyle"),
+                                         size = rawget(n.db, "iconSize") }
+    end
+    if n.db.icons ~= true then n.Set("icons", true) end
+    if style ~= nil and n.db.iconStyle ~= style then n.Set("iconStyle", style) end
+    if size ~= nil and n.db.iconSize ~= size then n.Set("iconSize", size) end
+end
+
+local function lookBack()
+    local n, saved = nr(), NodeRadarProbeDB.restoreLook
+    if not (n and saved) then return "nothing to put back" end
+    n.Set("iconStyle", saved.style)
+    n.Set("iconSize", saved.size)
+    n.Set("icons", saved.icons)
+    NodeRadarProbeDB.restoreLook = nil
+    return ("put back: icons %s, style %s, size %s"):format(str(saved.icons), str(saved.style), str(saved.size))
+end
+
+local function lookText(n)
+    local l = n.Icons._test.look()
+    return ("%s %s (setting %s, %s)"):format(l.style, l.size, str(n.db.iconStyle), str(n.db.iconSize))
+end
+
+-- Waits until icons show in this look: the setting set, the effective look and
+-- the frames read back.
+local function showLook(style, size, want)
+    return function()
+        local n = nr()
+        if not (n and n.Icons and n.Icons._test.look) then return false, "NodeRadar (#41) isn't loaded" end
+        lookOn(n, style, size)
+        local l = n.Icons._test.look()
+        if want and l.style ~= want then return false, "the look is " .. lookText(n) .. ", not " .. want end
+        local list = shownIcons()
+        if #list == 0 then return false, "no icon in view" end
+        return true, lookText(n) .. "; " .. iconsText()
+    end
+end
+
+-- A shown record matching `test`, or nil.
+local function shownWhere(test)
+    for _, r in ipairs(shownIcons()) do if test(r) then return r end end
+end
+
+local function costLook(label, style)
+    return function()
+        local n = nr()
+        if not n then return false, "NodeRadar isn't loaded" end
+        if not (cost.on and cost.label == label) then
+            if not moving() then return false, "start riding the loop" end
+            if style then lookOn(n, style, "medium") else n.Set("icons", false) end
+            costStart(n, label)
+        end
+        local left = COST_SECONDS - (GetTime() - cost.t0)
+        if left > 0 then return false, ("%.0f s left"):format(left) end
+        local text = costStop(n)
+        iconsDB().cost[label].style = style or "off"
+        return true, text
+    end
+end
+
+Probe:Steps("styles", {
+    rev = 1,
+    title = "Icon frames and sizes, NodeRadar's own (#41)",
+    { text = "Have NodeRadar and Glass MiniMap loaded and gathering tracking on. NodeRadar's icons go on now, and "
+          .. "your settings come back at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons and n.Icons._test.look) then return false, "NodeRadar (#41) isn't loaded" end
+          if not glassMiniMapOn() then return false, "Glass MiniMap is off: turn it on and reload" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          NodeRadarProbeDB.icons = nil
+          lookOn(n, "auto", "medium")
+          return true, "icons on: " .. lookText(n)
+      end },
+    { text = "Stand still where herbs or ore show on the minimap, until NodeRadar's icons cover their dots. Stay "
+          .. "still for the sizes that follow.", wait = showLook("auto", "medium", "glass"),
+      screenshot = "styles: auto, Glass MiniMap" },
+    { text = "Following the minimap with Glass MiniMap: glass discs, medium. Is each on its node?", ask = true },
+    { text = "Glass, small.", wait = showLook("glass", "small", "glass"), screenshot = "styles: glass small" },
+    { text = "Glass, large.", wait = showLook("glass", "large", "glass"), screenshot = "styles: glass large" },
+    { text = "Did glass look right at small and large? (Note box: which size you'd keep as the default.)",
+      ask = true },
+    { text = "Bronze, small.", wait = showLook("bronze", "small", "bronze"), screenshot = "styles: bronze small" },
+    { text = "Bronze, medium.", wait = showLook("bronze", "medium", "bronze"), screenshot = "styles: bronze medium" },
+    { text = "Bronze, large.", wait = showLook("bronze", "large", "bronze"), screenshot = "styles: bronze large" },
+    { text = "Did bronze look right at each size on Glass MiniMap?", ask = true },
+    { text = "No frame (the plain icon), medium.", wait = showLook("plain", "medium", "plain"),
+      screenshot = "styles: plain" },
+    { text = "Bronze again: find a node above or below you (a slope, a ledge), until NodeRadar's arrow shows by "
+          .. "it.", wait = function()
+          local n = nr()
+          if n then lookOn(n, "bronze", "medium") end
+          local r = shownWhere(function(r) return r.height ~= nil end)
+          if not r then return false, "no icon with an arrow yet" end
+          return true, ("%s %s"):format(r.name, r.height)
+      end, screenshot = "styles: our arrow" },
+    { text = "Is NodeRadar's small arrow where Blizzard's would be (above the frame for a node above, under it "
+          .. "for one below), and does it look like Blizzard's?", ask = true },
+    { text = "Put the mouse on a framed icon and hold it there.", wait = function()
+          local over
+          for _, r in ipairs(shownIcons()) do
+              if yes(ask(r.frame, "IsMouseOver")) then over = r end
+          end
+          if not over then return false, "the mouse isn't on an icon" end
+          if not yes(ask(rawget(_G, "GameTooltip"), "IsShown")) then return false, "on " .. over.name .. ", no tooltip yet" end
+          return true, ("on %s: the tooltip shows %s"):format(over.name, str(ask(rawget(_G, "GameTooltipTextLeft1"),
+              "GetText")))
+      end, screenshot = "styles: hovering" },
+    { text = "Did Blizzard's tooltip show the node through the frame?", ask = true },
+    { text = "Optional: a node your skill can't gather in view (dimmed). Skip if none.", wait = function()
+          local r = shownWhere(function(r) return r.dim end)
+          if not r then return false, "no dimmed icon in view" end
+          return true, r.name .. " dimmed"
+      end, screenshot = "styles: dimmed" },
+    { text = "Walk so a node with an icon leaves past the minimap's edge, watching it go.", wait = function()
+          local r = shownWhere(function(r) return r.frame and (ask(r.frame, "GetAlpha") or 1) < 0.95 and not r.dim end)
+          if not r then return false, "no icon fading at the edge yet" end
+          return true, r.name .. " fading at the edge"
+      end, screenshot = "styles: the rim" },
+    { text = "Did the framed icon fade out at the edge, rather than pop off?", ask = true },
+    { text = "Open Esc > Options > AddOns > NodeRadar and leave it open.", wait = function()
+          local n = nr()
+          local p = n and n.Options and n.Options._test and n.Options._test.panel
+          if not yes(ask(p, "IsVisible")) then return false, "NodeRadar's page isn't open" end
+          return true, "the page is open"
+      end, screenshot = "styles: the Options page" },
+    { text = "Does the whole page fit, down to the Learning section and the /nr help line, without anything cut "
+          .. "off? Then close it.", ask = true },
+    { text = "The cost, icons OFF: ride a loop past nodes for a minute (the step starts when you move).",
+      wait = costLook("styles off", nil), timeout = 300 },
+    { text = "The cost, GLASS: ride the same loop again for a minute.", wait = costLook("styles glass", "glass"),
+      timeout = 300 },
+    { text = "The cost, BRONZE: the same loop once more.", wait = costLook("styles bronze", "bronze"), timeout = 300 },
+    { text = "Now Blizzard's own minimap: turn Glass MiniMap off in the AddOns list, then press Reload.",
+      reload = true },
+    { text = "Stand still with nodes in view.", wait = function()
+          local n = nr()
+          if n then lookOn(n, "auto", "medium") end            -- the cost loops left bronze chosen
+          if glassMiniMapOn() then return false, "Glass MiniMap is still on: turn it off and reload" end
+          return showLook("auto", "medium", "bronze")()
+      end, screenshot = "styles: auto, Blizzard's minimap" },
+    { text = "Following the minimap without Glass MiniMap: bronze rings. Is each on its node, as in the bronze round?",
+      ask = true },
+    { text = "Turn Glass MiniMap back on in the AddOns list, then press Reload.", reload = true },
+    { text = "Putting your NodeRadar settings back.", auto = true, run = lookBack },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
