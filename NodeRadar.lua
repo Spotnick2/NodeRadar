@@ -7,7 +7,7 @@
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
-local API, Scan, Learn, Alert, Icons = NR.API, NR.Scan, NR.Learn, NR.Alert, NR.Icons
+local API, Scan, Learn, Alert, Icons, Compass = NR.API, NR.Scan, NR.Learn, NR.Alert, NR.Icons, NR.Compass
 
 local ADDON_NAME = ...
 
@@ -19,6 +19,7 @@ local DEFAULTS = {
     icons    = false,   -- the item's icon over each node's dot (#28)
     iconStyle = "auto", -- its frame (#41): auto (glass with Glass MiniMap, else bronze), plain, glass, bronze
     iconSize = "medium", -- small, medium or large: Icons.SIZES
+    compass  = false,   -- experimental (#29): a ring under the character toward the alerted node
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -87,8 +88,12 @@ function NR.Step(now)
     if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset() end
     lastGeometry = result.geometry
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
+    Compass.Reconcile(result, now)                  -- the nearest node, before the learner (#29)
     Alert.Update(result, now)
     Learn.Consider(result, now)
+    -- An experiment just started turns tracking off: whenever the client
+    -- delivers MINIMAP_UPDATE_TRACKING, nothing points at a node meanwhile (Codex, #29).
+    if Learn.Busy() then Icons.Clear() end
     return result
 end
 
@@ -111,7 +116,17 @@ end
 function NR.Set(key, value)
     NR.db[key] = value
     if key == "enabled" then Alert.Reset() end
-    if key == "enabled" or key == "icons" then Icons.Clear() end
+    if key == "enabled" then Icons.Clear() end
+    -- The records serve the icons and the compass (#29): each setting does its own part.
+    if key == "icons" or key == "compass" then
+        if not Icons.Keeping() then
+            Icons.Clear()
+        elseif key == "icons" then
+            if Icons.On() then Icons.Show() else Icons.Release() end
+        elseif not Compass.On() then
+            Compass.Reset()
+        end
+    end
     if key == "iconStyle" or key == "iconSize" then Icons.Restyle() end
 end
 
@@ -211,7 +226,7 @@ local function status()
     local db = NR.db
     API.Say("radar " .. onOff(db.enabled) .. "; only nodes you can gather " .. onOff(db.skillOnly)
         .. "; item icons on the minimap " .. onOff(db.icons) .. " (" .. tostring(db.iconStyle) .. ", "
-        .. tostring(db.iconSize) .. ")"
+        .. tostring(db.iconSize) .. "); the compass (experimental) " .. onOff(db.compass)
         .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
         .. ", chat " .. onOff(db.chat) .. ", Blizzard's ping " .. onOff(db.ping) .. "; learning " .. onOff(db.learn)
         .. "; " .. db.cooldown .. " s between alerts")
@@ -251,6 +266,7 @@ local function help()
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
     API.Say("/nr iconstyle auto | plain | glass | bronze: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
+    API.Say("/nr compass: experimental, a ring under your character pointing at the nearest node (off by default)")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -278,6 +294,9 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "iconsize" and Icons.SIZES[rest:lower()] then
         NR.Set("iconSize", rest:lower())
         API.Say("icon size: " .. rest:lower())
+    elseif cmd == "compass" then
+        NR.Set("compass", not db.compass)
+        API.Say("the compass (experimental) " .. onOff(db.compass))
     elseif cmd == "options" or cmd == "config" then
         if not NR.Options.Open() then API.Say("the Options page can't open here: Esc > Options > AddOns") end
     elseif cmd == "sound" and Alert.SOUNDS[rest:lower()] then

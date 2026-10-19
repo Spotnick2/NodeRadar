@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Experimental: a compass toward the nearest node** (#29), off by default (`/nr compass`, or
+  Options): a ring under your character points toward the nearest node you can gather, with the
+  distance, and moves on as you gather; it hides within 15 yards. It follows your character's
+  facing, not the camera's.
+
 ## v1.1.0
 
 Released 2026-10-18.

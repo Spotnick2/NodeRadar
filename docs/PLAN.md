@@ -534,6 +534,152 @@ it. Per sweep, a `find` per mouseover row for the arrow.
 
 Following Glass MiniMap's theme tint. Square minimap skins (#4). Mouse interaction with the icons.
 
+## The compass, experimental (#29)
+
+A small ring under the character shows which way to turn and how far it is to **the nearest node
+the player can gather** that NodeRadar has measured, so the player can ride from node to node
+without watching the minimap. **Experimental**: a setting, `compass`,
+off by default, labelled experimental in Options ("Experimental: show which way to the node") and
+`/nr compass`. It may never ship on by default: the owner decides after testing. Off, nothing of
+it runs.
+
+Within about 15 yards it stops: the glow on the node itself is Lueur's (the soft target, which
+Forever loses at 15 yards), and NodeRadar never touches the soft-targeting settings (owner,
+2026-10-18). Blizzard's ping and waypoint marker were ruled out (#29: the ping is secure and needs
+a GUID; Forever draws no waypoint marker).
+
+### What it rests on (docs/FOREVER-PROBE.md, "The compass, first round", 70450)
+
+- `GetPlayerFacing()`: radians counter-clockwise from north, 0 to 2π, wrapping across north.
+- A point's bearing from `UnitPosition` (north, west): `atan2(-east, north)`, east = -west. Facing
+  a node read 0.01 rad from its bearing; an arrow at `bearing - facing` (counter-clockwise from
+  straight ahead) pointed true ahead and to the left.
+- #28's records are good to about a yard at 70 yards (72.7 yd at the start, 72.0 walked, the record
+  1.0 yd off at the gather).
+- `GetPlayerFacing()` is the character's facing, not the camera's (the camera's yaw isn't readable).
+  While the player turns the camera alone (the left mouse button), the arrow follows the character.
+  Said in the README and on the Options page.
+- `UnitOnTaxi("player")` is in the dump; its value on a flight isn't measured yet (round 2: the
+  owner was in Orgrimmar, with no node in view).
+- **Round 2 (the alerted-node design, `compass2`):** the ring led to its node and went at 14.9 and
+  15.0 yards; the 60 s timeout held; clicks went through it; Edit Mode and combat were clean; the cost
+  was the icons-off cost (262 reads a sweep). But following the *alerted* node fell short (owner): it
+  "does not necessarily point to the closest herb and also vanishes with herbs on the minimap" (its
+  record dropped past the rim after a zoom in, or missed in a clump). So the target became the
+  nearest gatherable record, chosen again every sweep (owner, 2026-10-19). A skip ("not that one,
+  it's out of reach") waits for the final version (owner).
+
+### Records without icons
+
+The compass aims at #28's records, so they're kept while icons **or** the compass is on, and each
+setting does only its own part (Codex, #29):
+- `Icons.Keeping()` (radar on, and `icons` or `compass`) gates `Icons.Update`'s matching and
+  measuring and `Icons.Gathered`.
+- `Icons.On()` (radar on and `icons`) alone gates **everything drawn**: in `Icons.Update`'s last
+  part, acquiring frames, `bindAll` (so no look is resolved and no glass is built for the compass
+  alone) and the driver's `OnUpdate`. Not just `draw()`: by then the frames would exist.
+- **Settings:** the radar off, or both off: records cleared. `icons` off with the compass on: the
+  icon frames released and the driver stopped, the records kept. `icons` on: the records kept are
+  bound and drawn at once. `compass` off: the ring hidden, the records kept while icons are on.
+  `compass` on: nothing to do until the next sweep.
+
+With the compass on and icons off, a new node still costs its 29 reads once, and nothing changes
+on the minimap.
+
+### The target
+
+**The nearest gatherable record**, chosen again at every radar sweep, in `NR.Step` right after
+`Icons.Update` (`Compass.Reconcile`): of the records kept (#28's, every one, a record missed once
+included: a miss means not matched this sweep, not a wrong position, and leaving it out would make
+the ring vanish in clumps again: Codex), those `Alert.Gatherable` allows (#26's filter as the alert
+uses it, read fresh, never `r.dim`, which only the icons refresh: so unknown requirements, an
+unreadable skill and `skillOnly` off all count as gatherable), the nearest the player horizontally. None: no target, the ring hidden. Nothing ties it to an alert: no pending
+target, no timeout. It moves on by itself: a gathered node's record goes (`Icons.Gathered`), one
+past the rim is dropped, and the next nearest is the target at the next sweep.
+- **Hysteresis:** the current target stays unless another is at least 5 yards nearer, so two nodes
+  about as far don't make the arrow flick between them; but only while that very record is still in
+  `Icons.Records()` and still gatherable. Gone or no longer gatherable, the nearest wins outright
+  (Codex).
+- **A gather** (`Icons.Gathered`, the successful cast) chooses again at once, **after** the gathered
+  records are out of the list (one call once `records` is the filtered list, not one per drop), so
+  the ring moves on without waiting for a sweep. It doesn't count as a sweep: the ring's freshness
+  (a sweep within the interval plus 2 s) isn't renewed by it.
+- **Records cleared** (any reason: `Icons.Clear`) drop the target at once.
+- Each frame draws toward the target's world position (the record's): records don't move.
+- A node of a name in a clump can lose its record (a merged cluster's centroid misses it, #28's
+  stated limit: the dot shows there too); the compass then points at the nearest record left. That's
+  the icons' limit, not the compass's: measured, not chased here.
+
+### The ring
+
+- An unnamed child of **`UIParent`**, centred 160 units below the screen's centre, 120 units across
+  (the probe's draft, which the owner followed). Not movable in this issue. **This amends the UI
+  contract** in CLAUDE.md ("our frames are unnamed children of `Minimap`"): that rule is about never
+  touching the minimap, and the ring isn't on it. It takes no mouse.
+- The ring (`Media\SonarRing.tga`, tinted as the sonar: green for herbs, gold for ore), an arrow on
+  it (Blizzard's upward triangle, `Minimap-PositionArrows`' upper half, 28 units: its zero is up,
+  measured) at `a = wrap(bearing - facing)`, placed at `(-48 sin a, 48 cos a)` and turned by
+  `SetRotation(a)`, and the distance in the middle (`"73 yd"`, updated when the whole number
+  changes).
+- **Per frame while shown** (an `OnUpdate` unset when hidden): one `UnitPosition`, one
+  `GetPlayerFacing`, the 15-yard and hide checks, a `SetPoint` and a `SetRotation`. Nothing
+  allocated. Hidden, it shows again at the next usable sweep.
+
+### Shown, hidden
+
+- **Shown** while there's a target and the position and facing read, a radar sweep ran within the
+  idle interval plus 2 s, the player isn't dead or on a taxi (`UnitOnTaxi`).
+- **Hidden within 15 yards** of the target (horizontal, the record has no above/below height): the
+  glow there is Lueur's. Not dismissed: it's still the nearest, so walking away without gathering
+  shows the ring again. A node above or below keeps the ring within 15 yards.
+- **Hidden** otherwise: no target; the compass or the radar off; the position or facing nil or
+  secret; no recent sweep (the learner's pause, the Gamepad UI, every sweep failing); dead; on a taxi.
+  Records cleared (a loading screen, death, tracking changed, an instance, the learner starting) leave
+  no target until the next sweep's records.
+- The distance is horizontal: the minimap gives no node height.
+
+### Tests
+
+- The target: the nearest gatherable record; one the skill can't gather never (and with `skillOnly`
+  off, it can); none: hidden; chosen again each sweep as the player moves; a record missed once
+  still chosen, recovered still, dropped at the second miss; hysteresis (3 yards nearer doesn't take
+  over, exactly 5 does, two at equal distance stay put); the incumbent gone or no longer gatherable
+  with a replacement under 5 yards farther: replaced; a record dropped past the rim (a zoom in)
+  moves it on, or hides it when none is left; records cleared: hidden at once; chosen on the
+  alert's silent baseline, in its cooldown, and past 60 s (no timeout).
+- The gather: several records of the name gone at once, an unrelated gather (hysteresis kept), and a
+  gather never reviving a stale ring.
+- Shown and hidden: within 15 yards hidden (the target kept, the `OnUpdate` gone), shown again
+  walking away at the next usable sweep; a node above not hidden within 15 yards, then level again
+  (its height nil) hidden; the position or facing unreadable; no recent sweep; dead; a taxi; the compass off; the
+  radar off; the learner starting in the same step.
+- The settings split (kept from the reviewed plan): icons off with the compass on keeps the records
+  and draws nothing (no frame, no look, no glass, no icon `OnUpdate`); icons on shows them; compass
+  off hides the ring and keeps the records for the icons; both off clears them.
+- The ring: the arrow's point and rotation ahead, left, right, behind, north-east, across the 0/2π
+  wrap; the distance text; tinted by the target's kind; no mouse; a child of `UIParent`.
+- Off: nothing measured, no ring, no `OnUpdate`.
+- Options and `/nr compass`.
+- Every new test mutation-tested.
+
+### Probe round 3 (`/fp steps nr compass3`, the nearest-node compass)
+
+- Riding among nodes: the ring on the nearest (screenshots, the candidates' distances, the chosen
+  record, its misses and height logged), moving on after each gather, no flicking between two at
+  about the same distance.
+- A zoom in with the ring up: it stays on a measured node still in view (a dot without a record
+  doesn't count: the rim and the clumps).
+- A clump of one herb: does the ring stay useful (the icons' limit)?
+- Hidden within 15 yards, back when walking away; a node above.
+- A flight: `UnitOnTaxi` true then false, and the ring hidden on the way if a node is in view.
+- The old `compass2` procedure and its watcher go: they read the alert design's state.
+- The cost, the compass alone.
+
+### Not in this issue
+
+A glow on the node within 15 yards (Lueur's). Moving the ring. **A skip** ("not that one"),
+for the final version (owner). A target chosen by the player (clicking an icon). Several targets.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock

@@ -60,9 +60,16 @@ local restyle          -- the glass latch tripped during a pass: bind everything
 
 local driver = CreateFrame("Frame")
 
+-- Drawn: the radar and the icons on.
 function Icons.On()
     local db = NR.db
     return db and db.icons and db.enabled and true or false
+end
+
+-- Kept: the records, for the icons or the compass (#29), whichever is on.
+function Icons.Keeping()
+    local db = NR.db
+    return db and db.enabled and (db.icons or db.compass) and true or false
 end
 
 -- The player in UnitPosition's frame: north, west (HereBeDragons-2.0 reads its
@@ -85,6 +92,7 @@ local function release(r)
         r.frame = nil
     end
 end
+
 
 local function acquire()
     local f = table.remove(free)
@@ -289,12 +297,24 @@ local function hideAll()
     stop()
 end
 
--- Everything forgotten: the records, the failed tries, the frames hidden.
+-- Everything forgotten: the records, the failed tries, the frames hidden;
+-- the compass pointing at none of them (#29).
 function Icons.Clear()
     for _, r in ipairs(records) do release(r) end
     records, tries, lastSweep, instance = {}, {}, nil, nil
     stop()
+    if NR.Compass then NR.Compass.Reset() end
 end
+
+-- The icons turned off while the compass keeps the records: the frames go,
+-- the records stay.
+function Icons.Release()
+    for _, r in ipairs(records) do release(r) end
+    stop()
+end
+
+-- The records, for the compass to read (never to change).
+function Icons.Records() return records end
 
 -- The item's icon, else the tracking spell's (no item, or no answer).
 local function iconOf(name, kind)
@@ -354,10 +374,35 @@ local function tryOf(b, pn, pw, k)
     end
 end
 
+-- Every record seen at the last sweep drawn: at each sweep, and when the
+-- icons are turned on over records the compass kept (#29).
+function Icons.Show()
+    if not Icons.On() then
+        stop()                                         -- the compass alone: no frame, no look (#29)
+        return
+    end
+    resolve()
+    local any = false
+    for _, r in ipairs(records) do
+        if r.misses == 0 then
+            r.dim = not NR.Alert.Gatherable(r.name)
+            if not r.frame then r.frame = acquire() end
+            any = true
+        end
+    end
+    bindAll()
+    if any then
+        driver:SetScript("OnUpdate", draw)
+        draw()
+    else
+        stop()
+    end
+end
+
 -- After each successful radar sweep, before the alert (Codex, #28: the sonar
 -- finds a new node's record) and the learner (which can clear them at once).
 function Icons.Update(result, now)
-    if not Icons.On() then return end
+    if not Icons.Keeping() then return end
     local where, g = result.where, result.geometry
     local pn, pw, inst = player()
     if not (where and g and pn) then
@@ -368,7 +413,7 @@ function Icons.Update(result, now)
     instance = inst
     local half = g.w / 2
     local k = where.radius / half
-    resolve()
+    if Icons.On() then resolve() end                   -- the compass alone resolves no look (#29)
 
     local blips = {}
     for _, b in ipairs(result.blips) do
@@ -453,29 +498,16 @@ function Icons.Update(result, now)
     tries = keptTries
 
     -- Shown: every record seen this sweep, dimmed as the alert's skill rule
-    -- says, each frame bound to its record in the look.
+    -- says, each frame bound to its record in the look. Only with the icons
+    -- on: for the compass alone, no frame, no look, no driver (Codex, #29).
     lastSweep = now
-    local any = false
-    for _, r in ipairs(records) do
-        if r.misses == 0 then
-            r.dim = not NR.Alert.Gatherable(r.name)
-            if not r.frame then r.frame = acquire() end
-            any = true
-        end
-    end
-    bindAll()
-    if any then
-        driver:SetScript("OnUpdate", draw)
-        draw()
-    else
-        stop()
-    end
+    Icons.Show()
 end
 
 -- The player gathered a node of that name: its records within GATHERED yards
 -- go, so a node of the name beside it is measured, not matched to it (Codex).
 function Icons.Gathered(name)
-    if not Icons.On() then return end
+    if not Icons.Keeping() then return end
     local pn, pw = player()
     if not pn then return end
     local kept = {}
@@ -487,6 +519,7 @@ function Icons.Gathered(name)
         end
     end
     records = kept
+    if NR.Compass then NR.Compass.Refresh() end        -- on to the next node, once the list is filtered
 end
 
 -- Where the sonar goes for an alerted blip: its record's centre when it has one.

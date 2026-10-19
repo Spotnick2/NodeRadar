@@ -380,3 +380,60 @@ The #41 build: `iconStyle` and `iconSize`, Glass MiniMap on, then off for the la
 | The cost, 60 s each on one loop | off: 102 sweeps, 270 reads and 670 KB a sweep, worst 14.8 ms. Glass: 104 sweeps, 264 reads, 699 KB, worst 11.7 ms. Bronze: 97 sweeps, 253 reads, 682 KB, **worst 100.8 ms**: one spike, the rest as the others; the owner's computer was likely downloading something then: not NodeRadar's |
 | Following the minimap, Glass MiniMap off | bronze, medium (`bronze 12`), on their nodes (yes) |
 | Settings put back | `icons`, `iconStyle`, `iconSize` back to the player's (nil) |
+
+### The compass, first round: `compass`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#29)
+
+A draft ring under the screen's centre, its arrow at `bearing - GetPlayerFacing()` toward one of #28's
+records, the bearing from `UnitPosition` as `atan2(-east, north)`.
+
+| What | Measured |
+|---|---|
+| **`GetPlayerFacing()`**, the minimap's arrow pointed by the owner | north 6.215, west 1.658, south 3.244, east 4.736 rad: **counter-clockwise from north**, 0 to 2π, each within 0.1 of 0, π/2, π, 3π/2 |
+| Across north | 6.238 → 0.420 between two polls: it wraps at 2π, as expected |
+| The bearing to a record | Silverleaf at 3.05 rad (south), 72.7 yd; facing it (the node above the arrow on the minimap) read 3.04: **0.01 rad apart** |
+| **The arrow, the node ahead** | at the ring's top (yes) |
+| **The arrow, the node on the left** (off by +1.43 rad) | on the ring's left side, pointing left (yes; screenshot) |
+| **The walk** to the node following the compass, then a gather | 72.7 yd at the start, 72.0 yd walked in a straight line (start to gather), the record 1.0 yd from the player at the cast: the distance and the record hold over 70 yards |
+| Led to the node | yes (no note on the draft's look) |
+| `UnitOnTaxi` on a flight | **not measured**: the flight was skipped, and the landing step read false at once (a flaw of the step: it didn't wait for a flight) |
+
+So `atan2(-east, north) - GetPlayerFacing()` (counter-clockwise from straight ahead) points the compass
+right, and #28's records are good to a yard or so at 70 yards. The flight stays to measure.
+
+### The compass, second round: `compass2`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+NodeRadar's own compass, the alerted-node design, with the icons off.
+
+| What | Measured |
+|---|---|
+| The ring after an alert | up 0.0 s after it when the node was measured at once (146-186 yd off), 5.2 s once; it pointed at the node (yes) |
+| **The ring vanishing** | gone 124, 135, 143 and 128 yd from its node, 1 to 18 s after the alert: right after a zoom in (the owner: "it vanished"; the node 143 yd off fell past the shrunk view, its record dropped at the rim, and the design dismissed the target), and among Peacebloom (likely a clump's merged centroid missing the record twice) |
+| Riding to it by the ring | led there (yes); gone at 14.9 and 15.0 yd |
+| The 60 s timeout | gone at 60.0 s, twice |
+| A click on the ring | reached the world (yes) |
+| Edit Mode, combat | nothing odd, no error (no, no) |
+| A flight | not measured (Orgrimmar: no node in view) |
+| The cost, the compass alone | 103 sweeps in 60 s, 262 reads a sweep, worst 12.4 ms: the icons-off cost |
+| **The owner's verdict** | "it does not necessarily point to the closest herb and also vanishes with herbs on the minimap"; a skip for a node out of reach, later |
+
+So the compass now points at the nearest gatherable record, chosen again every sweep (docs/PLAN.md).
+
+### The compass, third round: `compass3`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+The nearest-gatherable-node compass, the icons off. 18 target changes logged with every candidate's distance.
+
+| What | Measured |
+|---|---|
+| **The nearest** | every change picked the nearest candidate (Silverleaf 78 over Peacebloom 79 and Silverleaf 143; Earthroot 105 over Peacebloom 112 and Silverleaf 133; Peacebloom 135 over Earthroot 146); the owner: it points at the nearest node (yes) |
+| After a gather | on to the next nearest (yes) |
+| Riding, gathering by the ring alone | no flicking between two, nothing odd (no) |
+| **A zoom in** (to 4) | no node left in the shrunk view, so no record and no ring (the screenshot: no dot on the minimap either); the owner: the ring wasn't on a node in view (no, as there was none) |
+| A clump of one herb | still useful (yes) |
+| Within 15 yards | hidden at a Peacebloom, shown again walking away |
+| The look | the screenshot: a green ring for a herb, "78 yd", the arrow on its side toward the node |
+| A flight, the cost | skipped (round 2 measured the compass alone at the icons-off cost) |
+
+So the compass points at the nearest gatherable node and moves on as the player gathers. A zoom in
+leaves it nothing to point at until nodes are in the smaller view: it follows the minimap, as the
+icons do. (The probe's shown/hidden lines read "-1.0 yd": a `t and bearing()` in its logging kept
+one value; fixed after the run.)

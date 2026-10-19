@@ -15,5 +15,6 @@ Scan.lua
 Learn.lua
 Alert.lua
 Icons.lua
+Compass.lua
 Options.lua
 NodeRadar.lua
