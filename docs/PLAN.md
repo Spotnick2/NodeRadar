@@ -998,39 +998,55 @@ takes clicks and says "Drag to move"; its state read from live input, never one 
 
 - **The hit area:** `hit`, a frame on `body` (so it scales with the size) covering the compass's
   footprint: `2 * REACH` wide, from `REACH` above the disc's centre to the capsule's bottom
-  (`PILL_TOP + PILL[2]`) below it. It takes no mouse; it exists to ask `hit:IsMouseOver()`.
-- **The overlay:** `grip`, over `hit` (same rect), a level above the disc and the arrow, hidden
+  (`PILL_TOP + PILL[2]`) below it: 76 by 97 at medium, its centre 10.5 below the disc's, so anchored
+  by its top to `REACH` above the body's centre, not centred on it (Codex). It takes no mouse; it
+  exists to ask `hit:IsMouseOver()` (a geometry query, mouse enabled or not).
+- **The overlay:** `grip`, over `hit` (same rect), at `over:GetFrameLevel() + 1` (above the arrow's
+  explicit level; the compass's strata, no `DIALOG`: Codex), hidden
   until wanted: `EnableMouse(true)`, `RegisterForDrag("LeftButton")`, a translucent dark fill and
   "Drag to move" (`GameFontNormalSmall`). Shown exactly while **Alt is down
   (`IsAltKeyDown()`), the position isn't locked, the compass is shown and the mouse is over `hit`**,
   or a drag is under way. Read live: on `MODIFIER_STATE_CHANGED` (LALT, RALT) and every frame the
   compass draws (its `OnUpdate` already runs while shown; `IsAltKeyDown` and `IsMouseOver` are
-  cheap), so a missed key-up (alt-tab, a popup) can't leave it stuck on. Without Alt nothing changes:
+  cheap), after the frame's own show-or-hide decision, so a missed key-up (alt-tab, a popup) can't
+  leave it stuck on. **A drag under way ends when Alt is released or the lock is set** (stopped,
+  placed, saved, the grip hidden: Apotheca's rule, Codex); the mouse leaving the hit area doesn't
+  end it. The stop is idempotent: the grip's `OnHide` calls it too. Without Alt nothing changes:
   the disc takes motion only and clicks reach the world.
 - **Dragging:** `root:SetMovable(true)`; `OnDragStart` → `root:StartMoving()`; `OnDragStop` (and
   the grip's `OnHide`, so a compass hidden mid-drag never leaves the root on the cursor) →
   `root:StopMovingOrSizing()`, then **placed and saved**: the root's centre minus `UIParent`'s, in
   `UIParent` units (the root is its child at scale 1). The compass has no secure children, so
   Apotheca's combat handling isn't needed; a drag in combat is allowed.
-- **Placed** (`place()`, at the first show, on a size change, after a drop and on a reset): the
+- **Placed** (`place()`, at the first show, on a size change, after a drop, on a reset, and on
+  `UI_SCALE_CHANGED` / `DISPLAY_SIZE_CHANGED`, a drag under way ended first: Codex): the
   saved `compassX, compassY` (account-wide, like `compassSize`; nil: the default `0, -160`),
   **clamped** so the whole footprint (at the current size) stays on `UIParent`. Done on the numbers
   rather than with `SetClampedToScreen`: the root is a 1-unit frame, and the footprint is drawn by
-  its scaled child. A position saved on a larger screen or UI scale comes back on screen.
+  its scaled child. With `s = size / 52` and `UIParent`'s `W, H`: `-W/2 + 38s <= x <= W/2 - 38s`,
+  `-H/2 + 59s <= y <= H/2 - 38s` (the offset is the root's centre minus `UIParent`'s, both in
+  `UIParent`'s units: not divided by its scale again). A position saved on a larger screen or UI
+  scale comes back on screen. After `StopMovingOrSizing`, the centre is read, the points cleared and
+  the one `CENTER` anchor set again.
 - **Locked:** `compassLock` (false by default): no grip at all. Options, under "Compass size": a
   checkbox "Lock its position", and a note "Hold Alt and drag the compass to move it." Commands:
   `/nr compass lock`, `/nr compass unlock`, `/nr compass reset` (the default place); `/nr compass`
-  alone still turns it on or off.
+  alone still turns it on or off. **`/nr reset` clears `compassX, compassY` too** (they're nil
+  defaults, outside `DEFAULTS`' keys: Codex). Both resets work with the compass hidden or off.
 - **The tooltip:** the grip over the disc takes the hover; the disc's `OnLeave` hides its tooltip.
 - **Tests:** the grip hidden without Alt, shown with Alt over the compass, not with Alt elsewhere,
   not when locked, not when the compass is hidden; gone when Alt is released (the live read, no key
   event); a drag start moves the root, the drop saves its offset and re-anchors it; a drop past an
-  edge clamped; a saved position off screen clamped at the first show; the size changing re-clamps;
-  hidden mid-drag: stopped and saved; reset; lock; the commands; Options' checkbox; clicks still
-  pass through without Alt (`SetMouseClickEnabled(false)` untouched).
+  edge clamped (each of the four bounds); a saved position off screen clamped at the first show;
+  the size changing re-clamps; `UI_SCALE_CHANGED` re-clamps; **Alt released mid-drag, the lock set
+  mid-drag, hidden mid-drag: each stopped, placed and saved, once**; `/nr compass reset` and
+  `/nr reset` with the compass off; lock; the commands; Options' checkbox; clicks still pass through
+  without Alt (`SetMouseClickEnabled(false)` untouched).
 - **Look round** (`/fp steps nr compassmove`): Alt over the compass shows the grip, without Alt the
-  world gets the clicks; drag it somewhere, `/reload`, it's there; drag it past the screen's edge,
-  it comes back fully on; lock, Alt shows nothing; reset.
+  world gets the clicks; the tooltip handed over under a still cursor; drag it somewhere, `/reload`,
+  it's there (and after a full client exit, once); drag it past the screen's edge, it comes back
+  fully on; Alt released mid-drag; the UI scale changed with it near an edge; lock, Alt shows
+  nothing; reset while it's hidden.
 
 ### Shown, hidden
 
