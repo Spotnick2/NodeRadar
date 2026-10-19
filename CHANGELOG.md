@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.1.0
+
+Released 2026-10-18.
 
 - **Item icons on the minimap** (#28), off by default: each herb and ore node
   shows the icon of what it gives over Blizzard's dot, dimmed when your skill can't gather it yet.
