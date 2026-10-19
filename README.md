@@ -45,7 +45,7 @@ turn on Find Herbs or Find Minerals.
   alerts as usual. `/nr skill` turns this off.
 - **Optionally, each node shows its item's icon** on the minimap (Peacebloom, Copper Ore) instead
   of Blizzard's yellow dot, dimmed when your skill can't gather it yet (`/nr icons`, off by
-  default while it's tested). NodeRadar measures where each new node is once and keeps it in place
+  default). NodeRadar measures where each new node is once and keeps it in place
   as you move; near the map's edge, and where nodes of one name crowd together, the dot shows.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
