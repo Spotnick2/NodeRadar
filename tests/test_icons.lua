@@ -314,10 +314,15 @@ local function centre(name, x, y)
 end
 WoW.blips = { { "Silverleaf", -7, -7 }, { "Silverleaf", 7, 7 } }
 local m = centre("Silverleaf", 0, 0)
-eq(m.why, "not one node", "two merged diagonally (Codex's pair): refused")
+check(m.why and m.why:find("^not one node: 3%d%.%d wide .*, 3%d%.%d tall"), "two merged diagonally (Codex's pair): refused, "
+    .. "both widths said: " .. tostring(m.why))
 WoW.blips = { { "Silverleaf", 0, 0 }, { "Silverleaf", 14, 0 } }
 m = centre("Silverleaf", 7, 0)
-eq(m.why, "not one node", "two merged along an axis: refused")
+check(m.why and m.why:find("^not one node: 3%d%.%d wide %(%d+%.%d left, %d+%.%d right%), 2%d%.%d tall"),
+    "two merged along an axis: refused, too wide only: " .. tostring(m.why))
+WoW.blips = { { "Silverleaf", 0, 0 }, { "Silverleaf", Scan.FAR, 0 } }
+m = centre("Silverleaf", 0, 0)
+eq(m.why, "crowded: its name again past the right", "another of its name at the far point: crowded, the side said")
 WoW.blips = { { "Silverleaf", 4, -3 }, { "Carry Your Weight", 10, 0, half = 40 } }
 m = centre("Silverleaf", 0, 0)
 check(near(m.cx, 4) and near(m.cy, -3), "another name over it: still measured")

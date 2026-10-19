@@ -310,9 +310,14 @@ local function centre(g, b)
     local l = r and edge(g, b, -1, 0)
     local u = l and edge(g, b, 0, 1)
     local d = u and edge(g, b, 0, -1)
-    if not d then return nil, "crowded" end
+    -- Why, with what was read (#47's dots by the player's arrow: /fp nr icons).
+    if not d then
+        return nil, ("crowded: its name again past %s"):format(not r and "the right" or not l and "the left"
+            or not u and "the top" or "the bottom")
+    end
     if math.abs(r + l - Scan.NODE) > Scan.NODE_SLACK or math.abs(u + d - Scan.NODE) > Scan.NODE_SLACK then
-        return nil, "not one node"
+        return nil, ("not one node: %.1f wide (%.1f left, %.1f right), %.1f tall (%.1f up, %.1f down)"):format(
+            r + l, l, r, u + d, u, d)
     end
     return b.x + (r - l) / 2, b.y + (u - d) / 2
 end

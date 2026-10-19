@@ -4090,6 +4090,12 @@ local function iconsDump()
                 b.name, b.x, b.y, b.cells or 0, math.sqrt(b.x ^ 2 + b.y ^ 2),
                 nearD and ("%.1f units away"):format(nearD) or "none", str(n.Alert.Wanted(b.name)),
                 str(n.Alert.Ignored(b.name))))
+            -- No record of it: measured again now, and why it fails.
+            if not (nearD and nearD <= n.Icons.MATCH) then
+                local okC = n.Scan.Centre({ b })
+                say(("    measured now: %s"):format(not okC and "the measure failed" or b.cx
+                    and ("centre %+.1f %+.1f"):format(b.cx, b.cy) or tostring(b.why)))
+            end
         end
     end
     for _, r in ipairs(T.records()) do

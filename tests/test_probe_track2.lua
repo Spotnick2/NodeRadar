@@ -107,6 +107,7 @@ check(logged("icons: on true, keeping true"), "the dump's head")
 check(logged("  blip Silverleaf at %+20.0 %+6.0 %(1 cells, from the centre 20.9%): nearest record none; wanted true, "
     .. "skipped false"), "...each blip, its nearest record, wanted, skipped")
 check(logged("  failed measure Silverleaf: tried %d s ago"), "...each failed measure (the stub's map doesn't measure it)")
+check(logged("    measured now: "), "...an unmatched blip measured again on the spot, and why")
 NR.Set("icons", false)
 
 eq(errors(), 0, "no step threw")
