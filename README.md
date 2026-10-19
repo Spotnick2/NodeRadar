@@ -51,9 +51,9 @@ turn on Find Herbs or Find Minerals.
   ring like Blizzard's minimap buttons otherwise (or none, or the one you pick), small, medium or
   large, with a small arrow when the node is above or below you.
 - **Experimental: a compass toward the nearest node** (`/nr compass`, off by default). Under your
-  character, the nearest node you can gather shows as its item's icon in a small disc, framed like
-  the minimap icons (glass with Glass MiniMap, bronze otherwise), with an arrow circling it toward
-  the node and the distance below; hover it for the item's tooltip (clicks go through it). Small,
+  character, the nearest node you can gather shows as its item's icon on a small dark lens with a
+  thin rim that follows the minimap icons' frame (pearl with Glass MiniMap, bronze otherwise), with
+  an arrow circling it toward the node and the distance below; hover it for the item's tooltip (clicks go through it). Small,
   medium or large (`/nr compasssize`). It moves on as you gather, points only at nodes NodeRadar has
   measured (where nodes of one name crowd together, it may miss some), and hides within 15 yards
   (for a glow on the node itself, Lueur does that well). It follows your character's facing, not the

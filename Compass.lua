@@ -4,11 +4,13 @@
 -- The nearest node the player can gather that NodeRadar has measured (#28's
 -- records), chosen again at every radar sweep, so it moves on as the player
 -- gathers and rides (the owner: following the alerted node fell short). Its
--- item icon in a disc under the character, the arrow orbiting outside the disc
--- toward it, the distance in a pill below, the item's tooltip on hover. The
--- disc follows the icons' frame setting (#41: glass, bronze, plain). Within 15
--- yards it hides: the glow on the node is Lueur's (the soft target), and
--- NodeRadar never touches the soft-targeting settings (owner).
+-- item icon on a dark lens under the character, a thin rim (pearl with the
+-- icons' glass frame, bronze with their bronze, none with none: #41), an arrow
+-- outside the rim toward it with a highlight arc on the rim beneath, the
+-- distance in a capsule below, the item's tooltip on hover ("The ring,
+-- refined": our own art, Tools/make_media.py). Within 15 yards it hides: the
+-- glow on the node is Lueur's (the soft target), and NodeRadar never touches
+-- the soft-targeting settings (owner).
 --
 -- Measured on 70450 (docs/FOREVER-PROBE.md, "The compass, first round"):
 -- GetPlayerFacing is counter-clockwise from north, 0 to 2pi; a point's bearing
@@ -25,22 +27,26 @@ NR.Compass = Compass
 Compass.NEAR = 15      -- yards: hidden this close (Lueur's soft target takes over; Forever loses it at 15)
 Compass.HYSTERESIS = 5 -- yards: another node must be this much nearer to take over
 Compass.GRACE = 2      -- seconds past the idle interval without a sweep before it hides
-Compass.ARROWS = "Interface\\Minimap\\Minimap-PositionArrows"   -- its upper half points up (#41)
--- The look (owner, two look rounds): built at medium, scaled to the size.
-Compass.SIZES = { small = 44, medium = 52, large = 60 }   -- the outer diameter; nothing under 44 (rough)
+-- The look, built at medium and scaled to the size (the outer diameter).
+Compass.SIZES = { small = 44, medium = 52, large = 60 }   -- nothing under 44 (rough edges, look round 2)
 Compass.DISC = 52      -- the medium diameter, what everything is built at
-Compass.ARROW = 14     -- the arrow at medium
-Compass.ORBIT = Compass.DISC / 2 + 0.7 * Compass.ARROW      -- just outside the disc
-Compass.PILL_TOP = Compass.DISC / 2 + 1.5 * Compass.ARROW   -- below the orbit (D put it on the pill)
+Compass.ICON = 0.58    -- the icon, a share of the diameter (more breathing room than 0.69)
+Compass.ARROW = 16     -- the arrow's art at medium
+-- CompassArrow's art (Tools/make_media.py): the apex 0.375 of its size above
+-- its centre, the base 0.3125 below. Its base 1 unit outside the rim:
+Compass.ORBIT = Compass.DISC / 2 + 1 + 0.3125 * Compass.ARROW
+Compass.REACH = Compass.ORBIT + 0.375 * Compass.ARROW           -- its farthest point, the apex
+Compass.PILL_TOP = Compass.REACH + 3                             -- the capsule 3 units below that
+Compass.PILL = { 56, 18 }                                        -- fixed: no width change with the number
+Compass.TINTS = { glass = { 0.97, 0.97, 1 }, bronze = { 0.80, 0.62, 0.38 } }   -- the rim: pearl, bronze
 
-local RING, RING_BG = 136430, 136467    -- MiniMap-TrackingBorder, UI-Minimap-Background (#41)
+local MEDIA = NR.Alert.MEDIA
 local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local TAU = 2 * math.pi
 local target           -- the record pointed at
 local lastSweep        -- the last radar sweep reconciled
 local shownDist        -- the whole yards on the text
-local looks = {}       -- style -> { host, icon, pill, text }, built once each
-local look             -- the one in use
+local dressedFor       -- the target the icon and the tooltip were last set for
 
 function Compass.On()
     local db = NR.db
@@ -70,7 +76,7 @@ end
 local function yards(r, pn, pw) return math.sqrt((r.north - pn) ^ 2 + (r.west - pw) ^ 2) end
 
 --------------------------------------------------------------------------------
--- The ring: a fixed root on UIParent, a body scaled to the size
+-- The ring: a fixed root on UIParent, a body scaled to the size, our own art
 --------------------------------------------------------------------------------
 
 local root = CreateFrame("Frame", nil, UIParent)
@@ -82,15 +88,53 @@ local body = CreateFrame("Frame", nil, root)
 body:SetSize(Compass.DISC, Compass.DISC)
 body:SetPoint("CENTER", root, "CENTER")
 body:EnableMouse(false)
--- The arrow, over any look (a glass disc's top is its host's level + 10).
+
+local function layer(parent, file, size, drawLayer, sub)
+    local t = parent:CreateTexture(nil, drawLayer, nil, sub)
+    t:SetSize(size, size)
+    t:SetPoint("CENTER", parent, "CENTER")
+    t:SetTexture(MEDIA .. file)
+    return t
+end
+
+-- The shadow, separating the widget from the ground: a little larger, nudged down.
+local shadow = layer(body, "CompassShadow.tga", Compass.DISC * 1.25, "BACKGROUND", -8)
+shadow:ClearAllPoints()
+shadow:SetPoint("CENTER", body, "CENTER", 0, -2)
+-- The disc: the lens, the icon, the rim, the arc. It takes mouse motion only (the tooltip).
+local disc = CreateFrame("Frame", nil, body)
+disc:SetSize(Compass.DISC, Compass.DISC)
+disc:SetPoint("CENTER", body, "CENTER")
+local lens = layer(disc, "CompassLens.tga", Compass.DISC, "BACKGROUND")
+local icon = disc:CreateTexture(nil, "ARTWORK")
+icon:SetSize(Compass.DISC * Compass.ICON, Compass.DISC * Compass.ICON)
+icon:SetPoint("CENTER", disc, "CENTER")
+local mask = disc:CreateMaskTexture()
+mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+mask:SetAllPoints(icon)
+icon:AddMaskTexture(mask)
+icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+local rim = layer(disc, "CompassRim.tga", Compass.DISC, "OVERLAY", 1)
+local arc = layer(disc, "CompassArc.tga", Compass.DISC, "OVERLAY", 2)    -- turned around the disc's centre
+-- The arrow, on its own frame over the disc.
 local over = CreateFrame("Frame", nil, body)
 over:SetAllPoints(body)
-over:SetFrameLevel(body:GetFrameLevel() + 15)
+over:SetFrameLevel(disc:GetFrameLevel() + 2)
 over:EnableMouse(false)
 local arrow = over:CreateTexture(nil, "OVERLAY")
 arrow:SetSize(Compass.ARROW, Compass.ARROW)
-arrow:SetTexture(Compass.ARROWS)
-arrow:SetTexCoord(0, 1, 0, 0.5)
+arrow:SetTexture(MEDIA .. "CompassArrow.tga")
+-- The capsule: fixed size, cropped to the art's capsule (2..126 x 12..52 of 128 x 64).
+local pill = CreateFrame("Frame", nil, body)
+pill:SetSize(Compass.PILL[1], Compass.PILL[2])
+pill:SetPoint("TOP", body, "CENTER", 0, -Compass.PILL_TOP)
+pill:EnableMouse(false)
+local pillArt = pill:CreateTexture(nil, "BACKGROUND")
+pillArt:SetAllPoints(pill)
+pillArt:SetTexture(MEDIA .. "CompassPill.tga")
+pillArt:SetTexCoord(2 / 128, 126 / 128, 12 / 64, 52 / 64)
+local text = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+text:SetPoint("CENTER", pill, "CENTER")
 
 -- The item a record gives (NODE_INFO), or nil.
 local function itemOf(t)
@@ -98,20 +142,20 @@ local function itemOf(t)
     return info and API.Num(info.item)
 end
 
-local function ownsTooltip(host)
+local function ownsTooltip()
     local ok, owner = pcall(GameTooltip.GetOwner, GameTooltip)
-    return ok and owner == host
+    return ok and owner == disc
 end
 
 -- The item's tooltip over the disc, or none (the accessor shows it, or hides
 -- it on a refusal or no data).
-local function setTooltip(host)
+local function setTooltip()
     local item = itemOf(target)
     if not item then
-        if ownsTooltip(host) then GameTooltip:Hide() end
+        if ownsTooltip() then GameTooltip:Hide() end
         return
     end
-    GameTooltip:SetOwner(host, "ANCHOR_TOP")
+    GameTooltip:SetOwner(disc, "ANCHOR_TOP")
     local ok, err = pcall(GameTooltip.SetItemByID, GameTooltip, item)
     if not ok then
         API.Fail("tooltip", err)
@@ -119,143 +163,20 @@ local function setTooltip(host)
     end
 end
 
--- The disc takes mouse motion only: the tooltip, and clicks through to the
--- world (round 2: with the mouse on, a click on the disc didn't reach it).
-local function hover(host)
-    host:SetScript("OnEnter", setTooltip)
-    host:SetScript("OnLeave", function(self) if ownsTooltip(self) then GameTooltip:Hide() end end)
-    host:EnableMouse(false)
-    host:SetMouseMotionEnabled(true)
-    host:SetMouseClickEnabled(false)
-end
-
--- A pill of text under the disc, below the arrow's orbit.
-local function pillAt(pill)
-    pill:SetSize(64, 22)
-    pill:SetPoint("TOP", body, "CENTER", 0, -Compass.PILL_TOP)
-    pill:EnableMouse(false)
-end
-
-local function buildGlass(inst)
-    local d = Compass.DISC
-    local host = CreateFrame("Frame", nil, body)
-    host:Hide()
-    host:SetSize(d, d)
-    host:SetPoint("CENTER", body, "CENTER")
-    host:EnableMouse(false)
-    local pill = CreateFrame("Frame", nil, body)
-    pill:Hide()
-    pillAt(pill)
-    local ok, err = pcall(function()
-        local g = inst.Disc(host, "disc_small")
-        if type(g) == "table" and g.top then g.top:EnableMouse(false) end
-        local inset = d * 0.155                                -- the icon about 0.69 of the disc
-        local icon = host:CreateTexture(nil, "ARTWORK")
-        icon:SetPoint("TOPLEFT", host, "TOPLEFT", inset, -inset)
-        icon:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
-        icon:AddMaskTexture(inst.Mask(host, "disc_mask_small", nil, inset))
-        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        local pg = inst.Apply(pill, "small")
-        if type(pg) == "table" and pg.top then pg.top:EnableMouse(false) end
-        local text = inst.Font(type(pg) == "table" and pg.top or pill, 13, "CENTER")
-        text:SetPoint("CENTER", pill, "CENTER")
-        looks.glass = { host = host, icon = icon, pill = pill, text = text }
-    end)
-    if not ok then
-        NR.Icons.GlassFailed("compass: " .. tostring(err))
-        return nil
-    end
-    hover(host)
-    return looks.glass
-end
-
--- A plain pill: the text on a dark rounded backdrop.
-local function plainPill()
-    local pill = CreateFrame("Frame", nil, body)
-    pill:Hide()
-    pillAt(pill)
-    local bg = pill:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints(pill)
-    bg:SetColorTexture(0, 0, 0, 0.55)
-    local text = pill:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    text:SetPoint("CENTER", pill, "CENTER")
-    return pill, text
-end
-
--- Blizzard's round button as LibDBIcon lays it out, its 31 units the diameter
--- (#41's layout, but the button sized, not the icon: Codex).
-local function buildBronze()
-    local d = Compass.DISC
-    local k = d / 31
-    local host = CreateFrame("Frame", nil, body)
-    host:Hide()
-    host:SetSize(d, d)
-    host:SetPoint("CENTER", body, "CENTER", 0, -1 * k)    -- the icon's centre is 1 above the button's
-    local ring = host:CreateTexture(nil, "OVERLAY")
-    ring:SetSize(53 * k, 53 * k)
-    ring:SetTexture(RING)
-    ring:SetPoint("TOPLEFT", host, "TOPLEFT")
-    local bg = host:CreateTexture(nil, "BACKGROUND")
-    bg:SetSize(20 * k, 20 * k)
-    bg:SetTexture(RING_BG)
-    bg:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -5 * k)
-    local icon = host:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(17 * k, 17 * k)
-    icon:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -6 * k)
-    local mask = host:CreateMaskTexture()
-    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    mask:SetAllPoints(icon)
-    icon:AddMaskTexture(mask)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    local pill, text = plainPill()
-    hover(host)
-    looks.bronze = { host = host, icon = icon, pill = pill, text = text }
-    return looks.bronze
-end
-
--- The icon alone, masked round, the diameter's size.
-local function buildPlain()
-    local d = Compass.DISC
-    local host = CreateFrame("Frame", nil, body)
-    host:Hide()
-    host:SetSize(d, d)
-    host:SetPoint("CENTER", body, "CENTER")
-    local icon = host:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints(host)
-    local mask = host:CreateMaskTexture()
-    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    mask:SetAllPoints(icon)
-    icon:AddMaskTexture(mask)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    local pill, text = plainPill()
-    hover(host)
-    looks.plain = { host = host, icon = icon, pill = pill, text = text }
-    return looks.plain
-end
-
--- The look for the icons' frame setting, built if needed; a glass that fails
--- here is bronze, and the icons are bound again too (one latch).
-local function lookFor()
-    local style, inst = NR.Icons.Style()
-    if style == "glass" then
-        if looks.glass == nil then
-            looks.glass = inst and buildGlass(inst) or false
-            if not looks.glass then NR.Icons.Restyle() end
-        end
-        if looks.glass then return looks.glass end
-        style = "bronze"
-    end
-    if style == "bronze" then return looks.bronze or buildBronze() end
-    return looks.plain or buildPlain()
-end
+-- Mouse motion only: the tooltip, and clicks through to the world (compass4).
+disc:SetScript("OnEnter", setTooltip)
+disc:SetScript("OnLeave", function() if ownsTooltip() then GameTooltip:Hide() end end)
+disc:EnableMouse(false)
+disc:SetMouseMotionEnabled(true)
+disc:SetMouseClickEnabled(false)
 
 local function hide()
     root:Hide()
     shownDist = nil
-    if look and ownsTooltip(look.host) then GameTooltip:Hide() end
+    if ownsTooltip() then GameTooltip:Hide() end
 end
 
--- Each frame while shown: the arrow at (bearing - facing) on its orbit, the
+-- Each frame while shown: the arrow and the arc at (bearing - facing), the
 -- distance. Hidden (the target kept) within 15 yards of a level node, when the
 -- position or facing can't be read, without a recent sweep, dead or on a taxi;
 -- the next usable sweep shows it again.
@@ -276,37 +197,30 @@ local function frame()
     arrow:ClearAllPoints()
     arrow:SetPoint("CENTER", body, "CENTER", -Compass.ORBIT * math.sin(a), Compass.ORBIT * math.cos(a))
     arrow:SetRotation(a)
+    arc:SetRotation(a)
     local whole = math.floor(d + 0.5)
-    if whole ~= shownDist and look then
+    if whole ~= shownDist then
         shownDist = whole
-        look.text:SetText(whole .. " yd")
+        text:SetText(whole .. " yd")
     end
 end
 root:SetScript("OnUpdate", frame)
 
--- The look in use, the size, the icon: set at each sweep and when the style or
--- size changes.
-local dressedFor
+-- The rim for the icons' frame (Icons.Style()), the size, the icon: set at
+-- each sweep and when the style or the size changes.
+local style
 local function dress()
-    local wanted = lookFor()
-    for _, l in pairs(looks) do
-        if l and l ~= wanted then
-            if ownsTooltip(l.host) then GameTooltip:Hide() end
-            l.host:Hide()
-            l.pill:Hide()
-        end
-    end
-    if wanted ~= look then shownDist = nil end         -- a look switched to gets its distance (compass4: empty pills)
-    look = wanted
+    style = NR.Icons.Style()
+    local tint = Compass.TINTS[style]
+    rim:SetShown(tint ~= nil)                               -- none: the lens and the icon only
+    arc:SetShown(tint ~= nil)
+    if tint then rim:SetVertexColor(tint[1], tint[2], tint[3]) end
     body:SetScale((Compass.SIZES[NR.db.compassSize] or Compass.SIZES[NR.DEFAULTS.compassSize]) / Compass.DISC)
-    look.host:Show()
-    look.pill:Show()
-    look.icon:SetTexture(target.icon)
+    icon:SetTexture(target.icon)
     if target ~= dressedFor then
         dressedFor = target
-        shownDist = nil
         -- The target changed under a still cursor: the owned tooltip follows it (Codex).
-        if ownsTooltip(look.host) then setTooltip(look.host) end
+        if ownsTooltip() then setTooltip() end
     end
 end
 
@@ -369,8 +283,8 @@ function Compass.Reset()
 end
 
 Compass._test = {
-    root = root, body = body, arrow = arrow, frame = frame,
+    root = root, body = body, disc = disc, arrow = arrow, arc = arc, rim = rim, lens = lens, icon = icon,
+    shadow = shadow, pill = pill, text = text, frame = frame,
     target = function() return target end,
-    look = function() return look end,
-    looks = looks,
+    style = function() return style end,
 }

@@ -490,3 +490,20 @@ distance in a pill below, the tooltip on hover with the disc taking mouse motion
 | Pointing behind (the node -3.0 rad) | the arrow at the bottom, clear of the pill (yes; the screenshot) |
 | Edit Mode in and out, combat | no error, nothing odd (no, no) |
 | Riding | readable at a glance (yes) |
+
+### The compass refined: `compass5`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+Our own art (a shadow, a dark lens, a greyscale rim tinted pearl or bronze, a 25-degree arc and a
+white outlined triangle turning with the bearing, a fixed capsule), no LibGlass.
+
+| What | Measured |
+|---|---|
+| Pearl at medium, small, large; bronze; no frame | each read back (`glass medium`, `small`, `large`, `bronze medium`, `plain medium`); liked, each right (yes, yes). The screenshots: the lens dark behind the icon, the pearl rim bright on top, bronze muted, no frame the lens alone; the capsule always filled |
+| Four headings | ahead 0.01 rad, left 1.61, behind-right -2.36, behind -3.05: the arrow at the top pointing up, at 9 o'clock pointing left, at the bottom pointing down, its arc on the rim beneath it; arrow and arc together, clear of the capsule (yes). The diagonal's screenshot came after the turn on to behind (taken at the next step's completion) |
+| **The triangle at a slant** | 44 px wide by 44 tall, near equilateral: around 0.5 rad its three corners look alike and it reads as pointing sideways (the pearl-medium screenshot). Straight up, left and down read right. A narrower triangle is the fix |
+| Bright ground, a dark wall | readable on both (yes) |
+| A far node (153-180 yd) | the three digits fit the capsule (yes) |
+| The tooltip | "Earthroot" (the screenshot); the item's, the look unchanged (yes) |
+| Clicks and a camera drag on the icon | reached the world (yes; "You need to be closer to interact" twice in the log, the right-clicks on the world) |
+| Edit Mode in and out, combat | no error, nothing odd (no) |
+| Riding | readable at a glance (yes) |
