@@ -562,3 +562,10 @@ the player's feet, the nearest, within 15 yards). With its dot left out while it
 | What | Measured |
 |---|---|
 | The ring every 0.25 s for 6 s after a gather | **0 of 24 samples hidden**: on the next node (an Earthroot) throughout, the loot window open from 0.50 s to the end; the owner: it stayed (yes). Offline before the fix, the same procedure read 19 of 21 hidden |
+
+### Moving the compass: by hand, 1.60.1.70450 (the owner, 2026-10-19) (#57)
+
+The owner, trying it outside `/fp steps nr compassmove`: **"alt-drag works in game"**. Holding Alt
+over the compass and dragging moves it. Not yet checked in game (the round covers them): the spot
+back after a `/reload`, a drop past the screen's edge coming back fully on, letting go of Alt
+mid-drag, the lock, and `/nr compass reset`.
