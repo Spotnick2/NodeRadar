@@ -562,3 +562,17 @@ the player's feet, the nearest, within 15 yards). With its dot left out while it
 | What | Measured |
 |---|---|
 | The ring every 0.25 s for 6 s after a gather | **0 of 24 samples hidden**: on the next node (an Earthroot) throughout, the loot window open from 0.50 s to the end; the owner: it stayed (yes). Offline before the fix, the same procedure read 19 of 21 hidden |
+
+### Moving the compass: `compassmove`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#57)
+
+First by hand ("alt-drag works in game"), then the round:
+
+| What | Measured |
+|---|---|
+| Alt over the compass | the grip up, the icon's tooltip gone under it; "Drag to move" over the compass while Alt is held, gone when it's let go (yes) |
+| A drag | dropped at (-341.1, 337.8): saved and anchored there |
+| **After a `/reload`** | anchored at the same (-341.1, 337.8); where it was left (yes) |
+| **Past the right edge** | the screen 2133.3 units wide here: saved at 1028.7, exactly 2133.3 / 2 - 38 (the footprint's half-width at medium): fully on screen (yes), "under the smart bars, but yes": Glass Action Bars' bars drew over it there (a higher strata than the compass's; left as is) |
+| Alt let go mid-drag | it stopped following the mouse (yes) |
+| Locked, Alt held | no grip |
+| `/nr compass reset` | works (the owner, tried before the round; the round's step was passed before the command). The put-back, the same `place()` with the spot cleared, brought it home too: `anchored CENTER 0, -160` |
