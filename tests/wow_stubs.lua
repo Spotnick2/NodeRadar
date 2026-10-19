@@ -272,7 +272,7 @@ function Methods.CreateAnimation(ag, atype) return newWidget(atype or "Animation
 function Methods.Play(ag) ag._playing = true end
 function Methods.Stop(ag) ag._playing = false end
 function Methods.IsPlaying(ag) return ag._playing == true end
-function Methods.SetText(fs, text) fs._text = text end
+function Methods.SetText(fs, text) fs._text = text; if fs._type == "GameTooltip" then fs._lines = {} end end
 function Methods.GetText(fs) return fs._text end
 function Methods.SetFont(fs, file, size, flags) fs._font = { file, size, flags }; return true end
 function Methods.SetFontObject(fs, obj) fs._fontObject = obj end
@@ -296,6 +296,8 @@ GameTooltip._shown = false
 function Methods.SetOwner(t, owner, anchor) t._owner, t._anchor = owner, anchor end
 function Methods.GetOwner(t) return t._owner end
 function Methods.SetItemByID(t, id) t._item = id; t._shown = true; return true end
+-- Its lines (#47): SetText starts over, AddLine adds.
+function Methods.AddLine(t, text) t._lines = t._lines or {}; table.insert(t._lines, text) end
 function Methods.SetMouseMotionEnabled(w, v) w._motion = v end
 function Methods.SetMouseClickEnabled(w, v) w._click = v end
 
@@ -476,11 +478,16 @@ C_SuperTrack = {
 }
 -- Items (#28): WoW.itemCached[id] says which are cached; GetItemIconByID
 -- answers only those (a model: what the client does is the probe's question),
--- GetItemInfoInstant every one.
+-- GetItemInfoInstant every one. A name (#47) answers once cached, from
+-- WoW.itemNames or "Item <id>"; RequestLoadItemDataByID records the asks.
 WoW.itemCached = {}
+WoW.itemNames = {}
+WoW.itemRequests = {}
 C_Item = {
     IsItemDataCachedByID = function(id) return WoW.itemCached[id] == true end,
     GetItemIconByID = function(id) if WoW.itemCached[id] then return 130000 + id end end,
+    GetItemNameByID = function(id) if WoW.itemCached[id] then return WoW.itemNames[id] or ("Item " .. id) end end,
+    RequestLoadItemDataByID = function(id) table.insert(WoW.itemRequests, id) end,
     GetItemInfoInstant = function(id) return id, "Trade Goods", "Herb", "", 130000 + id, 7, 9 end,
 }
 C_Navigation = {
@@ -527,6 +534,13 @@ Settings = {
         return c
     end,
     RegisterAddOnCategory = function(c) c.registered = true end,
+    -- A sub-page (#47): recorded in order, under its parent.
+    RegisterCanvasLayoutSubcategory = function(parent, frame, name)
+        local c = { frame = frame, name = name, parent = parent, id = #WoW.categories + 1 }
+        function c:GetID() return self.id end
+        table.insert(WoW.categories, c)
+        return c
+    end,
     OpenToCategory = function(id) WoW.openedCategory = id end,
 }
 

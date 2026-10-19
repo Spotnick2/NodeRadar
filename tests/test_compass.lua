@@ -37,6 +37,7 @@ WoW.map, WoW.mapPos, WoW.mapSize = 1411, { x = 0.5, y = 0.5 }, { 5287, 3525 }
 TEST_LIBRARY.enUS["Earthroot"] = "herbs"
 TEST_LIBRARY.enUS["Mageroyal"] = "herbs"
 local NR = loadAddon()
+NR.Track.SetSmart(false)                                   -- targeting here; smart is test_track's (#47)
 local Icons, Compass = NR.Icons, NR.Compass
 local C, T = Compass._test, Icons._test
 WoW.itemCached[765] = true

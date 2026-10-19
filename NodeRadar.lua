@@ -7,7 +7,8 @@
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
-local API, Scan, Learn, Alert, Icons, Compass = NR.API, NR.Scan, NR.Learn, NR.Alert, NR.Icons, NR.Compass
+local API, Scan, Learn, Alert, Track, Icons, Compass = NR.API, NR.Scan, NR.Learn, NR.Alert, NR.Track, NR.Icons,
+    NR.Compass
 
 local ADDON_NAME = ...
 
@@ -19,6 +20,7 @@ local DEFAULTS = {
     icons    = false,   -- the item's icon over each node's dot (#28)
     iconStyle = "auto", -- its frame (#41): auto (glass with Glass MiniMap, else bronze), plain, glass, bronze, yellow (#50)
     iconSize = "medium", -- small, medium or large: Icons.SIZES
+    ignoredIcon = "dim", -- a node the player skips (#47), icons on: "dim" (its icon dimmed) or "dot" (Blizzard's)
     compass  = false,   -- experimental (#29): a ring under the character toward the nearest node
     compassSize = "medium", -- its disc: small, medium or large (Compass.SIZES)
     ring     = true,    -- the sonar on the new node's blip
@@ -61,6 +63,7 @@ local function initDB()
     Learn.CleanNames()
     if type(NodeRadarCharDB) ~= "table" then NodeRadarCharDB = {} end
     NR.charDb = NodeRadarCharDB
+    Track.Load()                                    -- which herbs and ores, this character's (#47)
 end
 
 --------------------------------------------------------------------------------
@@ -88,6 +91,7 @@ function NR.Step(now)
     if not result then return end
     if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset() end
     lastGeometry = result.geometry
+    Track.Follow()                                  -- smart: the list by the skill first (Codex, #47)
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
     Compass.Reconcile(result, now)                  -- the nearest node, before the learner (#29)
     Alert.Update(result, now)
@@ -129,6 +133,7 @@ function NR.Set(key, value)
         end
     end
     if key == "iconStyle" or key == "iconSize" then Icons.Restyle() end
+    if key == "ignoredIcon" then Icons.Refilter() end
     -- The compass follows the icons' frame (#29), with the icons on or off.
     if key == "iconStyle" or key == "compassSize" then Compass.Restyle() end
 end
@@ -157,7 +162,7 @@ end)
 local events = CreateFrame("Frame")
 API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_DEAD", "MINIMAP_UPDATE_ZOOM",
-    "MINIMAP_UPDATE_TRACKING", "SPELL_UPDATE_COOLDOWN" })
+    "MINIMAP_UPDATE_TRACKING", "SPELL_UPDATE_COOLDOWN", "SKILL_LINES_CHANGED" })
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
 local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
@@ -197,6 +202,8 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.OnTrackingChanged()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         API.OnCooldownUpdate()                     -- Cultivation's state (#26)
+    elseif event == "SKILL_LINES_CHANGED" then
+        Track.Follow()                             -- smart (#47)
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
         local unit, target, castGUID, spellID = ...
@@ -233,6 +240,8 @@ local function status()
         .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
         .. ", chat " .. onOff(db.chat) .. ", Blizzard's ping " .. onOff(db.ping) .. "; learning " .. onOff(db.learn)
         .. "; " .. db.cooldown .. " s between alerts")
+    API.Say(("skipped: %d herbs, %d ores; smart %s (this character)"):format(Track.Count("herbs"),
+        Track.Count("ore"), onOff(Track.Smart())))
     local on = {}
     for _, t in ipairs(Learn.Trackings()) do if t.active then on[#on + 1] = t.kind end end
     API.Say("gathering tracking on: " .. (#on > 0 and table.concat(on, ", ") or "none (turn on Find Herbs or Find Minerals)"))
@@ -271,6 +280,8 @@ local function help()
         .. "else bronze). /nr iconsize small | medium | large")
     API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
         .. "/nr compasssize small | medium | large")
+    API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
+        .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -304,6 +315,33 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "compass" then
         NR.Set("compass", not db.compass)
         API.Say("the compass (experimental) " .. onOff(db.compass))
+    elseif cmd == "ignore" and rest == "" then
+        local any = false
+        for _, kind in ipairs(Track.KINDS) do
+            for _, row in ipairs(Track.List(kind)) do
+                if Track.Ignored(row.item) then
+                    any = true
+                    API.Say(("skipped: %s (%d)"):format(Track.ItemName(row) or row.nodes[1].name, row.item))
+                end
+            end
+        end
+        if not any then API.Say("nothing skipped: every herb and ore is followed") end
+    elseif cmd == "track" and rest == "" then
+        API.Say("/nr track <node or item>: a node's name, an item's, or an item ID")
+    elseif cmd == "ignore" or cmd == "track" then
+        local row = Track.Find(rest)
+        if row then
+            Track.Set(row.item, cmd == "track")
+            local names = {}
+            for _, n in ipairs(row.nodes) do names[#names + 1] = n.name end
+            API.Say(("%s: %s (%s)"):format(Track.ItemName(row) or row.nodes[1].name,
+                cmd == "track" and "followed" or "skipped", table.concat(names, ", ")))
+        else
+            API.Say(("no herb or ore called %s: a node's name, an item's, or an item ID"):format(rest))
+        end
+    elseif cmd == "smart" then
+        Track.SetSmart(not Track.Smart())
+        API.Say("smart (the list follows your skill) " .. onOff(Track.Smart()))
     elseif cmd == "options" or cmd == "config" then
         if not NR.Options.Open() then API.Say("the Options page can't open here: Esc > Options > AddOns") end
     elseif cmd == "sound" and Alert.SOUNDS[rest:lower()] then

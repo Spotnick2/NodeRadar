@@ -14,7 +14,9 @@ Data\Nodes.lua
 Scan.lua
 Learn.lua
 Alert.lua
+Track.lua
 Icons.lua
 Compass.lua
 Options.lua
+TrackOptions.lua
 NodeRadar.lua

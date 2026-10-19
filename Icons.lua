@@ -334,6 +334,24 @@ local function bindAll()
     if tripped and NR.Compass then NR.Compass.Restyle() end
 end
 
+-- Whether records of a skipped name are kept (#47): only to draw them dimmed.
+-- With Blizzard's dot chosen, or the compass alone, a skipped node is never
+-- measured nor kept.
+local function keepsSkipped()
+    return Icons.On() and NR.db.ignoredIcon ~= "dot"
+end
+
+-- The choices changed (#47, Track): the records of skipped names go when they
+-- aren't kept, at once; the rest bound again, so a dim follows.
+function Icons.Refilter()
+    local keep, kept = keepsSkipped(), {}
+    for _, r in ipairs(records) do
+        if keep or not NR.Alert.Ignored(r.name) then kept[#kept + 1] = r else release(r) end
+    end
+    records = kept
+    if Icons.On() then Icons.Show() end
+end
+
 -- The style or size changed (NR.Set): every icon shown in the new look now.
 function Icons.Restyle()
     if not Icons.On() then return end
@@ -437,7 +455,7 @@ function Icons.Show()
     local any = false
     for _, r in ipairs(records) do
         if r.misses == 0 then
-            r.dim = not NR.Alert.Gatherable(r.name)
+            r.dim = not NR.Alert.Wanted(r.name)         -- beyond the skill, or skipped (#47)
             if not r.frame then r.frame = acquire() end
             any = true
         end
@@ -468,8 +486,9 @@ function Icons.Update(result, now)
     if Icons.On() then resolve() end                   -- the compass alone resolves no look (#29)
 
     local blips = {}
+    local keep = keepsSkipped()
     for _, b in ipairs(result.blips) do
-        if NR.Learn.Kind(b.name) then blips[#blips + 1] = b end
+        if NR.Learn.Kind(b.name) and (keep or not NR.Alert.Ignored(b.name)) then blips[#blips + 1] = b end
     end
 
     -- Match: by name within MATCH units, one to one, nearest pairs first.
@@ -550,7 +569,7 @@ function Icons.Update(result, now)
     tries = keptTries
 
     -- Shown: every record seen this sweep, dimmed as the alert's skill rule
-    -- says, each frame bound to its record in the look. Only with the icons
+    -- and the player's choices say (#26, #47), each frame bound to its record in the look. Only with the icons
     -- on: for the compass alone, no frame, no look, no driver (Codex, #29).
     lastSweep = now
     Icons.Show()

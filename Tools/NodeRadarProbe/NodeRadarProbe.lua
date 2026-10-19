@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3771,6 +3771,337 @@ local yellowSteps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("yellow", yellowSteps)
+end)()
+
+--------------------------------------------------------------------------------
+-- Choosing which herbs and ores (#47): /fp steps nr track
+--------------------------------------------------------------------------------
+
+;(function()
+local function copy(v)
+    if type(v) ~= "table" then return v end
+    local out = {}
+    for k, x in pairs(v) do out[k] = copy(x) end
+    return out
+end
+
+-- NodeRadar's icons, the skipped node's look, the compass and this character's
+-- list, raw, put back by the last step.
+local function trOn(n)
+    if NodeRadarProbeDB.restoreTrack == nil then
+        NodeRadarProbeDB.restoreTrack = { icons = rawget(n.db, "icons"), ignoredIcon = rawget(n.db, "ignoredIcon"),
+                                          compass = rawget(n.db, "compass"), track = copy(n.charDb.track) }
+    end
+    if n.db.icons ~= true then n.Set("icons", true) end
+    if n.db.compass ~= true then n.Set("compass", true) end
+end
+
+local function trBack()
+    local n, saved = nr(), NodeRadarProbeDB.restoreTrack
+    if not (n and saved) then return "nothing to put back" end
+    n.charDb.track = copy(saved.track)
+    n.Track.Load()
+    n.Set("ignoredIcon", saved.ignoredIcon)
+    n.Set("compass", saved.compass)
+    n.Set("icons", saved.icons)
+    NodeRadarProbeDB.restoreTrack = nil
+    return ("put back: icons %s, skipped look %s, compass %s, the list"):format(str(saved.icons),
+        str(saved.ignoredIcon), str(saved.compass))
+end
+
+local function pageOf(kind)
+    local n = nr()
+    local P = n and n.TrackOptions and n.TrackOptions._test
+    return P and P[kind]
+end
+
+-- A page's rows: how many show the item's name, how many still a node's.
+local function rowsText(kind)
+    local ui = pageOf(kind)
+    if not (ui and ui.built) then return "not built" end
+    local named, fallback = 0, 0
+    for _, r in ipairs(ui.rows) do
+        if ask(r.name, "GetText") == r.row.nodes[1].name and #r.row.nodes >= 1 then
+            fallback = fallback + 1
+        else
+            named = named + 1
+        end
+    end
+    return ("%d rows: %d with the item's name, %d still a node's"):format(#ui.rows, named, fallback)
+end
+
+local function pageShown(kind, label)
+    return function()
+        local ui = pageOf(kind)
+        if not ui then return false, "NodeRadar (#47) isn't loaded" end
+        if not yes(ask(ui.panel, "IsVisible")) then return false, "the " .. label .. " page isn't open" end
+        return true, rowsText(kind)
+    end
+end
+
+-- The skipped list and the ranks, for the log.
+local function listText(n)
+    local T = n.Track
+    local out = {}
+    for _, kind in ipairs(T.KINDS) do
+        local skipped = {}
+        for _, row in ipairs(T.List(kind)) do
+            if T.Ignored(row.item) then skipped[#skipped + 1] = T.ItemName(row) or row.nodes[1].name end
+        end
+        out[#out + 1] = ("%s (rank %s): %d of %d skipped%s"):format(kind, str(T.Rank(kind)), #skipped, #T.List(kind),
+            #skipped > 0 and (": " .. table.concat(skipped, ", ")) or "")
+    end
+    return table.concat(out, "; ") .. "; smart " .. str(T.Smart())
+end
+
+local chosen   -- { name, item }: the herb near the player this round skips
+
+local function presetStep(label, which, want)
+    return { text = "On the Herbs page, press " .. label .. ".", wait = function()
+                 local n = nr()
+                 local T = n and n.Track
+                 if not T then return false, "NodeRadar (#47) isn't loaded" end
+                 local rank = T.Rank("herbs")
+                 local ok = true
+                 for _, row in ipairs(T.List("herbs")) do
+                     local s = T.State(row, rank)
+                     if T.Ignored(row.item) ~= want(s) then ok = false end
+                 end
+                 if not ok then return false, "the list isn't " .. which .. " yet" end
+                 return true, listText(n)
+             end, screenshot = "track: " .. which }
+end
+
+local steps = {
+    rev = 1,
+    title = "Choosing which herbs and ores, presets and smart (#47)",
+    { text = "Have NodeRadar loaded with Find Herbs on. NodeRadar's icons and compass go on; they, the skipped "
+          .. "nodes' look and this character's list come back as they were at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Track and n.TrackOptions) then return false, "NodeRadar (#47) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          trOn(n)
+          return true, listText(n)
+      end },
+    { text = "Open Esc > Options > AddOns. Is there a + beside NodeRadar, with Herbs and Ores under it? Open "
+          .. "Herbs.", wait = pageShown("herbs", "Herbs"), screenshot = "track: Herbs" },
+    { text = "Did Herbs show fully on this first visit (not blank): each herb's icon and name, and under it "
+          .. "each node with the skill it needs in colour? Scroll to the bottom. (Note box.)", ask = true },
+    { text = "Leave it open a few seconds (item names the client didn't have arrive), then press Count.",
+      button = "Count", run = function() return rowsText("herbs") end },
+    { text = "Open Ores.", wait = pageShown("ore", "Ores"), screenshot = "track: Ores" },
+    { text = "Did Ores show right too?", ask = true },
+    { text = "Smart is on (the default): with your Herbalism it keeps only what gives skill-ups, so herbs you "
+          .. "can't gather yet are unchecked (red numbers), and grey ones too. Does the Herbs page show that?",
+      ask = true },
+    { text = "Close Options. Ride until a herb shows as an icon on the minimap, then stand still.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          for _, r in ipairs(iconRecords()) do
+              local info = n.Learn.Info(r.name)
+              if info and r.misses == 0 and not r.dim and yes(ask(r.frame, "IsShown")) then
+                  chosen = { name = r.name, item = info.item }
+                  return true, ("%s (item %d)"):format(r.name, info.item)
+              end
+          end
+          return false, "no herb icon in view yet"
+      end, screenshot = "track: before", timeout = 600 },
+    { text = "Skipping that herb now: its icon should dim, and the compass leave it.", wait = function()
+          local n = nr()
+          if not (n and chosen) then return false, "no herb chosen" end
+          if not n.Track.Ignored(chosen.item) then n.Track.Set(chosen.item, false) end
+          local dimmed = false
+          for _, r in ipairs(iconRecords()) do if r.name == chosen.name and r.dim then dimmed = true end end
+          local t = n.Compass._test.target()
+          if not dimmed then return false, "its icon isn't dimmed" end
+          if t and t.name == chosen.name then return false, "the compass still points at it" end
+          return true, ("%s dimmed; the compass on %s"):format(chosen.name, t and t.name or "nothing (hidden)")
+      end, screenshot = "track: skipped, dimmed" },
+    { text = "Is that herb's icon dimmed, and did the compass leave it (another node, or hidden)?", ask = true },
+    { text = "Now with Blizzard's dot for a skipped node.", wait = function()
+          local n = nr()
+          if not (n and chosen) then return false, "no herb chosen" end
+          if n.db.ignoredIcon ~= "dot" then n.Set("ignoredIcon", "dot") end
+          for _, r in ipairs(iconRecords()) do
+              if r.name == chosen.name then return false, "its record is still there" end
+          end
+          return true, chosen.name .. ": no record, Blizzard's dot"
+      end, screenshot = "track: skipped, Blizzard's dot" },
+    { text = "Is only Blizzard's dot left there for that herb (no icon)?", ask = true },
+    { text = "Tracking it again, the dimmed look back: its icon returns at the next sweep.", wait = function()
+          local n = nr()
+          if not (n and chosen) then return false, "no herb chosen" end
+          if n.db.ignoredIcon ~= "dim" then n.Set("ignoredIcon", "dim") end
+          if n.Track.Ignored(chosen.item) then n.Track.Set(chosen.item, true) end
+          for _, r in ipairs(iconRecords()) do
+              if r.name == chosen.name and not r.dim and yes(ask(r.frame, "IsShown")) then
+                  return true, chosen.name .. " back"
+              end
+          end
+          return false, "its icon isn't back yet"
+      end, screenshot = "track: tracked again" },
+    { text = "Open the Herbs page again and keep it open for the next presses.", wait = pageShown("herbs", "Herbs") },
+    presetStep("None", "none", function() return true end),
+    presetStep("All I can gather", "all I can gather", function(s) return not (s == "up" or s == "grey") end),
+    presetStep("Skill-ups only", "skill-ups only", function(s) return s ~= "up" end),
+    presetStep("All", "all", function() return false end),
+    { text = "Did the checkboxes follow each press?", ask = true },
+    { text = "Uncheck Smart at the top of the page.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if n.Track.Smart() then return false, "smart is still on" end
+          return true, listText(n)
+      end },
+    { text = "Check Smart again: the list should go back to what gives skill-ups.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if not n.Track.Smart() then return false, "smart is off" end
+          return true, listText(n)
+      end, screenshot = "track: smart again" },
+    { text = "Did turning Smart back on uncheck the herbs you can't gather yet (and any grey)?", ask = true },
+    { text = "Close Options, then put the mouse on a herb in the world (not on the minimap) for its tooltip, then "
+          .. "press Next.", screenshot = "track: a node's tooltip" },
+    { text = "Does that tooltip show the Herbalism needed in a colour? (Note box: the herb, the colour, and your "
+          .. "Herbalism; it checks the colour lines.)", ask = true },
+    { text = "Putting NodeRadar's icons, the skipped look, the compass and the list back.", auto = true, run = trBack },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("track", steps)
+
+-- Round 2: the columns, a row's tooltip, smart off and on (each toggle logged),
+-- and a node's own tooltip in the world read by the probe (round 1: Next can't
+-- be pressed while hovering a node).
+local realSetSmart
+local function logSmart(n)
+    if realSetSmart then return end
+    realSetSmart = n.Track.SetSmart
+    n.Track.SetSmart = function(on)
+        say(("SMART %s (was %s)"):format(str(on), str(n.Track.Smart())))
+        return realSetSmart(on)
+    end
+end
+local function unlogSmart(n)
+    if realSetSmart and n then n.Track.SetSmart = realSetSmart end
+    realSetSmart = nil
+end
+
+-- The game's tooltip lines with their colours: "Earthroot [1.00 1.00 1.00] | ...".
+local function tipLines()
+    local out = {}
+    for i = 1, 6 do
+        local fs = rawget(_G, "GameTooltipTextLeft" .. i)
+        local text = ask(fs, "GetText")
+        if type(text) == "string" and text ~= "" then
+            local ok, r, g, b = pcall(fs.GetTextColor, fs)
+            out[#out + 1] = ok and ("%s [%.2f %.2f %.2f]"):format(text, r or -1, g or -1, b or -1) or text
+        end
+    end
+    return table.concat(out, " | ")
+end
+
+local steps2 = {
+    rev = 1,
+    title = "Herbs and Ores in columns, smart again, a node's tooltip (#47)",
+    { text = "Have NodeRadar loaded with Find Herbs on. Your list comes back as it was at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Track and n.TrackOptions) then return false, "NodeRadar (#47) isn't loaded" end
+          trOn(n)
+          logSmart(n)
+          return true, listText(n)
+      end },
+    { text = "Open Esc > Options > AddOns > NodeRadar > Herbs.", wait = pageShown("herbs", "Herbs"),
+      screenshot = "track2: Herbs in columns" },
+    { text = "Herbs in three columns: does every name fit, with its skill beside it? (Note box.)", ask = true },
+    { text = "Hold the mouse on a herb's name in the list.", wait = function()
+          local ui = pageOf("herbs")
+          if not (ui and ui.built) then return false, "the Herbs page isn't built" end
+          local owner = ask(rawget(_G, "GameTooltip"), "GetOwner")
+          for _, r in ipairs(ui.rows) do
+              if owner == r.cell and yes(ask(rawget(_G, "GameTooltip"), "IsShown")) then
+                  return true, tipLines()
+              end
+          end
+          return false, "no row's tooltip yet"
+      end, screenshot = "track2: a row's tooltip" },
+    { text = "Does the tooltip list that herb's node(s) with the skill each needs?", ask = true },
+    { text = "Open Ores.", wait = pageShown("ore", "Ores"), screenshot = "track2: Ores in columns" },
+    { text = "Ores right too? Hover Thorium Ore (bottom right): its veins at 245 and 275?", ask = true },
+    { text = "Back to Herbs. Click Smart once to turn it off.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if n.Track.Smart() then return false, "smart is still on" end
+          return true, listText(n)
+      end },
+    { text = "Click it once more to turn it on, and wait.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if not n.Track.Smart() then return false, "smart is off" end
+          local ui = pageOf("herbs")
+          return true, listText(n) .. "; the box " .. str(ui and ask(ui.smart, "GetChecked"))
+      end, screenshot = "track2: smart on" },
+    { text = "Is Smart ticked, with the herbs you can't gather yet unchecked?", ask = true },
+    { text = "Close Options. Put the mouse on a herb in the world (not the minimap) and keep it there until this "
+          .. "step completes.", wait = function()
+          local n = nr()
+          local tip = rawget(_G, "GameTooltip")
+          if not (n and yes(ask(tip, "IsShown"))) then return false, "no tooltip" end
+          if ask(tip, "GetOwner") == rawget(_G, "Minimap") then return false, "that's the minimap's tooltip" end
+          local first = ask(rawget(_G, "GameTooltipTextLeft1"), "GetText")
+          if not (type(first) == "string" and n.Learn.Kind(first)) then return false, "not a node's tooltip" end
+          return true, ("Herbalism %s: %s"):format(str(n.Track.Rank("herbs")), tipLines())
+      end, screenshot = "track2: a node's tooltip" },
+    { text = "Putting your list back.", auto = true, run = function()
+          local n = nr()
+          unlogSmart(n)
+          return trBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("track2", steps2)
+end)()
+
+;(function()
+-- What NodeRadar's icons hold now, against a fresh sweep: each blip, matched to
+-- a record or not (and why not: skipped, a failed measure waiting, too near the
+-- rim), each record, each failed try. For "icons and dots side by side".
+local function iconsDump()
+    local n = nr()
+    if not (n and n.Icons and n.Icons._test) then say("icons: NodeRadar isn't loaded"); return end
+    local T = n.Icons._test
+    local okP, pn, pw, _, inst = pcall(UnitPosition, "player")
+    say(("icons: on %s, keeping %s, look %s; at %s %s instance %s; skipped look %s"):format(str(n.Icons.On()),
+        str(n.Icons.Keeping()), str(T.look().style), str(okP and pn), str(okP and pw), str(okP and inst),
+        str(n.db.ignoredIcon)))
+    local result = n.Scan.Sweep(function(name) return n.Learn.Kind(name) and true or false end)
+    if not result then say("icons: the sweep failed"); return end
+    local g, where = result.geometry, result.where
+    local k = where and g and where.radius / (g.w / 2)
+    for _, b in ipairs(result.blips) do
+        if n.Learn.Kind(b.name) then
+            local near, nearD
+            for _, r in ipairs(T.records()) do
+                if r.name == b.name and k and okP then
+                    local rx, ry = -(r.west - pw) / k, (r.north - pn) / k
+                    local d = math.sqrt((rx - b.x) ^ 2 + (ry - b.y) ^ 2)
+                    if not nearD or d < nearD then near, nearD = r, d end
+                end
+            end
+            say(("  blip %s at %+.1f %+.1f (%d cells, from the centre %.1f): nearest record %s; wanted %s, skipped %s"):format(
+                b.name, b.x, b.y, b.cells or 0, math.sqrt(b.x ^ 2 + b.y ^ 2),
+                nearD and ("%.1f units away"):format(nearD) or "none", str(n.Alert.Wanted(b.name)),
+                str(n.Alert.Ignored(b.name))))
+        end
+    end
+    for _, r in ipairs(T.records()) do
+        say(("  record %s at %+.1f %+.1f: misses %s, dim %s, height %s, shown %s"):format(r.name, r.x or 0, r.y or 0,
+            str(r.misses), str(r.dim), str(r.height), str(r.frame and ask(r.frame, "IsShown"))))
+    end
+    local now = GetTime()
+    for _, t in ipairs(T.tries()) do
+        say(("  failed measure %s: tried %.0f s ago, seen %.0f s ago"):format(t.name, now - t.at, now - t.seen))
+    end
+end
+Probe:Command("icons", function() iconsDump() end, "NodeRadar's icons against a fresh sweep")
 end)()
 
 --------------------------------------------------------------------------------

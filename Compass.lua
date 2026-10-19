@@ -237,7 +237,7 @@ local function choose()
     if not pn then target = nil; return end
     local best, bestD, kept
     for _, r in ipairs(NR.Icons.Records()) do
-        if NR.Alert.Gatherable(r.name) then
+        if NR.Alert.Wanted(r.name) then             -- the incumbent too: a skipped one goes (#47)
             local d = yards(r, pn, pw)
             if not bestD or d < bestD then best, bestD = r, d end
             if r == target then kept = d end

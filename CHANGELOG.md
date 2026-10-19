@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Choose which herbs and ores** (#47): NodeRadar's new Herbs and Ores pages (under it in Esc >
+  Options > AddOns) list each herb and ore with its nodes and the skill each needs. Uncheck one and
+  it makes no alert or chat line, and the compass never points at it; on the minimap its icon is
+  dimmed, or Blizzard's dot if you prefer. All, None, All I can gather and Skill-ups only set a page
+  at once. `/nr ignore`, `/nr track`.
+- **Smart** (on by default): the lists follow your skill, checking a node when you can gather it
+  and unchecking it once it's grey (no more skill-ups). On your first login with this version it
+  keeps only what gives skill-ups, so a 300 herbalist no longer hears Peacebloom. Turn it off on
+  either page or with `/nr smart`. The choices are per character.
 - **A yellow frame for the icons** (#50): a ring the colour of the minimap's own tracking dots,
   beside glass and bronze (`/nr iconstyle yellow`, or Options). The compass's rim follows it.
 - **Experimental: a compass toward the nearest node** (#29), off by default (`/nr compass`, or

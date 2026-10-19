@@ -12,7 +12,11 @@ local O = NR.Options._test
 local db = NR.db
 
 -- Registered once, at PLAYER_LOGIN.
-eq(#WoW.categories, 1, "one category")
+eq(#WoW.categories, 3, "the page and its two sub-pages (#47)")
+eq(WoW.categories[2].name, "Herbs", "...Herbs right after it")
+eq(WoW.categories[3].name, "Ores", "...then Ores")
+check(WoW.categories[2].parent == WoW.categories[1] and WoW.categories[3].parent == WoW.categories[1],
+    "...both under NodeRadar's")
 eq(WoW.categories[1].name, "NodeRadar", "...named NodeRadar")
 check(WoW.categories[1].registered, "...in the AddOns list")
 check(WoW.categories[1].frame == O.panel, "...the page")
@@ -87,6 +91,11 @@ eq(rawget(db, "iconStyle"), "yellow", "yellow chosen (#50)")
 eq(checked("iconStyle"), "yellow", "...shown as chosen")
 SlashCmdList.NODERADAR("iconstyle yellow")
 eq(db.iconStyle, "yellow", "/nr iconstyle yellow")
+-- A node you skip (#47): its icon dimmed by default, or Blizzard's dot.
+eq(checked("ignoredIcon"), "dim", "a skipped node: its icon dimmed by default")
+WoW.click(O.radios.ignoredIcon[2])
+eq(rawget(db, "ignoredIcon"), "dot", "...Blizzard's dot chosen")
+WoW.click(O.radios.ignoredIcon[1])
 WoW.click(O.radios.iconStyle[4])
 eq(rawget(db, "iconStyle"), "bronze", "bronze chosen")
 WoW.click(O.radios.iconSize[3])
