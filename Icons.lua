@@ -183,17 +183,14 @@ local function resolve()
 end
 
 -- For the compass's ring (#29), which follows the icons' frame setting: the
--- effective style and, for glass, the shared instance. Resolving may latch
--- glass off; it draws no minimap icon.
+-- effective style (glass: a pearl rim, bronze: a bronze one, plain: none; the
+-- compass draws our own art). Resolving may latch glass off; it draws no
+-- minimap icon.
 function Icons.Style()
     local style = styleOf()
     return style, style == "glass" and glass or nil
 end
 
--- The compass's glass failed (its disc, pill, mask or font): the shared latch,
--- and the icons bound again to bronze once the compass's pass is done (it calls
--- Icons.Restyle). One latch for both (Codex, #29).
-function Icons.GlassFailed(why) glassFailed(why) end
 
 -- A glass disc as Glass MiniMap's Ring.AddDisc builds one, at the medium size:
 -- a square host, the icon inset a quarter of its size, masked round. Built

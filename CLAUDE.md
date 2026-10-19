@@ -80,8 +80,9 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   `MiniMap-TrackingBorder` as LibDBIcon lays it out); auto follows the minimap. One `bind` sets a
   frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
 - `Compass.lua` (#29, `compass`, experimental, off by default): under the character, the nearest
-  gatherable record's item icon in a disc (the icons' frame: `Icons.Style()`, one glass latch for
-  both), the arrow orbiting outside toward it (`atan2(-east, north) - GetPlayerFacing()`,
+  gatherable record's item icon on our own art (`Media/Compass*.tga` from `Tools/make_media.py`: a
+  shadow, a dark lens, a rim tinted pearl or bronze as the icons' frame resolves, `Icons.Style()`;
+  no LibGlass), the arrow and a rim highlight orbiting toward it (`atan2(-east, north) - GetPlayerFacing()`,
   measured), the distance in a pill, the item's tooltip on hover (mouse motion only, clicks
   through), `compassSize`; chosen again every sweep with a 5-yard hysteresis and after a gather;
   hidden within 15 yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);

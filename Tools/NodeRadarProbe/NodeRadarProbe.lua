@@ -3565,9 +3565,7 @@ end
 -- Which look is up, at what size: "glass medium".
 local function c4Text()
     local T, n = c4(), nr()
-    local l = T and T.look()
-    local style = "none"
-    for k, v in pairs(T and T.looks or {}) do if v and v == l then style = k end end
+    local style = T and T.style and T.style() or "none"                -- the refined look: the rim's style
     return ("%s %s"):format(style, str(n and n.db.compassSize))
 end
 
@@ -3575,7 +3573,7 @@ end
 local function c4Shown(size, style, want)
     return function()
         local n, T = nr(), c4()
-        if not (n and T and T.looks) then return false, "NodeRadar (the compass's look) isn't loaded" end
+        if not (n and T and T.style) then return false, "NodeRadar (the compass's look) isn't loaded" end
         c4On(n, size, style)
         if not yes(ask(T.root, "IsShown")) then return false, "the compass isn't up: ride until a node is in view" end
         local text = c4Text()
@@ -3590,7 +3588,7 @@ local steps4 = {
     { text = "Have NodeRadar loaded with gathering tracking on, and Glass MiniMap on. NodeRadar's compass goes "
           .. "on; its size and the icons' frame setting come back as they were at the end.", wait = function()
           local n, T = nr(), c4()
-          if not (n and T and T.looks) then return false, "NodeRadar (the compass's look) isn't loaded" end
+          if not (n and T and T.style) then return false, "NodeRadar (the compass's look) isn't loaded" end
           if #tracking(true) == 0 then return false, "no gathering tracking on" end
           c4On(n, "medium", "auto")
           return true, "compass on, medium, following the minimap"
@@ -3611,10 +3609,9 @@ local steps4 = {
           local ok, why = c4Shown("medium", "auto", "glass")()
           if not ok then return false, why end
           local T = c4()
-          local l = T.look()
           local tip = rawget(_G, "GameTooltip")
           local okO, owner = pcall(tip.GetOwner, tip)
-          if not (okO and owner == l.host and yes(ask(tip, "IsShown"))) then return false, "no tooltip from the compass yet" end
+          if not (okO and owner == T.disc and yes(ask(tip, "IsShown"))) then return false, "no tooltip from the compass yet" end
           return true, "the tooltip shows " .. str(ask(rawget(_G, "GameTooltipTextLeft1"), "GetText"))
       end, screenshot = "compass4: the tooltip" },
     { text = "Is that the item's tooltip (the herb or ore the node gives)?", ask = true },

@@ -3,9 +3,10 @@
 ## Unreleased
 
 - **Experimental: a compass toward the nearest node** (#29), off by default (`/nr compass`, or
-  Options): under your character, the nearest node you can gather as its item's icon in a small
-  disc framed like the minimap icons, an arrow circling it toward the node, the distance below, the
-  item's tooltip on hover. Small, medium or large. It moves on as you gather and hides within 15
+  Options): under your character, the nearest node you can gather as its item's icon on a small
+  dark lens with a thin pearl or bronze rim (as the minimap icons' frame), a white arrow circling it
+  toward the node with a highlight on the rim beneath, the distance below, the item's tooltip on
+  hover. Small, medium or large. It moves on as you gather and hides within 15
   yards. It follows your character's facing, not the camera's.
 
 ## v1.1.0

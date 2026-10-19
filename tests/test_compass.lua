@@ -100,7 +100,7 @@ check(C.root._parent == UIParent and C.root._mouse == false, "the ring: a child 
 --------------------------------------------------------------------------------
 
 NR.Set("compass", true)
-NR.db.iconStyle = "glass"                                  -- no LibGlass here: the compass's glass fails
+NR.db.iconStyle = "glass"                                  -- no LibGlass here: resolved to bronze
 fresh()
 local frames = T.frames
 local far = node("Silverleaf", 60, 0)
@@ -110,8 +110,8 @@ check(at(close), "two nodes: the nearer")
 check(shown(), "...the ring shown")
 eq(T.frames, frames, "the icons off: no icon frame made")
 eq(T.driver._scripts.OnUpdate, nil, "...no icon driver")
-check(NR.failures.glass, "...the compass resolved glass itself (none here: a failure)")
-check(C.look() == C.looks.bronze, "...and drew bronze")
+eq(G.discs, 0, "...the compass calls no LibGlass Disc (its own art)")
+eq(C.style(), "bronze", "...glass not to be had: the bronze rim")
 NR.db.iconStyle = nil
 -- Chosen again as the player moves.
 WoW.pos[2] = WoW.pos[2] - 50 * K()                         -- east: the far one comes close
@@ -248,17 +248,22 @@ local function aim(f)
     return p[4], p[5], C.arrow._rotation
 end
 local R = Compass.ORBIT
-check(R - Compass.ARROW / 2 > Compass.DISC / 2, "the orbit outside the disc, the arrow included")
+-- The art's numbers (Tools/make_media.py): the base 0.3125 of the arrow below its centre, 1 unit
+-- outside the rim; the apex 0.375 above; the capsule 3 units under that.
+check(near(R - 0.3125 * Compass.ARROW, Compass.DISC / 2 + 1), "the arrow's base 1 unit outside the rim")
+check(near(Compass.REACH, R + 0.375 * Compass.ARROW) and near(Compass.PILL_TOP, Compass.REACH + 3),
+    "...the capsule 3 units below its farthest point")
+eq(Compass.PILL_TOP, 41, "...41 under the centre at medium")
 local x, y, rot = aim(0)
 check(near(x, 0, 0.5) and near(y, R, 0.5) and near(rot, 0, 0.02), "the node ahead (north): the arrow at the top")
+eq(C.arc._rotation, rot, "...the arc turned with it")
 x, y, rot = aim(3 * math.pi / 2)
 check(near(x, -R, 0.5) and near(y, 0, 0.5) and near(rot, math.pi / 2, 0.02), "facing east: on the left")
+eq(C.arc._rotation, rot, "...the arc with it")
 x, y = aim(math.pi)
 check(near(x, 0, 0.5) and near(y, -R, 0.5), "facing south: behind")
-local pp = C.look().pill._points[1]
-check(pp and pp[1] == "TOP" and near(pp[5], -Compass.PILL_TOP), "...the pill below the orbit")
-check(Compass.PILL_TOP > math.sqrt((R + Compass.ARROW / 2) ^ 2 + (Compass.ARROW / 2) ^ 2),
-    "...never under the arrow, at any angle")
+local pp = C.pill._points[1]
+check(pp and pp[1] == "TOP" and near(pp[5], -Compass.PILL_TOP), "...the capsule below the arrow's reach")
 x, y = aim(math.pi / 2)
 check(near(x, R, 0.5) and near(y, 0, 0.5), "facing west: on the right")
 x, y = aim(2 * math.pi - 0.01)
@@ -273,46 +278,60 @@ check(near(x, R * math.sin(math.pi / 4), 0.5) and near(y, R * math.cos(math.pi /
 WoW.pos = saved
 aim(0)
 local d = math.floor(math.sqrt((target().north - WoW.pos[1]) ^ 2 + (target().west - WoW.pos[2]) ^ 2) + 0.5)
-eq(C.look().text._text, d .. " yd", "the distance in whole yards, in the pill")
-eq(C.look().icon._file, target().icon, "the target's item icon in the disc")
+eq(C.text._text, d .. " yd", "the distance in whole yards, in the capsule")
+eq(C.icon._file, target().icon, "the target's item icon on the lens")
+eq(C.icon._rotation, nil, "...never turned")
 
 --------------------------------------------------------------------------------
--- The look: the icons' frame, three sizes, the tooltip, one glass latch
+-- The look: our own art, the rim following the icons' frame, three sizes, the tooltip
 --------------------------------------------------------------------------------
 
--- Following the minimap without Glass MiniMap: bronze, LibDBIcon's proportions at the diameter.
-local L = C.look()
-check(L == C.looks.bronze, "auto without Glass MiniMap: bronze")
-eq(L.host._width, Compass.DISC, "...the button the diameter")
-check(near(L.icon._width, Compass.DISC * 17 / 31), "...the icon 17/31 of it")
-eq(C.body._scale, 1, "...medium: unscaled")
--- Sizes: the body scaled, nothing rebuilt.
+-- The layers: the shadow, the lens, the icon, the rim, the arc, the arrow, the capsule.
+local function file(t) return t._file and t._file:match("[^\\]+$") end
+eq(file(C.shadow), "CompassShadow.tga", "the shadow")
+eq(file(C.lens), "CompassLens.tga", "the lens")
+eq(file(C.rim), "CompassRim.tga", "the rim")
+eq(file(C.arc), "CompassArc.tga", "the arc")
+eq(file(C.arrow), "CompassArrow.tga", "the arrow")
+check(near(C.icon._width, 52 * 0.58), "the icon 0.58 of the diameter (30 at medium)")
+check(near(C.shadow._width, Compass.DISC * 1.25) and near(C.shadow._points[1][5], -2), "the shadow larger, nudged down")
+-- Following the minimap without Glass MiniMap: the bronze rim.
+eq(C.style(), "bronze", "auto without Glass MiniMap: bronze")
+check(C.rim._shown and near(C.rim._vertex[1], Compass.TINTS.bronze[1]), "...the rim tinted bronze")
+eq(C.arrow._vertex, nil, "...the arrow never tinted")
+-- The capsule: fixed whatever the number.
+eq(C.pill._width, Compass.PILL[1], "the capsule 56 wide")
+WoW.pos[1] = WoW.pos[1] - 60 * K()
+step(1)
+eq(C.pill._width, Compass.PILL[1], "...still, the distance changed: " .. tostring(C.text._text))
+WoW.pos[1] = WoW.pos[1] + 60 * K()
+step(1)
+-- Sizes: the body scaled.
+eq(C.body._scale, 1, "medium: unscaled")
 for name, size in pairs({ small = 44, large = 60, medium = 52 }) do
     NR.Set("compassSize", name)
     check(near(C.body._scale, size / Compass.DISC), name .. ": scaled to " .. size)
-    check(C.look() == L, "...the same look, not rebuilt")
 end
--- Plain: the icon alone, the diameter's size.
-local dist = L.text._text
+-- Plain: the lens and the icon, no rim, no arc; the capsule filled at once.
+local dist = C.text._text
 NR.Set("iconStyle", "plain")
-check(C.look() == C.looks.plain, "plain chosen: the icon alone")
-eq(C.looks.plain.text._text, dist, "...its pill shows the distance at once (compass4: empty pills)")
-eq(C.looks.plain.host._shown and C.looks.bronze.host._shown, false, "...one look shown")
+eq(C.style(), "plain", "plain chosen")
+eq(C.rim._shown, false, "...no rim")
+eq(C.arc._shown, false, "...no arc")
+check(C.lens._shown ~= false and C.icon._shown ~= false, "...the lens and the icon")
+eq(C.text._text, dist, "...the capsule's distance kept (compass4: empty pills)")
 NR.Set("iconStyle", nil)
+check(C.rim._shown, "back to the minimap's: the rim again")
 -- The mouse: motion only on the disc, nothing else.
-for _, l in pairs(C.looks) do
-    if l then
-        check(l.host._motion == true and l.host._click == false, "a disc: mouse motion only, clicks through")
-        check(l.pill._mouse == false, "...its pill takes no mouse")
-    end
-end
+check(C.disc._motion == true and C.disc._click == false, "the disc: mouse motion only, clicks through")
+check(C.pill._mouse == false and C.body._mouse == false and C.root._mouse == false, "...nothing else takes the mouse")
 -- The tooltip: the target's item on hover, above; following a new target under a still cursor.
-L = C.look()
-L.host._scripts.OnEnter(L.host)
-eq(GameTooltip._owner, L.host, "hovering: the disc owns the tooltip")
+local disc = C.disc
+disc._scripts.OnEnter(disc)
+eq(GameTooltip._owner, disc, "hovering: the disc owns the tooltip")
 eq(GameTooltip._anchor, "ANCHOR_TOP", "...above it")
 eq(GameTooltip._item, NR.Learn.Info("Silverleaf").item, "...Silverleaf's item")
-local er = node("Earthroot", 0, 20)                        -- nearer: the target changes, the cursor still
+node("Earthroot", 0, 20)                                   -- nearer: the target changes, the cursor still
 step(1)
 eq(target().name, "Earthroot", "the Earthroot nearer now")
 eq(GameTooltip._item, NR.Learn.Info("Earthroot").item, "...the tooltip follows it")
@@ -324,74 +343,61 @@ step(1)
 eq(target().name, "Mageroyal", "the Mageroyal nearer still")
 eq(GameTooltip._shown, false, "...no item: the owned tooltip hidden")
 NR.Learn.Info = info
-L.host._scripts.OnEnter(L.host)
-L.host._scripts.OnLeave(L.host)
+disc._scripts.OnEnter(disc)
+disc._scripts.OnLeave(disc)
 eq(GameTooltip._shown, false, "leaving: hidden")
 GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")            -- another's tooltip
 GameTooltip:Show()
-L.host._scripts.OnLeave(L.host)
+disc._scripts.OnLeave(disc)
 eq(GameTooltip._shown, true, "...another's tooltip left alone")
 GameTooltip:Hide()
 -- A target whose node gives no item: no tooltip.
 fresh()
 node("Silverleaf", 0, 40)
 step(1)
-L = C.look()
 NR.Learn.Info = function() return nil end
 GameTooltip._item = nil
-L.host._scripts.OnEnter(L.host)
+disc._scripts.OnEnter(disc)
 NR.Learn.Info = info
 eq(GameTooltip._item, nil, "no item: no tooltip set")
 
--- Glass with Glass MiniMap: the disc, the icon inset, the glass pill.
+-- Glass with Glass MiniMap: the pearl rim, and still no LibGlass call by the compass.
 local function glassOn()
     Icons._test.reset()
-    for k in pairs(C.looks) do C.looks[k] = nil end
     WoW.loadedAddons, G.loaded = { GlassMiniMap = true }, true
-    G.discThrows, G.applyThrows = nil, nil
+    G.discThrows, G.applyThrows, G.discs, G.pill = nil, nil, 0, nil
     NR.failures.glass = nil
 end
 glassOn()
 fresh()
 node("Silverleaf", 0, 40)
 step(1)
-check(C.look() == C.looks.glass, "with Glass MiniMap: glass")
-eq(G.last.size, "disc_small", "...the small disc")
-eq(G.last.top._mouse, false, "...its top takes no mouse")
-eq(G.pill and G.pill.size, "small", "...the glass pill")
-eq(G.pill.top._mouse, false, "...its top takes no mouse")
--- The latch, the icons tripping it: the compass bronze too.
+eq(C.style(), "glass", "with Glass MiniMap: glass")
+check(near(C.rim._vertex[1], 0.97) and near(C.rim._vertex[2], 0.97) and near(C.rim._vertex[3], 1),
+    "...the rim pearl (near white, a touch cool)")
+eq(G.discs, 0, "...no LibGlass Disc for the compass")
+eq(G.pill, nil, "...nor a glass pill")
+-- The latch, the icons tripping it: the rim bronze too.
+fresh()                                                    -- no record left to draw glass for
 glassOn()
 NR.Set("icons", true)
-fresh()
 node("Silverleaf", 0, 40)
-G.discThrows = true                                        -- every disc from now: the icons' first
+G.discThrows = true                                        -- the icons' disc fails
 step(1)
 check(NR.failures.glass, "an icon's disc failed: the latch")
-check(C.look() == C.looks.bronze, "...the compass bronze too")
+eq(C.style(), "bronze", "...the compass's rim bronze too")
 NR.Set("icons", false)
--- The latch tripped by the icons outside a sweep (turned on): the compass bronze at once.
+-- The latch tripped by the icons outside a sweep (turned on): the rim bronze at once.
 glassOn()
 fresh()
 node("Silverleaf", 0, 40)
 step(1)
-check(C.look() == C.looks.glass, "the compass glass, the icons off")
+eq(C.style(), "glass", "the rim pearl, the icons off")
 G.discThrows = true
 NR.Set("icons", true)                                      -- the icons drawn now: their disc fails
 check(NR.failures.glass, "...an icon's disc failed")
-check(C.look() == C.looks.bronze, "...the compass bronze at once, no sweep")
-NR.Set("icons", false)
--- The latch, the compass's pill tripping it after its disc built: both bronze.
-glassOn()
-NR.Set("icons", true)
-fresh()
-node("Silverleaf", 0, 40)
-G.applyThrows = true
-step(1)
-check(NR.failures.glass and NR.failures.glass.err:find("compass"), "the compass's pill failed: the latch")
-check(C.look() == C.looks.bronze, "...the compass bronze")
-local f0 = rec("Silverleaf").frame
-check(f0 and f0.bronze and f0.bronze._shown, "...the icons bound again to bronze")
+eq(C.style(), "bronze", "...the rim bronze at once, no sweep")
+check(near(C.rim._vertex[1], Compass.TINTS.bronze[1]), "...tinted bronze")
 NR.Set("icons", false)
 -- A style change with the icons off reaches the compass.
 glassOn()
@@ -400,7 +406,7 @@ fresh()
 node("Silverleaf", 0, 40)
 step(1)
 NR.Set("iconStyle", "plain")
-check(C.look() == C.looks.plain, "icons off, the style changed: the compass follows at once")
+eq(C.style(), "plain", "icons off, the style changed: the compass follows at once")
 NR.Set("iconStyle", nil)
 
 --------------------------------------------------------------------------------
