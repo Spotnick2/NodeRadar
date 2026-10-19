@@ -55,6 +55,19 @@ local function nodes(result)
     return counts, blips
 end
 
+-- Whether the player chose to skip a node of that name (#47): its item
+-- unchecked. A name without NODE_INFO (learned on Forever) can't be listed, so
+-- it's never skipped.
+function Alert.Ignored(name)
+    local info = NR.Learn.Info(name)
+    return info ~= nil and NR.Track.Ignored(info.item)
+end
+
+-- Everything NodeRadar does for a node is for these: gatherable, not skipped.
+function Alert.Wanted(name)
+    return Alert.Gatherable(name) and not Alert.Ignored(name)
+end
+
 -- After each successful radar sweep. Returns the names that alerted.
 function Alert.Update(result, now)
     if hist and now - hist.at > Alert.STALE + NR.db.interval then hist = nil end
@@ -83,11 +96,12 @@ function Alert.Update(result, now)
         end
     end
     hist.counts, hist.at = counts, now
-    -- Counted whatever the skill (a skill-up mustn't make old nodes new); a
-    -- node the player can't gather neither alerts nor spends the cooldown.
+    -- Counted whatever the skill and the choices (a skill-up or a node tracked
+    -- again mustn't make old nodes new); a node the player can't gather or
+    -- skips neither alerts nor spends the cooldown (#26, #47).
     local fire = {}
     for _, name in ipairs(new) do
-        if Alert.Gatherable(name) then fire[#fire + 1] = name end
+        if Alert.Wanted(name) then fire[#fire + 1] = name end
     end
     if #fire == 0 or now - lastAlert < NR.db.cooldown then return nil end
     lastAlert = now

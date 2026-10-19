@@ -47,7 +47,7 @@ live game, WoWInterface (#37).
 ## Layout
 
 TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Icons.lua` → `Compass.lua` → `Options.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`Track.lua` → `Icons.lua` → `Compass.lua` → `Options.lua` → `TrackOptions.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
   failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
@@ -70,7 +70,15 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Alert.lua`: new nodes by a rise in a name's count, only those the player can gather
   (`Alert.Gatherable`: `NODE_INFO`'s skill against `API.Skill`, Cultivation for herbs, #26); the sound (`Alert.SOUNDS`: the map ping, two of
   the client's files by FileDataID, six `Media\*.ogg` from Pixabay made by `Tools/import_sounds.py`,
-  README "Sounds"), the sonar, chat line, solo-only ping.
+  README "Sounds"), the sonar, chat line, solo-only ping. `Alert.Wanted` = gatherable and not
+  skipped (#47): what the alert, the compass and the icons' dim all use.
+- `Track.lua` (#47): which herbs and ores, per character (`NodeRadarCharDB.track`: `ignored` by item
+  ID, `smart`, `last`), one row per item from `NODE_INFO` (several nodes give one item, each keeping
+  its skill); the items' states from the **base rank** (`API.Skill(line, true)`: gear moves only the
+  modifier); the presets; smart (`Track.Follow`, before `Icons.Update` in `NR.Step` and at
+  `SKILL_LINES_CHANGED`) edits the list only when the rank crosses a line. A change refilters the
+  icons (`Icons.Refilter`: skipped records dropped unless shown dimmed, `ignoredIcon`) and the
+  compass at once.
 - `Icons.lua` (#28, `icons`, off by default): records of measured nodes in world yards
   (`UnitPosition`: north, west), matched to each radar sweep's blips by name within 8 units,
   drawn every frame as unnamed mouse-through children of `Minimap`; `NR.Step` reconciles them
@@ -92,6 +100,9 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.
+- `TrackOptions.lua` (#47): the Herbs and Ores sub-pages (`Settings.RegisterCanvasLayoutSubcategory`
+  right after the main page, from `Options.Register`), one builder; item names asked for with
+  `RequestLoadItemDataByID` and filled on `ITEM_DATA_LOAD_RESULT`.
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`.
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;

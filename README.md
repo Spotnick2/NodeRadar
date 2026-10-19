@@ -43,6 +43,12 @@ turn on Find Herbs or Find Minerals.
   90. A Tauren herbalist still hears herbs above their skill while Cultivation is ready, since it
   grows a copy anyone can gather. A node whose requirement it doesn't know, or a skill it can't read,
   alerts as usual. `/nr skill` turns this off.
+- **You choose which herbs and ores.** NodeRadar's Herbs and Ores pages (under it in the AddOns
+  list) have one checkbox per herb or ore, with each node and the skill it needs, plus All, None,
+  All I can gather and Skill-ups only. A node you skip makes no alert, no chat line, and is never
+  the compass's target; on the minimap its icon is dimmed (or Blizzard's dot, your choice). Smart,
+  on by default, keeps the list to what gives skill-ups as you level: it checks a node when your
+  skill reaches it and unchecks it when it turns grey. The choices are per character.
 - **Optionally, each node shows its item's icon** on the minimap (Peacebloom, Copper Ore) instead
   of Blizzard's yellow dot, dimmed when your skill can't gather it yet (`/nr icons`, off by
   default). NodeRadar measures where each new node is once and keeps it in place
@@ -73,7 +79,8 @@ notification, sci-fi HUD ping), the sonar on the node, a chat line (each node wi
 map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
 can't be told), Blizzard's ping, the time
 between alerts, a test button; only nodes you can gather; Blizzard's dots or item icons on the
-minimap, the icon's frame and size; the experimental compass; learning by toggling tracking.
+minimap, the icon's frame and size, what a skipped node shows; the experimental compass; learning by
+toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the presets and smart.
 
 ## Commands
 
@@ -83,6 +90,9 @@ minimap, the icon's frame and size; the experimental compass; learning by toggli
 - `/nr ping`: Blizzard's minimap ping on the node too, solo only (in a group it would show on
   everyone's minimap)
 - `/nr skill`: alert only for nodes your skill can gather (on by default)
+- `/nr ignore <node or item>`, `/nr track <node or item>`: skip or follow a herb or ore, by a node's
+  name, the item's, or its item ID; `/nr ignore` lists the skipped; `/nr smart`: the list follows
+  your skill (on by default)
 - `/nr icons`: each node's item icon on the minimap instead of Blizzard's dot (off by default)
 - `/nr iconstyle auto | plain | glass | bronze | yellow`: the icon's frame (auto: glass with Glass MiniMap,
   else bronze); `/nr iconsize small | medium | large`

@@ -80,14 +80,16 @@ function API.Gamepad()
 end
 
 -- A gathering skill with its bonuses (rank + modifier), or nil: the character
--- hasn't the profession, or it's unreadable. Plain on 70450 (#26).
-function API.Skill(lineID)
+-- hasn't the profession, or it's unreadable. Plain on 70450 (#26). With `base`,
+-- the rank alone: gear and buffs move only the modifier (#47).
+function API.Skill(lineID, base)
     local f = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
     if type(f) ~= "function" then return nil end
     local ok, info = pcall(f, lineID)
     if not ok or API.IsSecret(info) or type(info) ~= "table" then return nil end
     local rank, bonus = API.Num(info.rank), API.Num(info.modifier)
     if not rank or (info.modifier ~= nil and not bonus) then return nil end
+    if base then return rank end
     return rank + (bonus or 0)
 end
 

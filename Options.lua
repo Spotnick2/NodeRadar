@@ -189,7 +189,10 @@ local function build()
 
     local alert = heading(page, cost, "The alert")
     local skill = checkbox(page, alert, "Only nodes I can gather (my Herbalism or Mining skill)", "skillOnly")
-    local sound = checkbox(page, skill, "A sound", "sound")
+    -- #47: the herbs and ores on their own pages.
+    local which47 = note(page, skill, "Choose which herbs and ores on the Herbs and Ores pages, under NodeRadar in "
+        .. "the list (the + beside it).")
+    local sound = checkbox(page, which47, "A sound", "sound")
     local which = dropdown(page, sound, "Which sound (it plays when chosen)", "soundKind",
         { { "ping", "The minimap ping" }, { "sonarping", "Sonar ping" }, { "radar", "Radar ping" },
           { "sonar", "Sonar" }, { "radarblip", "Radar blip" }, { "deepsea", "Deep-sea sonar" },
@@ -221,6 +224,8 @@ local function build()
         .. "Yellow: a ring the colour of the minimap's tracking dots.")
     local size = radios(page, styleWhy, "Icon size", "iconSize",
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
+    size = radios(page, size, "A node you skip (Herbs and Ores pages)", "ignoredIcon",
+        { { "dim", "Its icon, dimmed" }, { "dot", "Blizzard's dot" } }, "")
 
     -- #29: experimental, off by default, under its own heading.
     local compassHead = heading(page, size, "The compass (experimental)")
@@ -257,6 +262,7 @@ function Options.Register()
     if category or not (Settings and Settings.RegisterCanvasLayoutCategory) then return end
     category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
     Settings.RegisterAddOnCategory(category)
+    NR.TrackOptions.Register(category)                 -- Herbs, then Ores, right after (#47)
 end
 
 -- Open the page; false when the Settings framework can't.
