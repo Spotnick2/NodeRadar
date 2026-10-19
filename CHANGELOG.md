@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- **Herbs of one name a little apart now get their icons** (#28's measuring): two Silverleafs 35
-  yards-ish apart on the minimap stayed Blizzard's dots, and the compass, which only knows measured
-  nodes, never pointed at them. Each is now measured on its own.
+- **Nodes of one name a little apart now get their icons** (#28's measuring): two Silverleafs about
+  50 yards apart stayed Blizzard's dots, and the compass, which only knows measured nodes, never
+  pointed at them. Each is now measured on its own.
 - **Choose which herbs and ores** (#47): NodeRadar's new Herbs and Ores pages (under it in Esc >
   Options > AddOns) list each herb and ore with its nodes and the skill each needs. Uncheck one and
   it makes no alert or chat line, and the compass never points at it; on the minimap its icon is
