@@ -372,11 +372,11 @@ The #41 build: `iconStyle` and `iconSize`, Glass MiniMap on, then off for the la
 |---|---|
 | Following the minimap, Glass MiniMap on | glass, medium (read back: `glass 12`); each disc on its node (yes) |
 | Glass small and large; bronze small, medium and large; no frame | each read back as set (`glass 10`, `glass 14`, `bronze 10`/`12`/`14`, `plain 12`); right at every size (yes, yes) |
-| Our arrow | shown for a node below (Peacebloom, bronze): the screenshot shows a small downward triangle under each ring of a node below, an upward one over a node above. The owner answered "unsure", with no note |
+| Our arrow | shown for a node below (Peacebloom, bronze): the screenshot shows a small downward triangle under each ring of a node below, an upward one over a node above. The owner answered "unsure" so the screenshots would decide; asked after: "if it's the mini-arrows next to the nodes they are ok" |
 | Hovering a framed icon | Blizzard's tooltip as without icons (`Peacebloom` with its arrow escape); yes |
 | A dimmed node | none in view (skipped); Blizzard's minimap step later showed Mageroyal dimmed |
 | The rim | the framed icon faded out at the edge (yes); the step was done by hand, its wait never saw an icon below 0.95 alpha |
-| **The Options page** | **it overflows** (owner's note): from "Each icon's frame" down, the page draws past the Options window's bottom. Fixed after the run: the page scrolls (GlassPanel's `UIPanelScrollFrameTemplate` recipe) |
-| The cost, 60 s each on one loop | off: 102 sweeps, 270 reads and 670 KB a sweep, worst 14.8 ms. Glass: 104 sweeps, 264 reads, 699 KB, worst 11.7 ms. Bronze: 97 sweeps, 253 reads, 682 KB, **worst 100.8 ms**: one spike, the rest as the others; not explained (a full garbage collection or a texture's first load would look like it) |
+| **The Options page** | **it overflows** (owner's note): from "Each icon's frame" down, the page draws past the Options window's bottom. Fixed after the run: the page scrolls (GlassPanel's `UIPanelScrollFrameTemplate` recipe); the owner checked it in game: fixed |
+| The cost, 60 s each on one loop | off: 102 sweeps, 270 reads and 670 KB a sweep, worst 14.8 ms. Glass: 104 sweeps, 264 reads, 699 KB, worst 11.7 ms. Bronze: 97 sweeps, 253 reads, 682 KB, **worst 100.8 ms**: one spike, the rest as the others; the owner's computer was likely downloading something then: not NodeRadar's |
 | Following the minimap, Glass MiniMap off | bronze, medium (`bronze 12`), on their nodes (yes) |
 | Settings put back | `icons`, `iconStyle`, `iconSize` back to the player's (nil) |
