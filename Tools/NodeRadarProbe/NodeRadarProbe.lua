@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass and compass3 (#29).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3 and compasslook (#29).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3296,6 +3296,172 @@ Probe:Steps("compass3", {
       end },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
+
+--------------------------------------------------------------------------------
+-- The compass's look (#29): /fp steps nr compasslook
+--------------------------------------------------------------------------------
+
+-- Drafts of a glass compass over NodeRadar's own target (its ring hidden
+-- meanwhile): a LibGlass disc (Glass MiniMap's recipe), the node's item icon
+-- in the middle, Blizzard's triangle on the rim, the distance in a glass pill
+-- under it. LibGlass is the copy Glass MiniMap loaded, as in the glass round.
+-- Its own function: the chunk is at Lua 5.1's 200 locals (a do-block's still count).
+;(function()
+local GMM_MEDIA = "Interface\\AddOns\\GlassMiniMap\\Media\\"
+local CLOOKS = {
+    A = { size = 96, text = "a glass ring 96 units, the icon, a pill" },
+    B = { size = 96, gmm = true, text = "the same with Glass MiniMap's own ring art" },
+    C = { size = 72, text = "a smaller glass ring, 72 units" },
+}
+local cl = { built = {}, key = nil }
+local clFrame = CreateFrame("Frame")
+
+local function nrRing()
+    local n = nr()
+    return n and n.Compass and n.Compass._test.ring
+end
+
+local function buildCLook(key)
+    if cl.built[key] ~= nil then return cl.built[key] or nil end
+    local spec, inst = CLOOKS[key], glassInst("clean")
+    if not inst then cl.built[key] = false; return nil end
+    local s = spec.size
+    local host = CreateFrame("Frame", nil, UIParent)
+    host:Hide()
+    host:SetSize(s, s)
+    host:SetPoint("CENTER", UIParent, "CENTER", 0, -160)
+    host:EnableMouse(false)
+    local ok, err = pcall(function()
+        local g = inst.Disc(host, s >= 96 and "disc" or "disc_small")
+        if g.top then g.top:EnableMouse(false) end
+        if spec.gmm then
+            g.rim:SetTexture(GMM_MEDIA .. "ring_rim")
+            g.dark:SetTexture(GMM_MEDIA .. "ring_dark")
+        end
+        local icon = host:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(s * 0.42, s * 0.42)
+        icon:SetPoint("CENTER", host, "CENTER")
+        local mask = host:CreateMaskTexture()
+        mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(icon)
+        icon:AddMaskTexture(mask)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local over = CreateFrame("Frame", nil, host)          -- the arrow over the glass's top (host + 10)
+        over:SetAllPoints(host)
+        over:SetFrameLevel(host:GetFrameLevel() + 12)
+        over:EnableMouse(false)
+        local arrowTex = over:CreateTexture(nil, "OVERLAY")
+        arrowTex:SetSize(s * 0.24, s * 0.24)
+        arrowTex:SetTexture(ARROWS_FILE)
+        arrowTex:SetTexCoord(0, 1, 0, 0.5)
+        local pill = CreateFrame("Frame", nil, host)
+        pill:SetSize(64, 22)
+        pill:SetPoint("TOP", host, "BOTTOM", 0, -4)
+        pill:EnableMouse(false)
+        local pg = inst.Apply(pill, "small")
+        if pg.top then pg.top:EnableMouse(false) end
+        local fs = inst.Font(pg.top or pill, 13, "CENTER")
+        fs:SetPoint("CENTER", pill, "CENTER")
+        cl.built[key] = { host = host, icon = icon, arrow = arrowTex, text = fs, radius = s / 2 - s * 0.1 }
+    end)
+    if not ok then
+        say("compasslook " .. key .. ": ERROR " .. str(err))
+        cl.built[key] = false
+        return nil
+    end
+    return cl.built[key]
+end
+
+-- Each frame while a look is on: NodeRadar's target, its icon, the arrow, the distance.
+local function clSync()
+    local n = nr()
+    local t = n and n.Compass and n.Compass._test.target()
+    local ring = nrRing()
+    for key, d in pairs(cl.built) do
+        if d and key ~= cl.key then d.host:Hide() end
+    end
+    local d = cl.key and buildCLook(cl.key)
+    if not d then return end
+    if ring then ring:SetAlpha(0) end
+    local f = facing()
+    local b, dist
+    if t then b, dist = bearing(t.north, t.west) end
+    if not (t and b and f) then d.host:Hide(); return end
+    local a = wrap(b - f)
+    d.arrow:ClearAllPoints()
+    d.arrow:SetPoint("CENTER", d.host, "CENTER", -d.radius * math.sin(a), d.radius * math.cos(a))
+    d.arrow:SetRotation(a)
+    d.icon:SetTexture(t.icon)
+    d.text:SetText(("%d yd"):format(dist + 0.5))
+    d.host:Show()
+end
+
+local function clLook(key)
+    cl.key = key
+    clSync()
+    clFrame:SetScript("OnUpdate", key and clSync or nil)
+    if not key then
+        for _, d in pairs(cl.built) do if d then d.host:Hide() end end
+        local ring = nrRing()
+        if ring then ring:SetAlpha(1) end
+    end
+end
+
+local function clShown(key)
+    return function()
+        if cl.key ~= key then clLook(key) end
+        local d = cl.built[key]
+        if d == false then return false, "this look failed to build (see the log)" end
+        if not (d and yes(ask(d.host, "IsShown"))) then return false, "no target: ride until a node is in view" end
+        return true, ("look %s on %s"):format(key, str(d.text:GetText()))
+    end
+end
+
+local clSteps = {
+    rev = 1,
+    title = "The compass's look: a glass ring, the icon, a pill (#29)",
+    { text = "Have NodeRadar loaded with gathering tracking on, and Glass MiniMap on. NodeRadar's compass goes "
+          .. "on (your icons setting kept), and back as it was at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Compass and n.Compass.Refresh) then return false, "NodeRadar (the compass) isn't loaded" end
+          local lib, minor = libGlass()
+          if not lib then return false, "LibGlass-1.0 isn't loaded (turn Glass MiniMap on)" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          compassOn(n, true, n.db.icons)
+          return true, "compass on, LibGlass-1.0 minor " .. str(minor)
+      end },
+    { text = "Ride until NodeRadar's ring shows (today's look, for comparison), then stand still.",
+      wait = function()
+          clLook(nil)
+          if not ringShown() then return false, "no ring yet" end
+          return true, "today's ring up"
+      end, screenshot = "compasslook: today's ring", timeout = 600 },
+}
+for _, key in ipairs({ "A", "B", "C" }) do
+    table.insert(clSteps, { text = "Look " .. key .. ": " .. CLOOKS[key].text .. ". Stay still.", wait = clShown(key),
+                            screenshot = "compasslook: look " .. key })
+    table.insert(clSteps, { text = "Look " .. key .. " (" .. CLOOKS[key].text .. "): do you like it? Note box: what "
+                                .. "you'd change (size, the icon, the pill, the arrow).", ask = true })
+end
+for _, st in ipairs({
+    { text = "Which look did you like best? Type its letter in the Note box (A, B, C, or today's).", ask = true },
+    { text = "Look A again: ride to a node or two by it, until this step completes.", wait = function()
+          if cl.key ~= "A" then clLook("A") end
+          if not moving() then state.clRun = nil; return false, "not moving" end
+          state.clRun = (state.clRun or 0) + 1
+          if state.clRun < 5 then return false, "riding with look A" end
+          state.clRun = nil
+          return true, "rode with look A"
+      end, screenshot = "compasslook: riding" },
+    { text = "Riding, was it readable over the ground, at a glance? (Note box: anything.)", ask = true },
+    { text = "Taking the drafts down, NodeRadar's compass back.", auto = true, run = function()
+          clLook(nil)
+          return compassBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}) do table.insert(clSteps, st) end
+Probe:Steps("compasslook", clSteps)
+end)()
 
 --------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
