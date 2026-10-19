@@ -855,7 +855,24 @@ past the rim is dropped, and the next nearest is the target at the next sweep.
   records are out of the list (one call once `records` is the filtered list, not one per drop), so
   the ring moves on without waiting for a sweep. It doesn't count as a sweep: the ring's freshness
   (a sweep within the interval plus 2 s) isn't renewed by it.
-- **Records cleared** (any reason: `Icons.Clear`) drop the target at once.
+- **A gathered node's dot lingers** (the owner's video, 2026-10-19: the ring showed the next node as
+  the gather landed, hid half a second later, and came back about 3 s on). The node stays on the
+  minimap while its loot window is open: the next sweep saw a dot of its name with no record beside
+  the player, measured it, and the ring took it as the nearest, within 15 yards: hidden. So
+  `Icons.Gathered` remembers each gathered node, `gone = { name, north, west, near, seen }`: at the
+  record's position (`near = Icons.MATCH` units) when one was dropped, else at the player's
+  (`near = Icons.GATHERED` yards, a node gathered before it was measured). At each sweep a blip of
+  that name within `near` of an entry is **left out** (not matched, not measured, no record), and
+  marks it seen; an entry not seen at a sweep is forgotten (the dot is gone: the node despawned),
+  and none outlives `Icons.LINGER = 30` s (loot left open, or a node partly looted that stays). A
+  respawn there comes minutes later, after the entry is forgotten, and is measured as any new
+  node. The alert is untouched: it counts names (`Alert.Gathered` already covers the drop).
+  Accepted limit (Codex): every dot of the name within the radius is left out, and a second one
+  there keeps the entry seen after the gathered dot is gone, so it stays a dot until `LINGER`
+  (within 8 units its square overlaps the gathered one's and couldn't be measured anyway; within
+  the 15-yard fallback, only for a node gathered before it was measured).
+- **Records cleared** (any reason: `Icons.Clear`) drop the target at once, and the gone entries
+  with them.
 - Each frame draws toward the target's world position (the record's): records don't move.
 - A node of a name in a clump can lose its record (a merged cluster's centroid misses it, #28's
   stated limit: the dot shows there too); the compass then points at the nearest record left. That's
@@ -996,7 +1013,11 @@ only the drawing changes.
   moves it on, or hides it when none is left; records cleared: hidden at once; chosen on the
   alert's silent baseline, in its cooldown, and past 60 s (no timeout).
 - The gather: several records of the name gone at once, an unrelated gather (hysteresis kept), and a
-  gather never reviving a stale ring.
+  gather never reviving a stale ring. **Its dot lingering** two sweeps: no record of it, the ring
+  on the next node and shown throughout; the dot gone: the entry forgotten, and a node of the name
+  appearing there after is measured; another of its name 20 units off measured meanwhile; a node
+  gathered unmeasured (no record) left out by the player's position; LINGER caps an entry seen
+  for good; `Icons.Clear` forgets them.
 - Shown and hidden: within 15 yards hidden (the target kept, the `OnUpdate` gone), shown again
   walking away at the next usable sweep; a node above not hidden within 15 yards, then level again
   (its height nil) hidden; the position or facing unreadable; no recent sweep; dead; a taxi; the compass off; the

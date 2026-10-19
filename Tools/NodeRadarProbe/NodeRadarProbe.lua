@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3771,6 +3771,64 @@ local yellowSteps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("yellow", yellowSteps)
+
+-- After a gather (the owner's video): the compass sampled every 0.25 s for 6 s
+-- from the gather's success, with the loot window's state.
+local watch = { samples = nil, t0 = nil }
+local watcher = CreateFrame("Frame")
+watcher:Hide()
+local acc = 0
+watcher:SetScript("OnUpdate", function(_, dt)
+    acc = acc + dt
+    if acc < 0.25 then return end
+    acc = 0
+    local n, T = nr(), c4()
+    if not (n and T and watch.samples) then return end
+    local t = T.target()
+    local loot = rawget(_G, "LootFrame")
+    watch.samples[#watch.samples + 1] = { at = GetTime() - watch.t0, shown = yes(ask(T.root, "IsShown")),
+        target = t and t.name, loot = yes(ask(loot, "IsShown")) }
+    if GetTime() - watch.t0 >= 6 then watcher:Hide() end
+end)
+local castFrame = CreateFrame("Frame")
+pcall(castFrame.RegisterUnitEvent, castFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
+castFrame:SetScript("OnEvent", function(_, _, _, _, spellID)
+    local n = nr()
+    if not (watch.armed and n and n.Learn.CastKind and n.Learn.CastKind(spellID)) then return end
+    watch.armed = false
+    watch.samples, watch.t0, acc = {}, GetTime(), 0
+    watcher:Show()
+end)
+
+local function watchText()
+    local parts, hidden = {}, 0
+    for _, sm in ipairs(watch.samples) do
+        if not sm.shown then hidden = hidden + 1 end
+        parts[#parts + 1] = ("%.2f %s%s%s"):format(sm.at, sm.shown and "shown" or "hidden", sm.target and (" " .. sm.target) or "",
+            sm.loot and " loot" or "")
+    end
+    return ("%d of %d samples hidden: %s"):format(hidden, #watch.samples, table.concat(parts, "; "))
+end
+
+local gatherSteps = {
+    rev = 1,
+    title = "The compass after a gather: on to the next node at once (#29)",
+    steps4[1],
+    { text = "Ride to a herb with the compass on it, gather it (leave the loot window open a couple of seconds), and "
+          .. "wait: the step watches the compass for 6 s after the gather.", wait = function()
+          if not watch.samples then watch.armed = true; return false, "waiting for a gather" end
+          if GetTime() - watch.t0 < 6.2 then return false, "watching" end
+          return true, watchText()
+      end, timeout = 900 },
+    { text = "Right after the gather, did the compass stay on the next node (no hiding while the loot was open)?",
+      ask = true },
+    { text = "Putting NodeRadar's compass back.", auto = true, run = function()
+          watch.samples, watch.armed = nil, false
+          return c4Back()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("gather", gatherSteps)
 end)()
 
 --------------------------------------------------------------------------------

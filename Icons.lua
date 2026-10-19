@@ -20,6 +20,7 @@ Icons.INSIDE = 18      -- map units: a blip this far inside the rim is whole (5.
 Icons.TRIES = 4        -- blips measured a sweep at most
 Icons.RETRY = 5        -- seconds before a blip that failed is tried again
 Icons.FORGET = 30      -- seconds unseen before a failed try is forgotten
+Icons.LINGER = 30      -- seconds at most a gathered node's dot is left out while still seen
 Icons.GATHERED = 15    -- yards: a gather drops the records of its name this near the player
 Icons.GRACE = 2        -- seconds past the idle interval without a sweep before the icons hide
 Icons.SIZE = 12        -- map units: the medium icon (the dot is about 8), what the looks are built at
@@ -51,6 +52,8 @@ local ARROWS = "Interface\\Minimap\\Minimap-PositionArrows"
 
 local records = {}     -- { name, kind, north, west, icon, misses, dim, height, x, y, frame }
 local tries = {}       -- { name, north, west, at, seen }: blips that failed to measure
+local gone = {}        -- { name, north, west, units | yards, at }: nodes just gathered, their dots
+                       -- left out until they vanish (the loot window keeps them)
 local free = {}        -- hidden frames, reused
 local lastSweep        -- when the icons last reconciled
 local instance         -- UnitPosition's fourth value at that sweep
@@ -371,7 +374,7 @@ end
 -- the compass pointing at none of them (#29).
 function Icons.Clear()
     for _, r in ipairs(records) do release(r) end
-    records, tries, lastSweep, instance = {}, {}, nil, nil
+    records, tries, gone, lastSweep, instance = {}, {}, {}, nil, nil
     stop()
     if NR.Compass then NR.Compass.Reset() end
 end
@@ -485,11 +488,36 @@ function Icons.Update(result, now)
     local k = where.radius / half
     if Icons.On() then resolve() end                   -- the compass alone resolves no look (#29)
 
+    -- A node just gathered stays on the map while its loot window is open: its
+    -- dot is left out (not matched, not measured), or the compass took it for
+    -- the nearest, within 15 yards, and hid (the owner's video, #29). An entry
+    -- goes once its dot isn't seen, or after LINGER.
+    local fresh = {}
+    for _, e in ipairs(gone) do
+        if now - e.at < Icons.LINGER then e.seen = false; fresh[#fresh + 1] = e end
+    end
+    gone = fresh
+    local function lingering(b)
+        for _, e in ipairs(gone) do
+            local near = e.units or e.yards / k
+            if e.name == b.name and dist(-(e.west - pw) / k - b.x, (e.north - pn) / k - b.y) <= near then
+                e.seen = true
+                return true
+            end
+        end
+        return false
+    end
+
     local blips = {}
     local keep = keepsSkipped()
     for _, b in ipairs(result.blips) do
-        if NR.Learn.Kind(b.name) and (keep or not NR.Alert.Ignored(b.name)) then blips[#blips + 1] = b end
+        if NR.Learn.Kind(b.name) and (keep or not NR.Alert.Ignored(b.name)) and not lingering(b) then
+            blips[#blips + 1] = b
+        end
     end
+    local seen = {}
+    for _, e in ipairs(gone) do if e.seen then seen[#seen + 1] = e end end
+    gone = seen
 
     -- Match: by name within MATCH units, one to one, nearest pairs first.
     local pairsNear = {}
@@ -581,15 +609,22 @@ function Icons.Gathered(name)
     if not Icons.Keeping() then return end
     local pn, pw = player()
     if not pn then return end
-    local kept = {}
+    local kept, dropped = {}, false
+    local now = GetTime()
     for _, r in ipairs(records) do
         if r.name == name and dist(r.north - pn, r.west - pw) <= Icons.GATHERED then
             release(r)
+            gone[#gone + 1] = { name = name, north = r.north, west = r.west, units = Icons.MATCH, at = now }
+            dropped = true
         else
             kept[#kept + 1] = r
         end
     end
     records = kept
+    -- Gathered before it was measured: its dot is somewhere by the player.
+    if not dropped then
+        gone[#gone + 1] = { name = name, north = pn, west = pw, yards = Icons.GATHERED, at = now }
+    end
     if NR.Compass then NR.Compass.Refresh() end        -- on to the next node, once the list is filtered
 end
 
@@ -601,5 +636,6 @@ function Icons.At(b)
 end
 
 Icons._test = { frames = 0, records = function() return records end, tries = function() return tries end,
+                gone = function() return gone end,
                 draw = draw, driver = driver, look = function() return look end,
                 reset = function() glass, glassMiniMap, restyle, free = nil, nil, nil, {} end }

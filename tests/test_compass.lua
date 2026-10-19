@@ -234,6 +234,22 @@ eq(shown(), false, "no recent sweep: hidden")
 WoW.pos[1] = na.north
 Icons.Gathered("Silverleaf")
 eq(shown(), false, "...a gather doesn't revive it")
+-- The owner's video: hidden at the herb's feet, gathered, its dot still on the
+-- map while the loot is open: the ring on the next node, and stays there.
+fresh()
+na = node("Silverleaf", 0, 3)                              -- at the player's feet
+nb = node("Earthroot", 0, -60)
+step(1)
+check(at(na) and not shown(), "at the Silverleaf's feet: its target, hidden (within 15 yards)")
+Icons.Gathered("Silverleaf")
+check(at(nb) and shown(), "gathered: the Earthroot at once, shown")
+step(1)
+check(at(nb) and shown(), "...its dot still there at the sweep: still the Earthroot, still shown")
+step(1)
+check(at(nb) and shown(), "...and at the next")
+na.gone = true                                             -- looted: the dot goes
+step(1)
+check(at(nb) and shown(), "...the dot gone: the Earthroot still")
 
 --------------------------------------------------------------------------------
 -- The ring
