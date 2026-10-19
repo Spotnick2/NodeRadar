@@ -344,3 +344,22 @@ below arrows still show at the disc's edge. Two observations, not explained yet:
   the step listed both as icons. The two were about 33 units apart, near the "crowded" distance (36).
 - In the plain screenshot, two nodes that had just come into view were still dots: they hadn't been
   measured yet, which is expected.
+
+### Bronze rings around the icons: `bronze`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar, Blizzard's minimap) (#41)
+
+Glass MiniMap off. Each look is Blizzard's round minimap button as LibDBIcon lays it out (`MiniMap-TrackingBorder`
+136430 and `UI-Minimap-Background` 136467, the icon masked round with `TempPortraitAlphaMask`), scaled to the icon.
+
+| Look | Owner |
+|---|---|
+| F: the icon 12 (the ring about 22 units) | yes |
+| G: the icon 10 (the ring about 18) | yes |
+| H: the icon 14 (the ring about 26) | yes |
+| The best | unsure; note: "same as the other, make it a choice" (a size setting) |
+| Running with F | the rings stayed on their nodes (yes) |
+
+The screenshots: every ring is centred on its node, the icon round inside it, the same bronze as the
+minimap's own border. **The ring hides Blizzard's arrow for a node below the player**: the plain
+screenshot shows the downward triangle under three nodes (Earthroot, two Peacebloom), and with any ring
+on they're gone. The upward triangle above a node above stayed visible at F's size. So with a ring (or
+a large icon) the height has to be drawn by us. No icon blinked in the running screenshot.
