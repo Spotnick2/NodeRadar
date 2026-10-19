@@ -222,12 +222,14 @@ local function build()
     local size = radios(page, styleWhy, "Icon size", "iconSize",
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
 
-    -- #29: experimental, off by default.
-    local compass = checkbox(page, size, "Experimental: show which way to the node (a ring under your character)",
+    -- #29: experimental, off by default, under its own heading.
+    local compassHead = heading(page, size, "The compass (experimental)")
+    local compass = checkbox(page, compassHead, "Show the compass: which way to the nearest node, under your character",
         "compass")
-    local compassWhy = note(page, compass, "Points toward the nearest node you can gather that NodeRadar has "
-        .. "measured, and hides within 15 yards of it. Its frame is the icons' (above); hover it for the item. "
-        .. "It follows your character's facing, not the camera's: turning the camera alone doesn't turn it.")
+    local compassWhy = note(page, compass, "Experimental, off by default. Points toward the nearest node you can "
+        .. "gather that NodeRadar has measured, and hides within 15 yards of it. Its frame is the icons' (above); "
+        .. "hover it for the item. It follows your character's facing, not the camera's: turning the camera alone "
+        .. "doesn't turn it.")
     local compassSize = radios(page, compassWhy, "Compass size", "compassSize",
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
 
