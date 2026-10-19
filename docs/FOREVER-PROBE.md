@@ -531,3 +531,13 @@ white outlined triangle turning with the bearing, a fixed capsule), no LibGlass.
 | **Smart off, then on** | off: logged. On: the step was passed by hand and answered no; its screenshot shows the list re-applied (skill-ups only) but the Smart box unticked, and smart read off: most likely clicked twice (on, then off, which keeps the list). Round 2 logs every toggle |
 | A node's tooltip in the world | not seen: Next can't be pressed while hovering a node (the owner's note). Round 2 reads it itself |
 | The owner's verdict | "looks perfect in the settings"; "do a few columns instead of a long list" (done: three columns, a tooltip per row); the full test of skipping needs the live game's node density |
+
+### Choosing herbs and ores, round 2: `track2`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar, Herbalism 38) (#47)
+
+| What | Measured |
+|---|---|
+| Herbs and Ores in three columns | every row one line, the skills coloured (red past 38, white on Ores without Mining); names fit (yes) but three cut short at 112: Khadgar's Whisker, Mountain Silversage, Lesser Bloodstone Ore (the screenshot). Widened to 140 after the run |
+| A row's tooltip | Goldthorn: "Goldthorn 170" in red (the line read back); Thorium Ore's two veins at 245 and 275 (yes) |
+| **Smart off, then on** | each click logged once: `SMART false (was true)`, `SMART true (was false)`; on, the box ticked and the list re-applied (yes). Round 1's "no" was two clicks |
+| **A node's own tooltip** | Silverleaf (needs 1) at Herbalism 38: the name gold, then "Herbalism" in **yellow (1.00, 1.00, 0.00)**: 37 past its requirement, in the classic yellow band (+25 to +50). The tooltip colours by difficulty, as Classic; the grey line (+100) is still unseen |
+| Icons and dots side by side after a layer change (the owner's screenshot, outside the procedure) | two dots about 23 map units apart by the player, under the 25-unit square a node is measured by: probably the known crowding limit (README), not the layer. `/fp nr icons` (new) dumps each blip with its nearest record, each record and each failed measure, for the next time |

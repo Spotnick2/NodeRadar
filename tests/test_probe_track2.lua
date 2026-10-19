@@ -98,6 +98,17 @@ eq(NR.Track.Count("herbs"), before, "the list back")
 eq(record().at, 13, "at the last reload")
 fp("steps stop")
 
+-- /fp nr icons: what the icons hold against a fresh sweep.
+NR.Set("icons", true)
+WoW.blips = { { "Silverleaf", 20, 10, kind = "herbs" } }
+for _ = 1, 3 do WoW.advance(1.1) end
+fp("nr icons")
+check(logged("icons: on true, keeping true"), "the dump's head")
+check(logged("  blip Silverleaf at %+20.0 %+6.0 %(1 cells, from the centre 20.9%): nearest record none; wanted true, "
+    .. "skipped false"), "...each blip, its nearest record, wanted, skipped")
+check(logged("  failed measure Silverleaf: tried %d s ago"), "...each failed measure (the stub's map doesn't measure it)")
+NR.Set("icons", false)
+
 eq(errors(), 0, "no step threw")
 eq(#WoW.chat, 0, "nothing in chat")
 done("test_probe_track2")

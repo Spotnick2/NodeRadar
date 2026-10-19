@@ -4060,6 +4060,50 @@ local steps2 = {
 Probe:Steps("track2", steps2)
 end)()
 
+;(function()
+-- What NodeRadar's icons hold now, against a fresh sweep: each blip, matched to
+-- a record or not (and why not: skipped, a failed measure waiting, too near the
+-- rim), each record, each failed try. For "icons and dots side by side".
+local function iconsDump()
+    local n = nr()
+    if not (n and n.Icons and n.Icons._test) then say("icons: NodeRadar isn't loaded"); return end
+    local T = n.Icons._test
+    local okP, pn, pw, _, inst = pcall(UnitPosition, "player")
+    say(("icons: on %s, keeping %s, look %s; at %s %s instance %s; skipped look %s"):format(str(n.Icons.On()),
+        str(n.Icons.Keeping()), str(T.look().style), str(okP and pn), str(okP and pw), str(okP and inst),
+        str(n.db.ignoredIcon)))
+    local result = n.Scan.Sweep(function(name) return n.Learn.Kind(name) and true or false end)
+    if not result then say("icons: the sweep failed"); return end
+    local g, where = result.geometry, result.where
+    local k = where and g and where.radius / (g.w / 2)
+    for _, b in ipairs(result.blips) do
+        if n.Learn.Kind(b.name) then
+            local near, nearD
+            for _, r in ipairs(T.records()) do
+                if r.name == b.name and k and okP then
+                    local rx, ry = -(r.west - pw) / k, (r.north - pn) / k
+                    local d = math.sqrt((rx - b.x) ^ 2 + (ry - b.y) ^ 2)
+                    if not nearD or d < nearD then near, nearD = r, d end
+                end
+            end
+            say(("  blip %s at %+.1f %+.1f (%d cells, from the centre %.1f): nearest record %s; wanted %s, skipped %s"):format(
+                b.name, b.x, b.y, b.cells or 0, math.sqrt(b.x ^ 2 + b.y ^ 2),
+                nearD and ("%.1f units away"):format(nearD) or "none", str(n.Alert.Wanted(b.name)),
+                str(n.Alert.Ignored(b.name))))
+        end
+    end
+    for _, r in ipairs(T.records()) do
+        say(("  record %s at %+.1f %+.1f: misses %s, dim %s, height %s, shown %s"):format(r.name, r.x or 0, r.y or 0,
+            str(r.misses), str(r.dim), str(r.height), str(r.frame and ask(r.frame, "IsShown"))))
+    end
+    local now = GetTime()
+    for _, t in ipairs(T.tries()) do
+        say(("  failed measure %s: tried %.0f s ago, seen %.0f s ago"):format(t.name, now - t.at, now - t.seen))
+    end
+end
+Probe:Command("icons", function() iconsDump() end, "NodeRadar's icons against a fresh sweep")
+end)()
+
 --------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------

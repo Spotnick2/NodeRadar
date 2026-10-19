@@ -12,7 +12,7 @@ local TrackOptions = {}
 NR.TrackOptions = TrackOptions
 
 local COLUMNS = 3     -- the owner: a few columns, not a long list
-local COL_W = 205     -- a column's width (three fill the page)
+local COL_W = 215     -- a column's width (three fill the page)
 local ROW = 26        -- a row's height: one line, its nodes in its tooltip
 local SKILL_NAMES = { herbs = "Herbalism", ore = "Mining" }
 
@@ -161,7 +161,7 @@ local function makePage(kind, name)
             icon:SetPoint("LEFT", check, "RIGHT", 2, 0)
             local itemName = label(cell, "")
             itemName:SetPoint("LEFT", icon, "RIGHT", 5, 0)
-            itemName:SetWidth(112)
+            itemName:SetWidth(140)                      -- Khadgar's Whisker, Mountain Silversage whole
             itemName:SetJustifyH("LEFT")
             itemName:SetWordWrap(false)
             local skill = label(cell, "", "GameFontHighlightSmall")
