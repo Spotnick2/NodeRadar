@@ -3183,7 +3183,7 @@ watch:SetScript("OnUpdate", function()
         end
         cw.target = t
     end
-    local shownNow = yes(ask(T.ring, "IsShown"))
+    local shownNow = yes(ask(T.root, "IsShown"))
     if shownNow ~= cw.shown then
         local d = t and select(2, bearing(t.north, t.west))   -- the distance, bearing's second value
         cwNote(shownNow and "shown" or "hidden", t and ("%s at %.1f yd"):format(t.name, d or -1) or "no target")
@@ -3201,7 +3201,7 @@ end
 local function ringShown()
     local n = nr()
     local T = n and n.Compass and n.Compass._test
-    return T and yes(ask(T.ring, "IsShown"))
+    return T and yes(ask(T.root, "IsShown"))
 end
 
 Probe:Steps("compass3", {
@@ -3330,7 +3330,7 @@ local clFrame = CreateFrame("Frame")
 
 local function nrRing()
     local n = nr()
-    return n and n.Compass and n.Compass._test.ring
+    return n and n.Compass and n.Compass._test.root
 end
 
 local function buildCLook(key)

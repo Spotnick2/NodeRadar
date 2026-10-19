@@ -122,7 +122,17 @@ function checkMethods(required)
     -- client's own FrameXML instead (wow-ui-source, 70450).
     local MIXINS = { ["DropdownButton:SetupMenu"] = "Blizzard_Menu/DropdownButton.lua",
                      ["DropdownButton:GenerateMenu"] = "Blizzard_Menu/DropdownButton.lua" }
+    -- FrameXML's tooltip accessors (TooltipDataHandler.lua: `SetItemByID = "GetItemByID"`).
+    local ACCESSORS = { ["GameTooltip:SetItemByID"] = "Blizzard_SharedXMLGame/Tooltip/TooltipDataHandler.lua" }
     local function inFrameXML(name)
+        local acc = ACCESSORS[name]
+        if acc then
+            local src = io.open("../wow-ui-source/Interface/AddOns/" .. acc, "r")
+            if not src then return false end
+            local body = src:read("*a")
+            src:close()
+            return body:find("%s" .. name:match(":(%a+)$") .. ' = "') ~= nil
+        end
         local file = MIXINS[name]
         local src = file and io.open("../wow-ui-source/Interface/AddOns/" .. file, "r")
         if not src then return false end

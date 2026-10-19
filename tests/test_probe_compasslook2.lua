@@ -160,7 +160,7 @@ settle()
 S.Answer(true)                                             -- 14
 eq(result(15).status, "done", "put back: " .. detail(15))
 eq(h._shown, false, "the drafts hidden")
-eq(NR.Compass._test.ring._alpha, 1, "NodeRadar's ring back")
+eq(NR.Compass._test.root._alpha, 1, "NodeRadar's ring back")
 eq(record().at, 16, "at the last reload")
 fp("steps stop")
 

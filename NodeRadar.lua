@@ -19,7 +19,8 @@ local DEFAULTS = {
     icons    = false,   -- the item's icon over each node's dot (#28)
     iconStyle = "auto", -- its frame (#41): auto (glass with Glass MiniMap, else bronze), plain, glass, bronze
     iconSize = "medium", -- small, medium or large: Icons.SIZES
-    compass  = false,   -- experimental (#29): a ring under the character toward the alerted node
+    compass  = false,   -- experimental (#29): a ring under the character toward the nearest node
+    compassSize = "medium", -- its disc: small, medium or large (Compass.SIZES)
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -128,6 +129,8 @@ function NR.Set(key, value)
         end
     end
     if key == "iconStyle" or key == "iconSize" then Icons.Restyle() end
+    -- The compass follows the icons' frame (#29), with the icons on or off.
+    if key == "iconStyle" or key == "compassSize" then Compass.Restyle() end
 end
 
 function NR.VersionText()
@@ -266,7 +269,8 @@ local function help()
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
     API.Say("/nr iconstyle auto | plain | glass | bronze: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
-    API.Say("/nr compass: experimental, a ring under your character pointing at the nearest node (off by default)")
+    API.Say("/nr compass: experimental, a ring under your character pointing at the nearest node (off by default). "
+        .. "/nr compasssize small | medium | large")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -294,6 +298,9 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "iconsize" and Icons.SIZES[rest:lower()] then
         NR.Set("iconSize", rest:lower())
         API.Say("icon size: " .. rest:lower())
+    elseif cmd == "compasssize" and Compass.SIZES[rest:lower()] then
+        NR.Set("compassSize", rest:lower())
+        API.Say("compass size: " .. rest:lower())
     elseif cmd == "compass" then
         NR.Set("compass", not db.compass)
         API.Say("the compass (experimental) " .. onOff(db.compass))

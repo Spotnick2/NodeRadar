@@ -163,17 +163,37 @@ local function hasGlassMiniMap()
     return glassMiniMap
 end
 
--- The effective look from the settings: an unknown value is the default, auto
--- follows the minimap, glass that can't be had is bronze.
-local function resolve()
+-- The effective style from the settings: an unknown value is the default,
+-- auto follows the minimap, glass that can't be had is bronze.
+local function styleOf()
     local db = NR.db
-    local size = Icons.SIZES[db.iconSize] or Icons.SIZES[NR.DEFAULTS.iconSize]
     local style = Icons.STYLES[db.iconStyle] and db.iconStyle or NR.DEFAULTS.iconStyle
     if style == "auto" then style = hasGlassMiniMap() and "glass" or "bronze" end
     if style == "glass" and not glassInst() then style = "bronze" end
+    return style
+end
+
+-- The effective look for the icons: the style and the size.
+local function resolve()
+    local db = NR.db
+    local size = Icons.SIZES[db.iconSize] or Icons.SIZES[NR.DEFAULTS.iconSize]
+    local style = styleOf()
     look = { style = style, size = size, extent = Icons.EXTENT[style](size) }
     return look
 end
+
+-- For the compass's ring (#29), which follows the icons' frame setting: the
+-- effective style and, for glass, the shared instance. Resolving may latch
+-- glass off; it draws no minimap icon.
+function Icons.Style()
+    local style = styleOf()
+    return style, style == "glass" and glass or nil
+end
+
+-- The compass's glass failed (its disc, pill, mask or font): the shared latch,
+-- and the icons bound again to bronze once the compass's pass is done (it calls
+-- Icons.Restyle). One latch for both (Codex, #29).
+function Icons.GlassFailed(why) glassFailed(why) end
 
 -- A glass disc as Glass MiniMap's Ring.AddDisc builds one, at the medium size:
 -- a square host, the icon inset a quarter of its size, masked round. Built
@@ -270,16 +290,20 @@ local function bind(r)
     end
 end
 
--- Every shown record bound again; once more if the glass latch tripped meanwhile.
+-- Every shown record bound again; once more if the glass latch tripped
+-- meanwhile, and then the compass too (its glass is the same latch's, #29).
 local function bindAll()
+    local tripped = false
     for _ = 1, 2 do
         restyle = false
         resolve()
         for _, r in ipairs(records) do
             if r.frame and r.misses == 0 then bind(r) end
         end
-        if not restyle then return end
+        if not restyle then break end
+        tripped = true
     end
+    if tripped and NR.Compass then NR.Compass.Restyle() end
 end
 
 -- The style or size changed (NR.Set): every icon shown in the new look now.
