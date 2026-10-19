@@ -192,6 +192,7 @@ function Methods.GetEffectiveScale(w) return w._effScale or 1 end
 function Methods.GetTop(w) return w._top end              -- nil until a test lays it out
 function Methods.GetBottom(w) return w._bottom end
 function Methods.SetScrollChild(sf, child) sf._scrollChild = child end
+function Methods.SetRotation(t, radians) t._rotation = radians end
 function Methods.SetScale(w, s) w._scale = s end
 function Methods.GetScale(w) return w._scale or 1 end
 function Methods.AddMaskTexture(t, m) t._mask = m end
@@ -417,6 +418,7 @@ C_Map = {
     GetMapWorldSize = function(map) return WoW.mapSize[1], WoW.mapSize[2] end,
 }
 function GetPlayerFacing() return WoW.facing end
+function UnitOnTaxi(unit) return unit == "player" and WoW.onTaxi == true end
 function IsIndoors() return WoW.indoors == true end
 WoW.instanced = false
 function IsInInstance()

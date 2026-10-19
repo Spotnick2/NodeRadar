@@ -35,7 +35,8 @@
 -- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
--- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41).
+-- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass (#29, first round).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -2918,6 +2919,215 @@ Probe:Steps("styles", {
 })
 
 --------------------------------------------------------------------------------
+-- The compass, first round (#29): /fp steps nr compass
+--------------------------------------------------------------------------------
+
+-- GetPlayerFacing and an arrow drawn at `angle - facing` were measured with
+-- RXPGuides (porting guide, 70374). Here: the convention in the four directions
+-- and across north, our bearing to one of #28's records, a draft ring's art and
+-- turn direction, the distance against a walk, and a flight.
+local TAU = 2 * math.pi
+local ARROWS_FILE = "Interface\\Minimap\\Minimap-PositionArrows"
+local function wrap(a) return (a + math.pi) % TAU - math.pi end   -- to -pi..pi
+
+local function facing()
+    local ok, f = pcall(GetPlayerFacing)
+    return ok and num(f) or nil
+end
+
+-- The player in UnitPosition's frame: north, west (#28, measured by a gather).
+local function here()
+    local ok, n, w = pcall(UnitPosition, "player")
+    n, w = ok and num(n), ok and num(w)
+    if n and w then return n, w end
+end
+
+-- A world point's bearing from the player, counter-clockwise from north as
+-- GetPlayerFacing counts, and its horizontal distance in yards.
+local function bearing(n, w)
+    local pn, pw = here()
+    if not pn then return nil end
+    local north, east = n - pn, -(w - pw)
+    return math.atan2(-east, north) % TAU, math.sqrt(north * north + east * east)
+end
+
+local compass = { target = nil }
+local compassFrame = CreateFrame("Frame", nil, UIParent)
+compassFrame:SetSize(120, 120)
+compassFrame:SetPoint("CENTER", UIParent, "CENTER", 0, -160)
+compassFrame:EnableMouse(false)
+compassFrame:Hide()
+local ring = compassFrame:CreateTexture(nil, "BACKGROUND")
+ring:SetAllPoints(compassFrame)
+ring:SetTexture("Interface\\AddOns\\NodeRadar\\Media\\SonarRing.tga")
+ring:SetVertexColor(1, 0.85, 0.4, 0.8)
+local arrow = compassFrame:CreateTexture(nil, "OVERLAY")
+arrow:SetSize(28, 28)
+arrow:SetTexture(ARROWS_FILE)
+arrow:SetTexCoord(0, 1, 0, 0.5)                            -- Blizzard's upward triangle (#41): its zero is up
+local distText = compassFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+distText:SetPoint("CENTER", compassFrame, "CENTER")
+
+-- Each frame while shown: the arrow on the ring at (bearing - facing), turned to match.
+compassFrame:SetScript("OnUpdate", function()
+    local t = compass.target
+    local f = facing()
+    local b, d = nil, nil
+    if t then b, d = bearing(t.north, t.west) end
+    if not (b and f) then arrow:Hide(); distText:SetText("?"); return end
+    local a = wrap(b - f)                                  -- counter-clockwise from straight ahead
+    arrow:ClearAllPoints()
+    arrow:SetPoint("CENTER", compassFrame, "CENTER", -48 * math.sin(a), 48 * math.cos(a))
+    arrow:SetRotation(a)
+    arrow:Show()
+    distText:SetText(("%d yd"):format(d + 0.5))
+    compass.angle, compass.dist = a, d
+end)
+
+local function compassText()
+    local t = compass.target
+    if not t then return "no target" end
+    local b, d = bearing(t.north, t.west)
+    local f = facing()
+    return ("%s: bearing %s, facing %s, off by %s, %s yd"):format(t.name, str(b and ("%.2f"):format(b)),
+        str(f and ("%.2f"):format(f)), str(b and f and ("%+.2f"):format(wrap(b - f))), str(d and ("%.1f"):format(d)))
+end
+
+-- Waits until the facing is within 0.15 rad of `want` for two polls.
+local function faceTo(label, want)
+    return function()
+        local f = facing()
+        if not f then return false, "facing unreadable" end
+        if math.abs(wrap(f - want)) > 0.15 then
+            state.cmpHold = nil
+            return false, ("facing %.2f rad (%s is %.2f)"):format(f, label, want)
+        end
+        state.cmpHold = (state.cmpHold or 0) + 1
+        if state.cmpHold < 2 then return false, "hold still" end
+        state.cmpHold = nil
+        local db = iconsDB()
+        db.compass = db.compass or {}
+        db.compass[label] = f
+        return true, ("%s: facing %.3f rad"):format(label, f)
+    end
+end
+
+-- Waits until the node sits `want` radians counter-clockwise of straight ahead.
+local function nodeAt(label, want)
+    return function()
+        if not compass.target then return false, "no target" end
+        local t = compass.target
+        local b = bearing(t.north, t.west)
+        local f = facing()
+        if not (b and f) then return false, "unreadable" end
+        local off = wrap(b - f)
+        if math.abs(wrap(off - want)) > 0.15 then
+            state.cmpHold = nil
+            return false, ("the node is %+.2f rad from straight ahead (%s: %+.2f)"):format(off, label, want)
+        end
+        state.cmpHold = (state.cmpHold or 0) + 1
+        if state.cmpHold < 2 then return false, "hold still" end
+        state.cmpHold = nil
+        return true, label .. "; " .. compassText()
+    end
+end
+
+-- The gather that ends the walk (from the boot's UNIT_SPELLCAST_SENT).
+local function compassGather(name)
+    local t = compass.target
+    if not (t and t.start) then return end
+    local pn, pw = here()
+    if not pn then return end
+    local walked = math.sqrt((pn - t.start.n) ^ 2 + (pw - t.start.w) ^ 2)
+    local off = math.sqrt((pn - t.north) ^ 2 + (pw - t.west) ^ 2)
+    compass.gathered = { name = name, at = GetTime(), start = t.start.d, walked = walked, off = off,
+                         same = name == t.name }
+    say(("compass gather: %s; at the start %.1f yd away, straight-line walked %.1f yd, the record %.1f yd from the "
+        .. "player"):format(name, t.start.d, walked, off))
+end
+
+Probe:Steps("compass", {
+    rev = 1,
+    title = "The compass, first round: facing, bearing, a draft ring (#29)",
+    { text = "Have NodeRadar loaded and gathering tracking on, outdoors, out of combat. NodeRadar's icons go on now "
+          .. "(the compass aims at their measured nodes), and back as they were at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons) then return false, "NodeRadar (with icons) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          lookOn(n, nil, nil)
+          if not facing() then return false, "GetPlayerFacing reads nothing" end
+          if not here() then return false, "UnitPosition reads nothing" end
+          return true, "facing and position read"
+      end },
+    { text = "Turn your character to face NORTH (the minimap's player arrow pointing straight up). Hold still.",
+      wait = faceTo("north", 0) },
+    { text = "Now face WEST (the arrow pointing left).", wait = faceTo("west", math.pi / 2) },
+    { text = "Now SOUTH (pointing down).", wait = faceTo("south", math.pi) },
+    { text = "Now EAST (pointing right).", wait = faceTo("east", 3 * math.pi / 2) },
+    { text = "Turn slowly through north (from east, past north, toward west), until this step completes.",
+      wait = function()
+          local f = facing()
+          if not f then return false, "facing unreadable" end
+          local last = state.cmpLast
+          state.cmpLast = f
+          if last and math.abs(f - last) > math.pi then
+              state.cmpLast = nil
+              return true, ("crossed north: %.3f -> %.3f rad"):format(last, f)
+          end
+          return false, ("facing %.2f rad"):format(f)
+      end },
+    { text = "Stand still with a node's icon on the minimap, 40 yards or more away if you can. The compass "
+          .. "appears below the screen's centre.", wait = function()
+          local best
+          for _, r in ipairs(shownIcons()) do
+              local _, d = bearing(r.north, r.west)
+              if d and (not best or d < best.d) and not r.dim then best = { r = r, d = d } end
+          end
+          if not best then return false, "no icon you can gather in view" end
+          local r = best.r
+          local pn, pw = here()
+          compass.target = { name = r.name, north = r.north, west = r.west,
+                             start = { n = pn, w = pw, d = best.d } }
+          compassFrame:Show()
+          return true, compassText()
+      end },
+    { text = "Turn until that node is straight ahead of your character: on the minimap, straight above your "
+          .. "arrow. Hold still.", wait = nodeAt("ahead", 0), screenshot = "compass: the node ahead" },
+    { text = "Does the compass's arrow point straight up, at the top of the ring?", ask = true },
+    { text = "Now turn right until the node is on your LEFT (on the minimap, straight left of your arrow). Hold "
+          .. "still.", wait = nodeAt("on the left", math.pi / 2), screenshot = "compass: the node on the left" },
+    { text = "Does the arrow point left, at the ring's left side?", ask = true },
+    { text = "Now ride to the node following the compass (not the minimap), and gather it.", wait = function()
+          local g = compass.gathered
+          if not g then return false, compass.dist and ("%d yd to go"):format(compass.dist) or "go" end
+          compass.gathered = nil
+          local db = iconsDB()
+          db.compass = db.compass or {}
+          db.compass.walk = g
+          return true, ("%s%s: %.1f yd at the start, %.1f yd walked in a straight line, the record %.1f yd from you")
+              :format(g.name, g.same and "" or " (not the target)", g.start, g.walked, g.off)
+      end, timeout = 600 },
+    { text = "Following the compass, did it lead you to the node? Note box: easy to read, its size, where it sits, "
+          .. "anything confusing.", ask = true, screenshot = "compass: at the node" },
+    { text = "Optional: take a flight from a flight master. Skip if none is near.", wait = function()
+          local ok, on = pcall(UnitOnTaxi, "player")
+          if not (ok and yes(on)) then return false, "not on a flight: UnitOnTaxi " .. str(on) end
+          return true, "UnitOnTaxi true on the flight; facing " .. str(facing()) .. ", position " .. str(here())
+      end },
+    { text = "Land (or let the flight finish).", wait = function()
+          local ok, on = pcall(UnitOnTaxi, "player")
+          if ok and on == false then return true, "UnitOnTaxi false after landing" end
+          return false, "on the flight: UnitOnTaxi " .. str(on)
+      end },
+    { text = "Taking the compass down, NodeRadar's icons back.", auto = true, run = function()
+          compassFrame:Hide()
+          compass.target = nil
+          return lookBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs
 --------------------------------------------------------------------------------
 
@@ -2953,6 +3163,7 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
         if n and not secret(a4) and n.Learn.CastKind(a4) and type(a2) == "string" and not secret(a2) then
             state.lastGather = { name = a2, at = GetTime(), pos = playerPos() }
             gatherIcon(a2)                             -- #28: before the gather drops its record
+            compassGather(a2)                          -- #29: the walk the compass led
         end
     elseif event == "UNIT_SPELLCAST_FAILED" then
         say(("UNIT_SPELLCAST_FAILED spell=%s"):format(str(a3)))
