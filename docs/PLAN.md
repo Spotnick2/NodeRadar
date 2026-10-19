@@ -291,15 +291,20 @@ After each successful radar sweep, in the same frame (the player hasn't moved):
    measured either ("crowded"); a later sweep from elsewhere split them and they came back. So
    each blip keeps its sampled cells (`b.points`: the sweep's own cell list, no new table), and a
    record left unmatched is **covered** when a blip of its name has a cell inside the record's
-   square (`|cell - record| <= Scan.NODE / 2` on both axes): it isn't missed, its height left as
-   it was. A blip that covers any record is not measured (it's a merged one, or one already
-   known): no `Scan.Centre` reads every 5 s on it. One blip can cover several records; the one-to-
-   one match still comes first.
+   square (`|cell - record| <= Scan.NODE / 2` on both axes, the cell's map coordinates minus half
+   the map's width and height, as the record's are from the centre: no yards conversion): its
+   misses go back to 0 (so a record hidden by one miss shows again), its height left as it was. Only
+   the filtered blips count (the gathered dots and, with Blizzard's dot, #47's skipped names left
+   out), and covering works in the rim band too; the drop past the rim stays unconditional. A blip
+   that covers any record is not measured (merged, or near a known node: a separate position error
+   would need its own rule): no `Scan.Centre` reads every 5 s on it. One blip can cover several
+   records; the one-to-one match still comes first. `b.points` is the sweep's list, kept only as
+   long as the sweep's result (never on records, tries or frames) (Codex).
 
-   The limit, accepted: a record stays while a same-name neighbour's square overlaps its own, so a
-   node gathered by someone else beside another of its name (within 25 units) keeps its icon until
-   that neighbour goes too. Such a pair overlaps and couldn't be measured apart anyway; the
-   player's own gather drops its record (step 5).
+   The limit, accepted: a record stays while a same-name neighbour's square overlaps its own (within
+   25 units **on each axis**, so up to about 35 units on a diagonal: Codex), so a node gathered by
+   someone else beside another of its name keeps its icon, and can stay the compass's target,
+   until that neighbour goes too. The player's own gather drops its record (step 5).
 3. **New:** an unmatched blip fully inside the round map (its centroid plus 18 units within the
    half-width) is measured (`Scan.Centre`), four at most per sweep, nearest the centre first;
    measured, it becomes a record. Not measured (crowded, not one node): no record, Blizzard's dot
@@ -378,9 +383,16 @@ The stubs' blips get centres the stub knows exactly, `UnitPosition`, and a playe
   dumps); 26 apart (a gap under a step): measured from a centroid 1 off (it steps into the gap),
   refused from one on the centre (it steps over it), never off-centre; a quest area's non-square or too-big box; a secret read (fails, soft cursor
   off); the far point beside a different name (still measured).
-- Records covered (the merged pair): two records, then one blip between them: both kept (no
-  miss), the blip not measured; split again: matched one to one as before; a record whose square no
-  cell covers still missed; another name's cells cover nothing.
+- Records covered (the merged pair), on real sweeps of 25-unit squares (`b.points` in the map's
+  coordinates): two records, then one blip between them: both kept (no miss), the blip not
+  measured, over sweeps past RETRY (no reads); split again: matched one to one, the same record
+  objects; a record with one miss recovered by covering (shown, its height kept); one record
+  matched and another covered by the same blip; covered in the rim band, dropped past it; a
+  record whose square no cell covers still missed; another name's cells, a lingering gathered dot,
+  and #47's skipped names with Blizzard's dot cover nothing; the compass keeps its target through
+  a merge (the hysteresis on the same record); the accepted diagonal neighbour keeping a stale
+  record. The existing "one blip matches one record" test is revised: its twin is now covered,
+  and the one-to-one match is checked apart (Codex).
 - Records: match one to one with two of a name side by side; a new blip measured once, then
   matched without reads (reads counted); misses hide then drop; the rim band; a gather drops the
   near record; the tries' order (four crowded and an isolated fifth, over repeated sweeps at a
