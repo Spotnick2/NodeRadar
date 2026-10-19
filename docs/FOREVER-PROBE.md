@@ -417,3 +417,23 @@ NodeRadar's own compass, the alerted-node design, with the icons off.
 | **The owner's verdict** | "it does not necessarily point to the closest herb and also vanishes with herbs on the minimap"; a skip for a node out of reach, later |
 
 So the compass now points at the nearest gatherable record, chosen again every sweep (docs/PLAN.md).
+
+### The compass, third round: `compass3`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+The nearest-gatherable-node compass, the icons off. 18 target changes logged with every candidate's distance.
+
+| What | Measured |
+|---|---|
+| **The nearest** | every change picked the nearest candidate (Silverleaf 78 over Peacebloom 79 and Silverleaf 143; Earthroot 105 over Peacebloom 112 and Silverleaf 133; Peacebloom 135 over Earthroot 146); the owner: it points at the nearest node (yes) |
+| After a gather | on to the next nearest (yes) |
+| Riding, gathering by the ring alone | no flicking between two, nothing odd (no) |
+| **A zoom in** (to 4) | no node left in the shrunk view, so no record and no ring (the screenshot: no dot on the minimap either); the owner: the ring wasn't on a node in view (no, as there was none) |
+| A clump of one herb | still useful (yes) |
+| Within 15 yards | hidden at a Peacebloom, shown again walking away |
+| The look | the screenshot: a green ring for a herb, "78 yd", the arrow on its side toward the node |
+| A flight, the cost | skipped (round 2 measured the compass alone at the icons-off cost) |
+
+So the compass points at the nearest gatherable node and moves on as the player gathers. A zoom in
+leaves it nothing to point at until nodes are in the smaller view: it follows the minimap, as the
+icons do. (The probe's shown/hidden lines read "-1.0 yd": a `t and bearing()` in its logging kept
+one value; fixed after the run.)

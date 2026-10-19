@@ -3185,7 +3185,7 @@ watch:SetScript("OnUpdate", function()
     end
     local shownNow = yes(ask(T.ring, "IsShown"))
     if shownNow ~= cw.shown then
-        local _, d = t and bearing(t.north, t.west)
+        local d = t and select(2, bearing(t.north, t.west))   -- the distance, bearing's second value
         cwNote(shownNow and "shown" or "hidden", t and ("%s at %.1f yd"):format(t.name, d or -1) or "no target")
         cw.shown = shownNow
     end
