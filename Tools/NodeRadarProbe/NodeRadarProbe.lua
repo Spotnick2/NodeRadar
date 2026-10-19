@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3 and compasslook (#29).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook and compasslook2 (#29).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3312,7 +3312,19 @@ local CLOOKS = {
     A = { size = 96, text = "a glass ring 96 units, the icon, a pill" },
     B = { size = 96, gmm = true, text = "the same with Glass MiniMap's own ring art" },
     C = { size = 72, text = "a smaller glass ring, 72 units" },
+    -- Round 2 (the owner: C, "smaller is better"; B's art "looks nice"; "the ring to the size of the
+    -- icon and the arrow outside"; the item's tooltip on hover): a disc just around the icon.
+    D = { size = 44, icon = 30, out = true, gmm = true, tip = true,
+          text = "a disc just around the icon (44), the arrow outside, Glass MiniMap's ring art" },
+    E = { size = 44, icon = 30, out = true, tip = true, text = "the same with the plain glass rim" },
+    F = { size = 36, icon = 24, out = true, gmm = true, tip = true, text = "smaller still (36), Glass MiniMap's art" },
 }
+-- The item a record gives (NodeRadar's NODE_INFO), for the tooltip.
+local function itemOf(t)
+    local n = nr()
+    local info = n and t and n.Learn.Info(t.name)
+    return info and num(info.item)
+end
 local cl = { built = {}, key = nil }
 local clFrame = CreateFrame("Frame")
 
@@ -3330,7 +3342,18 @@ local function buildCLook(key)
     host:Hide()
     host:SetSize(s, s)
     host:SetPoint("CENTER", UIParent, "CENTER", 0, -160)
-    host:EnableMouse(false)
+    host:EnableMouse(spec.tip == true)                    -- the tooltip looks take the mouse, on the disc only
+    if spec.tip then
+        host:SetScript("OnEnter", function(self)
+            local item = itemOf(cl.target)
+            if not item then return end
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            local okTip, errTip = pcall(GameTooltip.SetItemByID, GameTooltip, item)
+            if not okTip then say("compasslook tooltip: ERROR " .. str(errTip)) end
+            GameTooltip:Show()
+        end)
+        host:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
     local ok, err = pcall(function()
         local g = inst.Disc(host, s >= 96 and "disc" or "disc_small")
         if g.top then g.top:EnableMouse(false) end
@@ -3339,7 +3362,8 @@ local function buildCLook(key)
             g.dark:SetTexture(GMM_MEDIA .. "ring_dark")
         end
         local icon = host:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(s * 0.42, s * 0.42)
+        local iconSize = spec.icon or s * 0.42
+        icon:SetSize(iconSize, iconSize)
         icon:SetPoint("CENTER", host, "CENTER")
         local mask = host:CreateMaskTexture()
         mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
@@ -3351,7 +3375,8 @@ local function buildCLook(key)
         over:SetFrameLevel(host:GetFrameLevel() + 12)
         over:EnableMouse(false)
         local arrowTex = over:CreateTexture(nil, "OVERLAY")
-        arrowTex:SetSize(s * 0.24, s * 0.24)
+        local arrowSize = spec.out and 12 or s * 0.24
+        arrowTex:SetSize(arrowSize, arrowSize)
         arrowTex:SetTexture(ARROWS_FILE)
         arrowTex:SetTexCoord(0, 1, 0, 0.5)
         local pill = CreateFrame("Frame", nil, host)
@@ -3362,7 +3387,8 @@ local function buildCLook(key)
         if pg.top then pg.top:EnableMouse(false) end
         local fs = inst.Font(pg.top or pill, 13, "CENTER")
         fs:SetPoint("CENTER", pill, "CENTER")
-        cl.built[key] = { host = host, icon = icon, arrow = arrowTex, text = fs, radius = s / 2 - s * 0.1 }
+        cl.built[key] = { host = host, icon = icon, arrow = arrowTex, text = fs,
+                          radius = spec.out and s / 2 + 8 or s / 2 - s * 0.1 }
     end)
     if not ok then
         say("compasslook " .. key .. ": ERROR " .. str(err))
@@ -3386,6 +3412,7 @@ local function clSync()
     local f = facing()
     local b, dist
     if t then b, dist = bearing(t.north, t.west) end
+    cl.target = t
     if not (t and b and f) then d.host:Hide(); return end
     local a = wrap(b - f)
     d.arrow:ClearAllPoints()
@@ -3461,6 +3488,47 @@ for _, st in ipairs({
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }) do table.insert(clSteps, st) end
 Probe:Steps("compasslook", clSteps)
+
+local cl2Steps = {
+    rev = 1,
+    title = "The compass's look, second round: a disc around the icon, the arrow outside, a tooltip (#29)",
+    clSteps[1],
+    { text = "Ride until NodeRadar's ring shows, then stand still.", wait = clSteps[2].wait, timeout = 600 },
+}
+for _, key in ipairs({ "D", "E", "F" }) do
+    table.insert(cl2Steps, { text = "Look " .. key .. ": " .. CLOOKS[key].text .. ". Stay still.", wait = clShown(key),
+                             screenshot = "compasslook2: look " .. key })
+    table.insert(cl2Steps, { text = "Look " .. key .. " (" .. CLOOKS[key].text .. "): do you like it? Note box: "
+                                 .. "what you'd change.", ask = true })
+end
+for _, st in ipairs({
+    { text = "Which look did you like best? Type its letter in the Note box (D, E, F, or round 1's C).", ask = true },
+    { text = "Look D again: hold the mouse on the icon.", wait = function()
+          if cl.key ~= "D" then clLook("D") end
+          local d = cl.built.D
+          if not (d and yes(ask(d.host, "IsMouseOver"))) then return false, "the mouse isn't on the icon" end
+          if not yes(ask(rawget(_G, "GameTooltip"), "IsShown")) then return false, "on the icon, no tooltip yet" end
+          return true, "the tooltip shows " .. str(ask(rawget(_G, "GameTooltipTextLeft1"), "GetText"))
+      end, screenshot = "compasslook2: the tooltip" },
+    { text = "Is that the item's tooltip (the herb or ore it gives)?", ask = true },
+    { text = "With look D up, click the ground or a creature right next to the disc (not on it). Did the click "
+          .. "reach the world?", ask = true },
+    { text = "Look D: ride to a node or two by it, until this step completes.", wait = function()
+          if cl.key ~= "D" then clLook("D") end
+          if not moving() then state.clRun = nil; return false, "not moving" end
+          state.clRun = (state.clRun or 0) + 1
+          if state.clRun < 5 then return false, "riding with look D" end
+          state.clRun = nil
+          return true, "rode with look D"
+      end, screenshot = "compasslook2: riding" },
+    { text = "Riding, was the arrow outside the disc easy to read? (Note box: anything.)", ask = true },
+    { text = "Taking the drafts down, NodeRadar's compass back.", auto = true, run = function()
+          clLook(nil)
+          return compassBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}) do table.insert(cl2Steps, st) end
+Probe:Steps("compasslook2", cl2Steps)
 end)()
 
 --------------------------------------------------------------------------------

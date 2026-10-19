@@ -437,3 +437,22 @@ So the compass points at the nearest gatherable node and moves on as the player 
 leaves it nothing to point at until nodes are in the smaller view: it follows the minimap, as the
 icons do. (The probe's shown/hidden lines read "-1.0 yd": a `t and bearing()` in its logging kept
 one value; fixed after the run.)
+
+### The compass's look, first round: `compasslook`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+Glass drafts over NodeRadar's own target (LibGlass minor 11, as Glass MiniMap loaded it): a disc, the
+node's item icon masked round in the middle, Blizzard's triangle on the rim, the distance in a small
+glass pill under it.
+
+| Look | Owner |
+|---|---|
+| Today's green ring (comparison) | the screenshot: the green ring, "115 yd" inside, the triangle on its edge |
+| A: a glass disc 96, the icon, a pill | yes; note: "we could try to make the ring to the size of the icon and put the arrow outside the ring?" |
+| B: A with Glass MiniMap's ring art (`ring_rim`, `ring_dark`) | yes; note: "that one looks nice" |
+| C: a glass disc 72 | yes; note: "smaller is better, less clutter" |
+| **The best** | **C** |
+| Riding with A | readable (yes) |
+
+The screenshots: all three read well over the ground; on C the triangle sits on the glass right
+beside the icon. Next: a disc just around the icon, the arrow outside it, with and without Glass
+MiniMap's ring art.
