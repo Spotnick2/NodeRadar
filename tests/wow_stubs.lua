@@ -290,6 +290,15 @@ WoW.reset()
 UIParent = newWidget("Frame", nil, "UIParent")
 UIParent._level = 0
 
+-- The game's tooltip: its owner, and FrameXML's SetItemByID (#29), which shows it.
+GameTooltip = newWidget("GameTooltip", UIParent, "GameTooltip")
+GameTooltip._shown = false
+function Methods.SetOwner(t, owner, anchor) t._owner, t._anchor = owner, anchor end
+function Methods.GetOwner(t) return t._owner end
+function Methods.SetItemByID(t, id) t._item = id; t._shown = true; return true end
+function Methods.SetMouseMotionEnabled(w, v) w._motion = v end
+function Methods.SetMouseClickEnabled(w, v) w._click = v end
+
 function print(...)
     local parts = {}
     for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end

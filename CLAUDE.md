@@ -34,8 +34,9 @@ live game, WoWInterface (#37).
 
 - **Never move, reparent, resize or hide `Minimap` / `MinimapCluster`.** They're Edit Mode systems
   and a taint minefield (porting guide, "Edit Mode systems"). Our frames are unnamed children of
-  `Minimap`, except the compass's ring (#29), an unnamed child of `UIParent` that takes no mouse:
-  the rule is about never touching the minimap, and the ring isn't on it.
+  `Minimap`, except the compass's ring (#29), an unnamed child of `UIParent` whose disc takes mouse
+  motion only (its tooltip; clicks go through): the rule is about never touching the minimap, and
+  the ring isn't on it.
 - Never reassign a Blizzard global or method; `hooksecurefunc` and our own frames only.
 - The sweep drives the minimap's mouseover and the soft cursor: the soft cursor is turned off after
   every sweep, on every path, and no sweep runs with the Gamepad UI on (`InputUtil.IsGamepadUIEnabled()`,
@@ -78,10 +79,12 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   MiniMap, nothing embedded; any failure latches to bronze) or a bronze ring (Blizzard's
   `MiniMap-TrackingBorder` as LibDBIcon lays it out); auto follows the minimap. One `bind` sets a
   frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
-- `Compass.lua` (#29, `compass`, experimental, off by default): a ring under the character whose
-  arrow points at the nearest gatherable record (`atan2(-east, north) - GetPlayerFacing()`,
-  measured), chosen again every sweep with a 5-yard hysteresis and after a gather; hidden within 15
-  yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);
+- `Compass.lua` (#29, `compass`, experimental, off by default): under the character, the nearest
+  gatherable record's item icon in a disc (the icons' frame: `Icons.Style()`, one glass latch for
+  both), the arrow orbiting outside toward it (`atan2(-east, north) - GetPlayerFacing()`,
+  measured), the distance in a pill, the item's tooltip on hover (mouse motion only, clicks
+  through), `compassSize`; chosen again every sweep with a 5-yard hysteresis and after a gather;
+  hidden within 15 yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);
   `Icons.On` alone draws icons. `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` →
   `Learn.Consider`, then a learner experiment just started clears the records.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:

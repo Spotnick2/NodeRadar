@@ -50,12 +50,14 @@ turn on Find Herbs or Find Minerals.
   Each icon sits in a frame that follows your minimap: a glass disc with Glass MiniMap, a bronze
   ring like Blizzard's minimap buttons otherwise (or none, or the one you pick), small, medium or
   large, with a small arrow when the node is above or below you.
-- **Experimental: a compass toward the nearest node** (`/nr compass`, off by default). A small ring
-  under your character points toward the nearest node you can gather, with the distance, so you can
-  ride from node to node without watching the minimap; it moves on as you gather. It points only at
-  nodes NodeRadar has measured (where nodes of one name crowd together, it may miss some), and hides
-  within 15 yards (for a glow on the node itself, Lueur does that well). It follows your
-  character's facing, not the camera's: turning the camera alone doesn't turn it.
+- **Experimental: a compass toward the nearest node** (`/nr compass`, off by default). Under your
+  character, the nearest node you can gather shows as its item's icon in a small disc, framed like
+  the minimap icons (glass with Glass MiniMap, bronze otherwise), with an arrow circling it toward
+  the node and the distance below; hover it for the item's tooltip (clicks go through it). Small,
+  medium or large (`/nr compasssize`). It moves on as you gather, points only at nodes NodeRadar has
+  measured (where nodes of one name crowd together, it may miss some), and hides within 15 yards
+  (for a glow on the node itself, Lueur does that well). It follows your character's facing, not the
+  camera's: turning the camera alone doesn't turn it.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not
@@ -84,7 +86,8 @@ minimap, the icon's frame and size; the experimental compass; learning by toggli
 - `/nr icons`: each node's item icon on the minimap instead of Blizzard's dot (off by default)
 - `/nr iconstyle auto | plain | glass | bronze`: the icon's frame (auto: glass with Glass MiniMap,
   else bronze); `/nr iconsize small | medium | large`
-- `/nr compass`: the experimental compass toward the nearest node (off by default)
+- `/nr compass`: the experimental compass toward the nearest node (off by default);
+  `/nr compasssize small | medium | large`
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`

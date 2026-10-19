@@ -224,10 +224,12 @@ local function build()
     local compass = checkbox(page, size, "Experimental: show which way to the node (a ring under your character)",
         "compass")
     local compassWhy = note(page, compass, "Points toward the nearest node you can gather that NodeRadar has "
-        .. "measured, and hides within 15 yards of it. It follows your character's facing, not the camera's: "
-        .. "turning the camera alone doesn't turn it.")
+        .. "measured, and hides within 15 yards of it. Its frame is the icons' (above); hover it for the item. "
+        .. "It follows your character's facing, not the camera's: turning the camera alone doesn't turn it.")
+    local compassSize = radios(page, compassWhy, "Compass size", "compassSize",
+        { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
 
-    local learning = heading(page, compassWhy, "Learning")
+    local learning = heading(page, compassSize, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
     local why = note(page, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
         .. "it's off by default; NodeRadar also learns every node you gather.")

@@ -437,3 +437,56 @@ So the compass points at the nearest gatherable node and moves on as the player 
 leaves it nothing to point at until nodes are in the smaller view: it follows the minimap, as the
 icons do. (The probe's shown/hidden lines read "-1.0 yd": a `t and bearing()` in its logging kept
 one value; fixed after the run.)
+
+### The compass's look, first round: `compasslook`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+Glass drafts over NodeRadar's own target (LibGlass minor 11, as Glass MiniMap loaded it): a disc, the
+node's item icon masked round in the middle, Blizzard's triangle on the rim, the distance in a small
+glass pill under it.
+
+| Look | Owner |
+|---|---|
+| Today's green ring (comparison) | the screenshot: the green ring, "115 yd" inside, the triangle on its edge |
+| A: a glass disc 96, the icon, a pill | yes; note: "we could try to make the ring to the size of the icon and put the arrow outside the ring?" |
+| B: A with Glass MiniMap's ring art (`ring_rim`, `ring_dark`) | yes; note: "that one looks nice" |
+| C: a glass disc 72 | yes; note: "smaller is better, less clutter" |
+| **The best** | **C** |
+| Riding with A | readable (yes) |
+
+The screenshots: all three read well over the ground; on C the triangle sits on the glass right
+beside the icon. Next: a disc just around the icon, the arrow outside it, with and without Glass
+MiniMap's ring art.
+
+### The compass's look, second round: `compasslook2`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+Glass discs just around the node's icon, the arrow orbiting outside, the distance pill under it; the
+disc takes the mouse for the item's tooltip.
+
+| Look | Owner |
+|---|---|
+| D: 44 units, the icon 30, Glass MiniMap's ring art | "i like it but the arrow is on the pill" (pointing behind, the arrow orbits down onto the pill: the screenshots); "a bit weird with the white around the outer of the ring" (that art's light edge at this size) |
+| E: the same, the plain glass rim | yes |
+| F: 36 units, the icon 24 | "the size should be an option"; "F seems to have rough edges" (the small disc textures below ~40 units) |
+| The best | "D or E seemed fine" |
+| The item's tooltip on hover (`GameTooltip:SetItemByID`, FrameXML's accessor) | the item's (yes) |
+| A click on the disc | **didn't reach the world**: the disc takes the mouse for the tooltip (the owner clicked on it, not beside it). `Frame:SetMouseClickEnabled(false)` with `SetPropagateMouseClicks(true)` (both in the dump) should keep the hover and pass clicks through: to measure |
+| Riding with D | readable (yes) |
+
+So: E's rim, the disc just around the icon, the arrow outside it with the pill clear of its orbit, a
+size option (not under ~44 units), the tooltip on hover with clicks passing through.
+
+### The compass's look, NodeRadar's own: `compass4`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+The built look: the item icon in a disc framed as the icons are, the arrow orbiting outside, the
+distance in a pill below, the tooltip on hover with the disc taking mouse motion only.
+
+| What | Measured |
+|---|---|
+| Glass at medium, small, large | each read back (`glass medium`, `small`, `large`); right (yes, yes). The screenshots: the icon in the glass disc, the arrow outside it, the pill below, all scaling together |
+| Bronze, the icon alone | read back (`bronze medium`, `plain medium`); right (yes). **But their pills were empty** in the screenshots: the text is only written when the whole-yard distance changes, and a look switched to with the same distance never got it. Fixed after the run (a look switched to resets it; a regression test) |
+| The item's tooltip on hover | "Silverleaf, Crafting Reagent, Sell Price 10" above the disc (the screenshot); the item's (yes) |
+| **Left and right clicks on the disc** | reached the world (yes): `SetMouseClickEnabled(false)` with motion on |
+| **A camera drag started on the disc** | the camera turned (yes) |
+| Pointing behind (the node -3.0 rad) | the arrow at the bottom, clear of the pill (yes; the screenshot) |
+| Edit Mode in and out, combat | no error, nothing odd (no, no) |
+| Riding | readable at a glance (yes) |
