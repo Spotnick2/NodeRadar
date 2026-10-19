@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2 and compass4 (#29).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3646,6 +3646,78 @@ local steps4 = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("compass4", steps4)
+
+-- Round 5: the refined look (our own art), the critique's checks.
+local function c4Angle()
+    local T = c4()
+    local t = T and T.target()
+    if not t then return nil end
+    local b = bearing(t.north, t.west)
+    local f = facing()
+    if not (b and f) then return nil end
+    return wrap(b - f)
+end
+local function headingStep(label, want)
+    return { text = "Turn so the node is " .. label .. " of you, and hold still.", wait = function()
+                 local ok, why = c4Shown("medium", "auto")()
+                 if not ok then return false, why end
+                 local a = c4Angle()
+                 if not a then return false, "no target" end
+                 if math.abs(wrap(a - want)) > 0.3 then
+                     return false, ("the node %.1f rad from straight ahead (%s: %.1f)"):format(a, label, want)
+                 end
+                 return true, ("%s: %.2f rad"):format(label, a)
+             end, screenshot = "compass5: " .. label }
+end
+local steps5 = {
+    rev = 1,
+    title = "The compass refined: a lens, a pearl or bronze rim, a bigger arrow, an arc (#29)",
+    steps4[1],
+    { text = "Ride until the compass shows under your character, then stand still.",
+      wait = c4Shown("medium", "auto", "glass"), screenshot = "compass5: pearl medium", timeout = 600 },
+    { text = "The refined compass (pearl): the lens, the thin rim, the arrow and its arc, the capsule. Like it? "
+          .. "(Note box.)", ask = true },
+    { text = "Small.", wait = c4Shown("small", "auto", "glass"), screenshot = "compass5: pearl small" },
+    { text = "Large.", wait = c4Shown("large", "auto", "glass"), screenshot = "compass5: pearl large" },
+    { text = "Bronze.", wait = c4Shown("medium", "bronze", "bronze"), screenshot = "compass5: bronze" },
+    { text = "No frame (the lens and the icon).", wait = c4Shown("medium", "plain", "plain"),
+      screenshot = "compass5: no frame" },
+    { text = "Did each size and each frame look right, the small one's edges included? (Note box.)", ask = true },
+    headingStep("straight ahead", 0),
+    headingStep("on the left", math.pi / 2),
+    headingStep("behind-right (a diagonal)", -3 * math.pi / 4),
+    headingStep("behind", math.pi),
+    { text = "Through those turns, did the arrow and the arc stay together and point right, the icon and the "
+          .. "capsule still? Is the arrow clear of the capsule behind? (Note box.)", ask = true },
+    { text = "Stand on bright ground with the compass up, then press Next.", screenshot = "compass5: bright ground" },
+    { text = "Now somewhere dark (a cave, a building, or at night), then press Next. Skip if none is near.",
+      screenshot = "compass5: dark" },
+    { text = "Was it readable on both? (Note box.)", ask = true },
+    { text = "With a node far away (100 yards or more), then press Next.", screenshot = "compass5: far" },
+    { text = "Does the three-digit distance fit the capsule?", ask = true },
+    { text = "Optional: an ore node (if this character mines), then press Next. Skip if not.",
+      screenshot = "compass5: ore" },
+    { text = "Hold the mouse on the compass's icon.", wait = function()
+          local ok, why = c4Shown("medium", "auto")()
+          if not ok then return false, why end
+          local T = c4()
+          local tip = rawget(_G, "GameTooltip")
+          local okO, owner = pcall(tip.GetOwner, tip)
+          if not (okO and owner == T.disc and yes(ask(tip, "IsShown"))) then return false, "no tooltip from the compass yet" end
+          return true, "the tooltip shows " .. str(ask(rawget(_G, "GameTooltipTextLeft1"), "GetText"))
+      end, screenshot = "compass5: the tooltip" },
+    { text = "Is that the item's tooltip, and did hovering leave the compass's look unchanged?", ask = true },
+    { text = "Left-click and right-click ON the icon, and start a camera drag there. Did all of it reach the world?",
+      ask = true },
+    { text = "Edit Mode in and out, and optionally a fight, with the compass up. Any error or anything odd?",
+      ask = true },
+    { text = "Ride to a node or two by the compass, until this step completes.", wait = steps4[18].wait,
+      screenshot = "compass5: riding" },
+    { text = "Riding, was it readable at a glance? (Note box: anything.)", ask = true },
+    { text = "Putting NodeRadar's compass, its size and the icons' frame back.", auto = true, run = c4Back },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("compass5", steps5)
 end)()
 
 --------------------------------------------------------------------------------
