@@ -536,8 +536,9 @@ Following Glass MiniMap's theme tint. Square minimap skins (#4). Mouse interacti
 
 ## The compass, experimental (#29)
 
-When a node alerts, a small ring under the character shows which way to turn and how far it is, so
-the player can ride to it without watching the minimap. **Experimental**: a setting, `compass`,
+A small ring under the character shows which way to turn and how far it is to **the nearest node
+the player can gather** that NodeRadar has measured, so the player can ride from node to node
+without watching the minimap. **Experimental**: a setting, `compass`,
 off by default, labelled experimental in Options ("Experimental: show which way to the node") and
 `/nr compass`. It may never ship on by default: the owner decides after testing. Off, nothing of
 it runs.
@@ -558,7 +559,15 @@ a GUID; Forever draws no waypoint marker).
 - `GetPlayerFacing()` is the character's facing, not the camera's (the camera's yaw isn't readable).
   While the player turns the camera alone (the left mouse button), the arrow follows the character.
   Said in the README and on the Options page.
-- `UnitOnTaxi("player")` is in the dump; its value on a flight isn't measured yet (round 2).
+- `UnitOnTaxi("player")` is in the dump; its value on a flight isn't measured yet (round 2: the
+  owner was in Orgrimmar, with no node in view).
+- **Round 2 (the alerted-node design, `compass2`):** the ring led to its node and went at 14.9 and
+  15.0 yards; the 60 s timeout held; clicks went through it; Edit Mode and combat were clean; the cost
+  was the icons-off cost (262 reads a sweep). But following the *alerted* node fell short (owner): it
+  "does not necessarily point to the closest herb and also vanishes with herbs on the minimap" (its
+  record dropped past the rim after a zoom in, or missed in a clump). So the target became the
+  nearest gatherable record, chosen again every sweep (owner, 2026-10-19). A skip ("not that one,
+  it's out of reach") waits for the final version (owner).
 
 ### Records without icons
 
@@ -571,7 +580,7 @@ setting does only its own part (Codex, #29):
   alone) and the driver's `OnUpdate`. Not just `draw()`: by then the frames would exist.
 - **Settings:** the radar off, or both off: records cleared. `icons` off with the compass on: the
   icon frames released and the driver stopped, the records kept. `icons` on: the records kept are
-  bound and drawn at once. `compass` off: its target dismissed, the records kept while icons are on.
+  bound and drawn at once. `compass` off: the ring hidden, the records kept while icons are on.
   `compass` on: nothing to do until the next sweep.
 
 With the compass on and icons off, a new node still costs its 29 reads once, and nothing changes
@@ -579,37 +588,27 @@ on the minimap.
 
 ### The target
 
-An alert fires when a node enters at the map's edge, where it isn't measured yet (#28 measures a
-blip only once it's whole: 18 units inside). An unmeasured position isn't one to point at: a blip's
-centroid is within 5.5 units of an isolated node, but a merged pair of a name or a blip clipped at
-the rim can be farther off, by no bound we have (Codex, #29, round 2). So **the compass only ever
-points at a measured record**, and an alert waits for one:
-
-1. **The alert** (`Alert.Fire`, after the cooldown and the skill filter; not while dead or on a
-   taxi) leaves a **pending** target: its names and the time. If a record of one of those names was
-   made this very sweep (a node measured at once), the nearest such record is the target at once.
-2. **Pending → target:** at each radar sweep, the first record of a pending name **made after the
-   alert** (the nearest, when several are made in one sweep) becomes the target. None within 15 s of
-   the alert: the pending target lapses, and nothing is shown. A crowded node (never measured) is
-   never a target: stated.
-3. A target is `{ name, kind, north, west, record, height, at }`: the record's world position and
-   height, the alert's time.
-   - **A heuristic, stated as one:** the alert knows a name's count rose, not which blip is new
-     (`Alert.Update`). So the target is the first node of an alerted name measured after the alert,
-     which is usually the new one (it was the unmeasured blip at the rim), but can be an old node of
-     that name measured late. The Options note and the README say "points toward a node of the
-     alerted name, the first one NodeRadar measures; it may be one already in view" (Codex's wording).
-4. **Reconciled each radar sweep**, in `NR.Step` right after `Icons.Update` and **before**
-   `Alert.Update` (which may leave a new pending target) and `Learn.Consider`: seen while its record
-   is kept and matched this sweep; its height follows the record's (nil included). Its record dropped
-   (two misses, or the rim): dismissed, never switched to another node.
-5. **Records cleared for a passing reason** (`Icons.Update` finds no position or no `where`, a
-   rotation): the target **keeps its world position**, drops its record reference and is hidden; the
-   next record of its name made within 3 yards of that position (a node measured again lands within
-   a yard: six halvings of 24 units, about 0.6 yd at zoom 0) becomes its record again. Records
-   cleared for a reason that ends the compass too (below) dismiss it explicitly.
-6. **One at a time:** a later alert's pending target replaces it once that one resolves; until then
-   the current target stays.
+**The nearest gatherable record**, chosen again at every radar sweep, in `NR.Step` right after
+`Icons.Update` (`Compass.Reconcile`): of the records kept (#28's, every one, a record missed once
+included: a miss means not matched this sweep, not a wrong position, and leaving it out would make
+the ring vanish in clumps again: Codex), those `Alert.Gatherable` allows (#26's filter as the alert
+uses it, read fresh, never `r.dim`, which only the icons refresh: so unknown requirements, an
+unreadable skill and `skillOnly` off all count as gatherable), the nearest the player horizontally. None: no target, the ring hidden. Nothing ties it to an alert: no pending
+target, no timeout. It moves on by itself: a gathered node's record goes (`Icons.Gathered`), one
+past the rim is dropped, and the next nearest is the target at the next sweep.
+- **Hysteresis:** the current target stays unless another is at least 5 yards nearer, so two nodes
+  about as far don't make the arrow flick between them; but only while that very record is still in
+  `Icons.Records()` and still gatherable. Gone or no longer gatherable, the nearest wins outright
+  (Codex).
+- **A gather** (`Icons.Gathered`, the successful cast) chooses again at once, **after** the gathered
+  records are out of the list (one call once `records` is the filtered list, not one per drop), so
+  the ring moves on without waiting for a sweep. It doesn't count as a sweep: the ring's freshness
+  (a sweep within the interval plus 2 s) isn't renewed by it.
+- **Records cleared** (any reason: `Icons.Clear`) drop the target at once.
+- Each frame draws toward the target's world position (the record's): records don't move.
+- A node of a name in a clump can lose its record (a merged cluster's centroid misses it, #28's
+  stated limit: the dot shows there too); the compass then points at the nearest record left. That's
+  the icons' limit, not the compass's: measured, not chased here.
 
 ### The ring
 
@@ -623,80 +622,63 @@ points at a measured record**, and an alert waits for one:
   `SetRotation(a)`, and the distance in the middle (`"73 yd"`, updated when the whole number
   changes).
 - **Per frame while shown** (an `OnUpdate` unset when hidden): one `UnitPosition`, one
-  `GetPlayerFacing`, the timeout and arrival checks, a `SetPoint` and a `SetRotation`. Nothing
-  allocated.
+  `GetPlayerFacing`, the 15-yard and hide checks, a `SetPoint` and a `SetRotation`. Nothing
+  allocated. Hidden, it shows again at the next usable sweep.
 
-### Dismissed, hidden
+### Shown, hidden
 
-- **Arrival:** within 15 yards horizontally of the record, unless the target has a height (above
-  or below: a node on a ledge over the player isn't "arrived"; it ends at the timeout or the gather
-  instead).
-- **Dismissed** (target gone, ring hidden): arrival; a successful gather of its name within 15
-  yards of the target (`Icons.Gathered`'s cast; an interrupted cast doesn't count; another node of
-  that name within 15 yards counts too: an approximation, as there's no node identity); its record
-  dropped; 60 s after the alert (not restarted by sightings); a later alert's
-  target; `compass` or the radar off; a loading screen, `PLAYER_ENTERING_WORLD`, a new instance
-  (`UnitPosition`'s fourth value), death; tracking changed (`MINIMAP_UPDATE_TRACKING`);
-  `UnitOnTaxi("player")`.
-- **The learner, explicitly** (Codex, round 2: `Learn.Consider` only calls `C_Minimap.SetTracking`,
-  and when the client delivers `MINIMAP_UPDATE_TRACKING` isn't established): right after
-  `Learn.Consider`, `NR.Step` checks `Learn.Busy()`; an experiment just started dismisses the target
-  and the pending one and clears the records, whether the event comes now, later or not at all.
-- **Hidden, kept,** while the position or facing reads nil or secret, or no radar sweep succeeded
-  for the idle interval plus 2 s (as #28's icons: the learner's pause, the Gamepad UI, every sweep
-  failing). The next usable sweep's reconciliation shows it again and re-arms its `OnUpdate`, **after**
-  checking the 60 s, so a target that expired while hidden never reappears.
+- **Shown** while there's a target and the position and facing read, a radar sweep ran within the
+  idle interval plus 2 s, the player isn't dead or on a taxi (`UnitOnTaxi`).
+- **Hidden within 15 yards** of the target (horizontal, the record has no above/below height): the
+  glow there is Lueur's. Not dismissed: it's still the nearest, so walking away without gathering
+  shows the ring again. A node above or below keeps the ring within 15 yards.
+- **Hidden** otherwise: no target; the compass or the radar off; the position or facing nil or
+  secret; no recent sweep (the learner's pause, the Gamepad UI, every sweep failing); dead; on a taxi.
+  Records cleared (a loading screen, death, tracking changed, an instance, the learner starting) leave
+  no target until the next sweep's records.
 - The distance is horizontal: the minimap gives no node height.
 
 ### Tests
 
-- The pending target: an alert whose node isn't measured shows nothing; the record made for it a
-  sweep later becomes the target; a record made the same sweep is the target at once; the nearest
-  of two made in one sweep; a record of another name, or one made before the alert, never; lapsed
-  after 15 s without one; **an old node of the name measured late after the alert is chosen** (the
-  stated heuristic); a merged pair (actual `Scan.Sweep` output, refused by `Scan.Centre`) never
-  targeted, nor a rim blip, until measured.
-- Lifetime: its record dropped at the rim or by retreating, dismissed, never switched; a later
-  alert replaces it only once its own pending target resolves; records cleared for a passing reason
-  (no `where`) through `NR.Step`: hidden, kept, bound again to the re-measured record within 3 yd
-  (not to one farther, nor of another name), the alert time unchanged; expired while hidden: not
-  shown again; the height following the record, cleared when level.
-- The order in `NR.Step`: reconciled before the alert; **the learner starting in the same step,
-  with `MINIMAP_UPDATE_TRACKING` delivered later or never**: no target, no pending one, no ring, no
-  `OnUpdate`, no records.
-- Settings: icons off with the compass on keeps the records and draws nothing (no frame acquired,
-  no look resolved, no glass built, no icon `OnUpdate`); icons on then shows them; compass off
-  dismisses the target and keeps the records for the icons; both off clears them.
-- The ring: the arrow's point and rotation for a node ahead, left, right and behind, across the
-  0/2π wrap, at the measured convention; the distance text; tinted by kind; no mouse; a child of
-  `UIParent`.
-- Every dismissal and hide trigger, one by one: arrival with and without a height; the gather near,
-  far, and of another node of the name within 15 yards; the timeout; taxi; death, and **no pending
-  target while dead**; loading; instance; tracking; the setting; the radar; unreadable position or
-  facing; no sweep; and shown again after a hide.
-- Off: no target, no frame shown, no `OnUpdate`, no extra reads (icons off too).
+- The target: the nearest gatherable record; one the skill can't gather never (and with `skillOnly`
+  off, it can); none: hidden; chosen again each sweep as the player moves; a record missed once
+  still chosen, recovered still, dropped at the second miss; hysteresis (3 yards nearer doesn't take
+  over, exactly 5 does, two at equal distance stay put); the incumbent gone or no longer gatherable
+  with a replacement under 5 yards farther: replaced; a record dropped past the rim (a zoom in)
+  moves it on, or hides it when none is left; records cleared: hidden at once; chosen on the
+  alert's silent baseline, in its cooldown, and past 60 s (no timeout).
+- The gather: several records of the name gone at once, an unrelated gather (hysteresis kept), and a
+  gather never reviving a stale ring.
+- Shown and hidden: within 15 yards hidden (the target kept, the `OnUpdate` gone), shown again
+  walking away at the next usable sweep; a node above not hidden within 15 yards, then level again
+  (its height nil) hidden; the position or facing unreadable; no recent sweep; dead; a taxi; the compass off; the
+  radar off; the learner starting in the same step.
+- The settings split (kept from the reviewed plan): icons off with the compass on keeps the records
+  and draws nothing (no frame, no look, no glass, no icon `OnUpdate`); icons on shows them; compass
+  off hides the ring and keeps the records for the icons; both off clears them.
+- The ring: the arrow's point and rotation ahead, left, right, behind, north-east, across the 0/2π
+  wrap; the distance text; tinted by the target's kind; no mouse; a child of `UIParent`.
+- Off: nothing measured, no ring, no `OnUpdate`.
 - Options and `/nr compass`.
 - Every new test mutation-tested.
 
-### Probe round 2 (`/fp steps nr compass2`, the feature on)
+### Probe round 3 (`/fp steps nr compass3`, the nearest-node compass)
 
-- An alert at the rim: how long until its node is measured and the ring appears (the log times
-  it), riding toward it and riding across; a zoom meanwhile; a crowded node that never gets a ring;
-  riding away until the record drops.
-- Riding to the node by the ring alone; arrival dismissing it at 15 yards; a node above (no early
-  arrival).
-- The timeout.
-- A flight: the step waits for `UnitOnTaxi` to read **true** before it accepts a landing.
-- The camera turned alone (the stated limit).
-- In combat and in Edit Mode: no error, no blocked action; a click through the ring reaches the
-  world.
-- Readability over bright and dark ground.
-- The cost of the records with icons off, with the whole compass running.
+- Riding among nodes: the ring on the nearest (screenshots, the candidates' distances, the chosen
+  record, its misses and height logged), moving on after each gather, no flicking between two at
+  about the same distance.
+- A zoom in with the ring up: it stays on a measured node still in view (a dot without a record
+  doesn't count: the rim and the clumps).
+- A clump of one herb: does the ring stay useful (the icons' limit)?
+- Hidden within 15 yards, back when walking away; a node above.
+- A flight: `UnitOnTaxi` true then false, and the ring hidden on the way if a node is in view.
+- The old `compass2` procedure and its watcher go: they read the alert design's state.
+- The cost, the compass alone.
 
 ### Not in this issue
 
-A glow on the node within 15 yards (Lueur's). Moving the ring. A target chosen by the player
-(clicking an icon). Several targets.
+A glow on the node within 15 yards (Lueur's). Moving the ring. **A skip** ("not that one"),
+for the final version (owner). A target chosen by the player (clicking an icon). Several targets.
 
 ## A public API (#4), after #3
 

@@ -399,3 +399,21 @@ records, the bearing from `UnitPosition` as `atan2(-east, north)`.
 
 So `atan2(-east, north) - GetPlayerFacing()` (counter-clockwise from straight ahead) points the compass
 right, and #28's records are good to a yard or so at 70 yards. The flight stays to measure.
+
+### The compass, second round: `compass2`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+NodeRadar's own compass, the alerted-node design, with the icons off.
+
+| What | Measured |
+|---|---|
+| The ring after an alert | up 0.0 s after it when the node was measured at once (146-186 yd off), 5.2 s once; it pointed at the node (yes) |
+| **The ring vanishing** | gone 124, 135, 143 and 128 yd from its node, 1 to 18 s after the alert: right after a zoom in (the owner: "it vanished"; the node 143 yd off fell past the shrunk view, its record dropped at the rim, and the design dismissed the target), and among Peacebloom (likely a clump's merged centroid missing the record twice) |
+| Riding to it by the ring | led there (yes); gone at 14.9 and 15.0 yd |
+| The 60 s timeout | gone at 60.0 s, twice |
+| A click on the ring | reached the world (yes) |
+| Edit Mode, combat | nothing odd, no error (no, no) |
+| A flight | not measured (Orgrimmar: no node in view) |
+| The cost, the compass alone | 103 sweeps in 60 s, 262 reads a sweep, worst 12.4 ms: the icons-off cost |
+| **The owner's verdict** | "it does not necessarily point to the closest herb and also vanishes with herbs on the minimap"; a skip for a node out of reach, later |
+
+So the compass now points at the nearest gatherable record, chosen again every sweep (docs/PLAN.md).
