@@ -1093,7 +1093,10 @@ toggle icons/compass and the snooze there (contextual menu, not a full panel)".
   - **Left-click: NodeRadar's context menu** (`MenuUtil.CreateContextMenu`, Blizzard_Menu,
     70450), the place for quick actions, more later (the owner):
     - checkboxes: "Radar on", "Item icons on the minimap", "The compass (experimental)" (`NR.Set`,
-      so the page and `/nr` agree);
+      so the page and `/nr` agree). **A checkbox closes the menu** (its responder returns
+      `MenuResponse.CloseAll`): on 70450 the default `Refresh` reruns the entries' initializers but
+      not the generator, so a menu left open would keep a snooze line for a compass just turned off,
+      or the "off" line for one just turned on (Codex). Reopening builds the right menu;
     - a divider; "Snooze <item's name>, <yards> yd" opening a submenu: "15 minutes", "30 minutes",
       "1 hour", "This session". No target: a disabled line saying why ("The compass has no node
       now", or "The compass is off"). **The node is captured when the menu opens** and the choice
@@ -1134,7 +1137,8 @@ toggle icons/compass and the snooze there (contextual menu, not a full panel)".
   no target: nothing; a loading screen or death (records cleared) keeps the snoozes; the dim on the
   icon **at once, without a sweep**, and gone at the sweep after it expires; the menu's entries
   (the toggles, the snooze with and without a target, the compass off, the clear) and its
-  toggles doing `NR.Set`; **the target changing between opening and choosing: the shown node
+  toggles doing `NR.Set` and closing the menu (the compass or the radar toggled, then reopened:
+  the snooze line follows); **the target changing between opening and choosing: the shown node
   snoozed**; the clicks (left, right, the compartment, with the button hidden and with no
   libraries); the key binding's duration from the setting; the commands; the button shown and
   hidden by the setting (the saved `hide`); no libraries: no button, no error.
