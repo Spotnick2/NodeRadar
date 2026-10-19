@@ -212,18 +212,77 @@ step()
 eq(#records(), 0, "...and dropped at the sweep")
 local _ = rimNode
 
--- A gather drops the near record of its name, so it's measured anew.
+-- A gather drops the near record of its name. Its dot stays while the loot
+-- window is open: left out, not measured again (the owner's video: the
+-- compass took it for the nearest and hid); gone, a node there is measured.
+reset()
+WoW.pos = { 0, 0, 1 }
+local picked = node("Silverleaf", 3, 2)
+local other = node("Silverleaf", 3, 32)                   -- another of its name 30 units off
+step()
+eq(#records(), 2, "a node at the player's feet, another 30 units off")
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Silverleaf", "Cast-1", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 2366)
+eq(#records(), 1, "gathered: its record dropped, the other kept")
+eq(#T.gone(), 1, "...remembered as gone")
+plain = plainReads()
+reads = step()
+eq(reads - plain, 0, "its dot still there (the loot open): not measured")
+eq(#records(), 1, "...no record of it")
+step()
+eq(#records(), 1, "...nor at the next sweep")
+local beside = node("Wilted Peacebloom", -2, -1)           -- another herb by the same spot
+step()
+local besideRec
+for _, rr in ipairs(records()) do if rr.name == "Wilted Peacebloom" then besideRec = rr end end
+check(besideRec, "...a Wilted Peacebloom by it: measured all the same (only the gathered name is left out)")
+for i, n in ipairs(nodes) do if n == beside then table.remove(nodes, i) end end
+step(); step()
+eq(#T.gone(), 1, "...still remembered while seen")
+picked.gone = true                                         -- looted: the dot goes
+local function placeGone() local list = {}; for _, n in ipairs(nodes) do if not n.gone then list[#list + 1] = n end end; return list end
+nodes = placeGone()
+step()
+eq(#T.gone(), 0, "the dot gone: forgotten")
+nodes[#nodes + 1] = picked                                  -- a node of the name there again
+picked.gone = nil
+plain = plainReads()
+reads = step()
+eq(reads - plain, 33, "...and a node there after is measured")
+eq(#records(), 2, "...its record back")
+local _ = other
+-- Gathered before it was measured: left out by the player's position.
 reset()
 WoW.pos = { 0, 0, 1 }
 node("Silverleaf", 3, 2)
+NR.db.interval = 2
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Silverleaf", "Cast-2", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-2", 2366)
+eq(#T.gone(), 1, "gathered with no record: remembered at the player's position")
+check(T.gone()[1].yards == Icons.GATHERED, "...within GATHERED yards")
 step()
-eq(#records(), 1, "a node at the player's feet")
-WoW.fire("UNIT_SPELLCAST_SENT", "player", "Silverleaf", "Cast-1", 2366)
-WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 2366)
-eq(#records(), 0, "gathered: its record dropped")
-plain = plainReads()
-reads = step()
-eq(reads - plain, 33, "...and the next node there measured, not matched")
+eq(#records(), 0, "...its dot not measured")
+-- LINGER: an entry seen for good (loot left open) goes after 30 s.
+for _ = 1, 31 do step() end
+eq(#T.gone(), 0, "seen for 30 s: forgotten (LINGER)")
+eq(#records(), 1, "...and the dot measured after all")
+NR.db.interval = nil
+-- Records cleared forget them.
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Silverleaf", "Cast-3", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-3", 2366)
+eq(#T.gone(), 1, "gathered again: remembered")
+Icons.Clear()
+eq(#T.gone(), 0, "Icons.Clear: forgotten")
+-- An instance change forgets them too: a node of the name there is measured (Codex).
+step()
+WoW.fire("UNIT_SPELLCAST_SENT", "player", "Silverleaf", "Cast-4", 2366)
+WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-4", 2366)
+eq(#T.gone(), 1, "gathered: remembered")
+WoW.pos[3] = 2                                             -- another instance, same spot
+step()
+eq(#T.gone(), 0, "another instance: forgotten")
+check(#records() == 1, "...the dot there measured in it")
+WoW.pos[3] = 1
 
 -- Skill: a node the player can't gather is dimmed (#26's rule); no item: the
 -- tracking spell's icon.

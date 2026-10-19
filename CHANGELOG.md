@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The compass moves on at once after a gather** (#29): it showed the next node, then hid for a
+  few seconds while the loot window was open, taking the herb still on the minimap for the nearest.
+  That herb is now left alone until it vanishes.
 - **Nodes of one name a little apart now get their icons** (#28's measuring): two Silverleafs about
   50 yards apart stayed Blizzard's dots, and the compass, which only knows measured nodes, never
   pointed at them. Each is now measured on its own.
