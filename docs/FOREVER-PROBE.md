@@ -600,3 +600,17 @@ So a marker on a far node is possible on Forever: our own art on `C_Navigation.G
 player's height, following the camera, clamped at the edge. Its price: the
 player's map pin and tracked quest are borrowed (NodeRadar has kept off them so far), the option
 must be 1, and Blizzard's distance text shows unless hidden.
+
+### Snoozing, the minimap button: `snooze`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#46)
+
+| What | Measured |
+|---|---|
+| The button | registered (LibDataBroker, LibDBIcon minor 56); **taken by Glass MiniMap Bar** (yes) |
+| Its tooltip | the owner's screenshots: "NodeRadar", "The compass has no node now", then "The compass: Silverleaf, 149 yd", the click hints. LibDBIcon shows it on its own `LibDBIconTooltip`, not `GameTooltip`: the round's check read the wrong one (passed by hand; fixed after) |
+| **The key binding** | Key Bindings > NodeRadar, bound and pressed: snoozed (0 to 1), the compass from a Silverleaf at 48 yd to one at 99 yd, one icon dimmed; the chat line said for how long (yes) |
+| The menu's compass toggle | unticked, reopened: "The compass is off"; ticked back (yes) |
+| Right-click | the Options page open |
+| The menu's snooze | **not seen**: the step was passed by hand 1 s after it began ("unsure"), and the next found 0 snoozed |
+| The AddOns compartment | hidden by Glass MiniMap: not tried |
+| `/reload` | the snooze gone after it (0 snoozed) |
+| Esc closing Options | opens the game menu: Blizzard's (`SettingsPanelMixin:TransitionBackOpeningPanel` toggles the game menu after any close, unless Edit Mode is up), whoever opened it |

@@ -58,11 +58,15 @@ eq(result(1).status, "done", "ready: " .. detail(1))
 -- The button's tooltip.
 walk(1.2)
 eq(result(2).status, nil, "no tooltip: waits")
-GameTooltip._shown = true
-GameTooltipTextLeft1:SetText("NodeRadar")
+local dbiTip = CreateFrame("Frame")                         -- LibDBIcon's own tooltip, as in game
+rawset(_G, "LibDBIconTooltip", dbiTip)
+rawset(_G, "LibDBIconTooltipTextLeft1", dbiTip:CreateFontString())
+dbiTip:Show()
+LibDBIconTooltipTextLeft1:SetText("NodeRadar")
 walk(1.2)
 eq(result(2).status, "done", "the tooltip: " .. detail(2))
-GameTooltip._shown = false
+check(detail(2):find("LibDBIconTooltip"), "...read on LibDBIcon's tooltip")
+dbiTip:Hide()
 settle()
 S.Answer(true)                                             -- 3
 nodes = { { name = "Silverleaf", north = WoW.pos[1] + 30 * K(), west = WoW.pos[2] },

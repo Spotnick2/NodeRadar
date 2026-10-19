@@ -4400,7 +4400,7 @@ end
 
 local before      -- the compass's node when the snooze step began
 local steps = {
-    rev = 1,
+    rev = 2,
     title = "Snoozing the compass's node; the minimap button and its menu (#46)",
     { text = "Have NodeRadar loaded with gathering tracking on. Its compass, icons and minimap button go on; they "
           .. "come back as they were at the end.", wait = function()
@@ -4413,9 +4413,13 @@ local steps = {
       end },
     { text = "Find NodeRadar's button around the minimap (a flower), drag it along the ring if you like, and hold "
           .. "the mouse on it for its tooltip.", wait = function()
-          local tip = rawget(_G, "GameTooltip")
-          local first = ask(rawget(_G, "GameTooltipTextLeft1"), "GetText")
-          if yes(ask(tip, "IsShown")) and first == "NodeRadar" then return true, "its tooltip is up" end
+          -- LibDBIcon shows its own tooltip (LibDBIconTooltip), the compartment GameTooltip.
+          for _, name in ipairs({ "LibDBIconTooltip", "GameTooltip" }) do
+              local first = ask(rawget(_G, name .. "TextLeft1"), "GetText")
+              if yes(ask(rawget(_G, name), "IsShown")) and first == "NodeRadar" then
+                  return true, "its tooltip is up (" .. name .. ")"
+              end
+          end
           return false, "no NodeRadar tooltip yet"
       end, screenshot = "snooze: the button's tooltip" },
     { text = "Is the button there, and does its tooltip say what the compass points at and what the clicks do?",
