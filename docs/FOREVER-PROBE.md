@@ -474,3 +474,19 @@ disc takes the mouse for the item's tooltip.
 
 So: E's rim, the disc just around the icon, the arrow outside it with the pill clear of its orbit, a
 size option (not under ~44 units), the tooltip on hover with clicks passing through.
+
+### The compass's look, NodeRadar's own: `compass4`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+The built look: the item icon in a disc framed as the icons are, the arrow orbiting outside, the
+distance in a pill below, the tooltip on hover with the disc taking mouse motion only.
+
+| What | Measured |
+|---|---|
+| Glass at medium, small, large | each read back (`glass medium`, `small`, `large`); right (yes, yes). The screenshots: the icon in the glass disc, the arrow outside it, the pill below, all scaling together |
+| Bronze, the icon alone | read back (`bronze medium`, `plain medium`); right (yes). **But their pills were empty** in the screenshots: the text is only written when the whole-yard distance changes, and a look switched to with the same distance never got it. Fixed after the run (a look switched to resets it; a regression test) |
+| The item's tooltip on hover | "Silverleaf, Crafting Reagent, Sell Price 10" above the disc (the screenshot); the item's (yes) |
+| **Left and right clicks on the disc** | reached the world (yes): `SetMouseClickEnabled(false)` with motion on |
+| **A camera drag started on the disc** | the camera turned (yes) |
+| Pointing behind (the node -3.0 rad) | the arrow at the bottom, clear of the pill (yes; the screenshot) |
+| Edit Mode in and out, combat | no error, nothing odd (no, no) |
+| Riding | readable at a glance (yes) |

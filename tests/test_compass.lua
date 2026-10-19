@@ -293,8 +293,10 @@ for name, size in pairs({ small = 44, large = 60, medium = 52 }) do
     check(C.look() == L, "...the same look, not rebuilt")
 end
 -- Plain: the icon alone, the diameter's size.
+local dist = L.text._text
 NR.Set("iconStyle", "plain")
 check(C.look() == C.looks.plain, "plain chosen: the icon alone")
+eq(C.looks.plain.text._text, dist, "...its pill shows the distance at once (compass4: empty pills)")
 eq(C.looks.plain.host._shown and C.looks.bronze.host._shown, false, "...one look shown")
 NR.Set("iconStyle", nil)
 -- The mouse: motion only on the disc, nothing else.

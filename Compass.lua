@@ -296,6 +296,7 @@ local function dress()
             l.pill:Hide()
         end
     end
+    if wanted ~= look then shownDist = nil end         -- a look switched to gets its distance (compass4: empty pills)
     look = wanted
     body:SetScale((Compass.SIZES[NR.db.compassSize] or Compass.SIZES[NR.DEFAULTS.compassSize]) / Compass.DISC)
     look.host:Show()
