@@ -1,13 +1,9 @@
 # Changelog
 
-## Unreleased
+## v1.2.0
 
-- **The compass moves on at once after a gather** (#29): it showed the next node, then hid for a
-  few seconds while the loot window was open, taking the herb still on the minimap for the nearest.
-  That herb is now left alone until it vanishes.
-- **Nodes of one name a little apart now get their icons** (#28's measuring): two Silverleafs about
-  50 yards apart stayed Blizzard's dots, and the compass, which only knows measured nodes, never
-  pointed at them. Each is now measured on its own.
+Released 2026-10-19.
+
 - **Choose which herbs and ores** (#47): NodeRadar's new Herbs and Ores pages (under it in Esc >
   Options > AddOns) list each herb and ore with its nodes and the skill each needs. Uncheck one and
   it makes no alert or chat line, and the compass never points at it; on the minimap its icon is
@@ -25,6 +21,12 @@
   toward the node with a highlight on the rim beneath, the distance below, the item's tooltip on
   hover. Small, medium or large. It moves on as you gather and hides within 15
   yards. It follows your character's facing, not the camera's.
+- **Nodes of one name a little apart now get their icons** (#28's measuring): two Silverleafs about
+  50 yards apart stayed Blizzard's dots, and the compass, which only knows measured nodes, never
+  pointed at them. Each is now measured on its own.
+- **The compass moves on at once after a gather** (#29): it showed the next node, then hid for a
+  few seconds while the loot window was open, taking the herb still on the minimap for the nearest.
+  That herb is now left alone until it vanishes.
 
 ## v1.1.0
 
