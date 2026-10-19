@@ -23,8 +23,13 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 - the classic node names in 11 languages (#17, #19);
 - v1.0.1: only nodes the player can gather alert (#26), and the chat line's map coordinates (#27).
 
-Next: item icons for the minimap's nodes (#28); then the experimental in-world marker (#29) and the
-public API for minimap skins (#4). On hold for the live game: fishing pools (#25), GatherMate2 (#30).
+Unreleased on `main` (CHANGELOG): `release.json` for WowUp (#35); item icons on the minimap's
+nodes, off by default (#28); their frames following the minimap (glass with Glass MiniMap, else
+bronze), three sizes and a height arrow (#41). All checked in game on 70450.
+
+Next: the experimental compass (#29: Forever draws no waypoint marker, so it became a compass); then
+the public API for minimap skins (#4). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
 
