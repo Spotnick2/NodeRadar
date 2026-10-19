@@ -534,6 +534,117 @@ it. Per sweep, a `find` per mouseover row for the arrow.
 
 Following Glass MiniMap's theme tint. Square minimap skins (#4). Mouse interaction with the icons.
 
+## The compass, experimental (#29)
+
+When a node alerts, a small ring under the character shows which way to turn and how far it is, so
+the player can ride to it without watching the minimap. **Experimental**: a setting, `compass`,
+off by default, labelled experimental in Options ("Experimental: show which way to the node") and
+`/nr compass`. It may never ship on by default: the owner decides after testing. Off, nothing of
+it runs.
+
+Within about 15 yards it stops: the glow on the node itself is Lueur's (the soft target, which
+Forever loses at 15 yards), and NodeRadar never touches the soft-targeting settings (owner,
+2026-10-18). Blizzard's ping and waypoint marker were ruled out (#29: the ping is secure and needs
+a GUID; Forever draws no waypoint marker).
+
+### What it rests on (docs/FOREVER-PROBE.md, "The compass, first round", 70450)
+
+- `GetPlayerFacing()`: radians counter-clockwise from north, 0 to 2π, wrapping across north.
+- A point's bearing from `UnitPosition` (north, west): `atan2(-east, north)`, east = -west. Facing
+  a node read 0.01 rad from its bearing; an arrow at `bearing - facing` (counter-clockwise from
+  straight ahead) pointed true ahead and to the left.
+- #28's records are good to about a yard at 70 yards (72.7 yd at the start, 72.0 walked, the record
+  1.0 yd off at the gather).
+- `GetPlayerFacing()` is the character's facing, not the camera's (the camera's yaw isn't readable).
+  While the player turns the camera alone (the left mouse button), the arrow follows the character.
+  Said in the README and on the Options page.
+- `UnitOnTaxi("player")` is in the dump; its value on a flight isn't measured yet (round 2).
+
+### Records without icons
+
+The compass aims at #28's records, so they're kept when icons **or** the compass is on:
+`Icons.Keeping()` (radar on, and `icons` or `compass`) gates `Icons.Update`, `Icons.Gathered` and
+the measuring; `Icons.On()` (radar and `icons`) still alone decides whether anything is drawn (no
+frames acquired, no `OnUpdate` for the icons). So with the compass on and icons off, a new node
+still costs its 29 reads once, and nothing changes on the minimap. `NR.Set` clears the records when
+`compass` changes too.
+
+### The target
+
+An alert fires when a node enters at the map's edge, where it isn't measured yet (#28 measures a
+blip only once it's whole: 18 units inside). So the target starts at the alert's blip and is
+refined by its record:
+1. **Chosen at the alert** (`Alert.Fire`, after the cooldown and the skill filter): of the alerted
+   names' blips, those without a record (an unmeasured node) or with a record made this sweep (a new
+   one measured at once), the nearest the player. None: no target for this alert. A target is
+   `{ name, kind, north, west, record, at, misses }`, its world position from the record if it has
+   one, else from the blip (the centroid, within 5.5 units: about 13 yd at zoom 0).
+2. **Refined each radar sweep:** while it has no record, a record of its name within `Icons.MATCH`
+   (in yards, at this sweep's scale) becomes its record, and its position the record's. Once
+   bound, it follows the record (records don't move).
+3. **Seen or missed each sweep:** a blip of its name within `MATCH` of it (projected) is a sighting;
+   two missed sweeps in a row dismiss it (as #28 drops a record). A bound record dropped (two misses,
+   the rim) dismisses it too.
+4. **One at a time:** a later alert's target replaces it.
+
+### The ring
+
+- An unnamed child of **`UIParent`**, centred 160 units below the screen's centre, 120 units across
+  (the probe's draft, which the owner followed). Not movable in this issue. **This amends the UI
+  contract** in CLAUDE.md ("our frames are unnamed children of `Minimap`"): that rule is about never
+  touching the minimap, and the ring isn't on it. It takes no mouse.
+- The ring (`Media\SonarRing.tga`, tinted as the sonar: green for herbs, gold for ore), an arrow on
+  it (Blizzard's upward triangle, `Minimap-PositionArrows`' upper half, 28 units: its zero is up,
+  measured) at `a = wrap(bearing - facing)`, placed at `(-48 sin a, 48 cos a)` and turned by
+  `SetRotation(a)`, and the distance in the middle (`"73 yd"`, updated when the whole number
+  changes).
+- **Per frame while shown** (an `OnUpdate` unset when hidden): one `UnitPosition`, one
+  `GetPlayerFacing`, a `SetPoint` and a `SetRotation`. Nothing allocated.
+
+### Dismissed, hidden
+
+- **Dismissed** (target gone, ring hidden): arrival, within 15 yards horizontally **unless** its
+  record has a height (#41: above or below, so a node on a ledge over the player isn't "arrived");
+  a successful gather of its name within 15 yards of the target (`Icons.Gathered`'s cast; an
+  interrupted cast doesn't count); missed twice or its record dropped; 60 s after the alert (not
+  restarted by sightings); a later alert's target; the setting or the radar off; a loading screen,
+  `PLAYER_ENTERING_WORLD`, a new instance (`UnitPosition`'s fourth value), death; tracking changed
+  (the records are cleared); `UnitOnTaxi("player")`.
+- **Hidden, kept,** while the position or facing reads nil or secret, or no radar sweep succeeded
+  for the idle interval plus 2 s (as #28's icons: the learner's pause, the Gamepad UI, every sweep
+  failing); shown again when both read and a sweep has run. The 60 s still counts.
+- The distance is horizontal: the minimap gives no node height.
+
+### Tests
+
+- The target: chosen at an alert from an unmeasured blip (the centroid's position) and from a
+  record made this sweep; none when every alerted blip has an older record; the nearest of several;
+  bound to the record that appears later within `MATCH`, not to one of another name or farther;
+  missed twice, dismissed; its record dropped, dismissed; replaced by a later alert.
+- Records with the compass on and icons off: measured and kept, no frame, no icon `OnUpdate`; the
+  icons then turned on show them.
+- The ring: the arrow's point and rotation for a node ahead, left, right and behind, across the
+  0/2π wrap, at the measured convention; the distance text; tinted by kind; no mouse; a child of
+  `UIParent`.
+- Every dismissal and hide trigger, one by one (arrival with and without a height, the gather near
+  and far and of another name, the timeout, taxi, death, loading, instance, tracking, the setting,
+  the radar, unreadable position or facing, no sweep), and shown again after a hide.
+- Off: no target, no frame shown, no `OnUpdate`, no extra reads (icons off too).
+- Options and `/nr compass`.
+- Every new test mutation-tested.
+
+### Probe round 2 (`/fp steps nr compass2`, the feature on)
+
+An alert's ring appearing, with a screenshot; riding to the node by the ring alone; arrival
+dismissing it at 15 yards; a node above (no early arrival); the timeout; a flight (`UnitOnTaxi`);
+the camera turned alone (the stated limit); readability over bright and dark ground; the cost of
+the records with icons off.
+
+### Not in this issue
+
+A glow on the node within 15 yards (Lueur's). Moving the ring. A target chosen by the player
+(clicking an icon). Several targets.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock
