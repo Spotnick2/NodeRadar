@@ -34,7 +34,8 @@ live game, WoWInterface (#37).
 
 - **Never move, reparent, resize or hide `Minimap` / `MinimapCluster`.** They're Edit Mode systems
   and a taint minefield (porting guide, "Edit Mode systems"). Our frames are unnamed children of
-  `Minimap`.
+  `Minimap`, except the compass's ring (#29), an unnamed child of `UIParent` that takes no mouse:
+  the rule is about never touching the minimap, and the ring isn't on it.
 - Never reassign a Blizzard global or method; `hooksecurefunc` and our own frames only.
 - The sweep drives the minimap's mouseover and the soft cursor: the soft cursor is turned off after
   every sweep, on every path, and no sweep runs with the Gamepad UI on (`InputUtil.IsGamepadUIEnabled()`,
@@ -45,7 +46,7 @@ live game, WoWInterface (#37).
 ## Layout
 
 TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Icons.lua` → `Options.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`Icons.lua` → `Compass.lua` → `Options.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
   failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
@@ -77,6 +78,13 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   MiniMap, nothing embedded; any failure latches to bronze) or a bronze ring (Blizzard's
   `MiniMap-TrackingBorder` as LibDBIcon lays it out); auto follows the minimap. One `bind` sets a
   frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
+- `Compass.lua` (#29, `compass`, experimental, off by default): a ring under the character whose
+  arrow points at the alerted node (`atan2(-east, north) - GetPlayerFacing()`, measured). It only
+  points at a measured record: an alert leaves a pending target that the first record of its names
+  made after it resolves (15 s), and it stops within 15 yards (the glow is Lueur's). Records are
+  kept while icons or the compass is on (`Icons.Keeping`); `Icons.On` alone draws icons.
+  `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` (`Compass.Alerted`) →
+  `Learn.Consider`, then a learner experiment just started clears both.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

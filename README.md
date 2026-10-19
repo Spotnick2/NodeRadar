@@ -50,6 +50,12 @@ turn on Find Herbs or Find Minerals.
   Each icon sits in a frame that follows your minimap: a glass disc with Glass MiniMap, a bronze
   ring like Blizzard's minimap buttons otherwise (or none, or the one you pick), small, medium or
   large, with a small arrow when the node is above or below you.
+- **Experimental: a compass toward the node** (`/nr compass`, off by default). When a node alerts,
+  a small ring under your character points toward it with the distance, so you can ride there
+  without watching the minimap. It points at a node of the alerted name, the first one NodeRadar
+  measures (it may be one already in view), and stops within 15 yards (for a glow on the node
+  itself, Lueur does that well). It follows your character's facing, not the camera's: turning the
+  camera alone doesn't turn it.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not
@@ -65,7 +71,7 @@ notification, sci-fi HUD ping), the sonar on the node, a chat line (each node wi
 map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
 can't be told), Blizzard's ping, the time
 between alerts, a test button; only nodes you can gather; Blizzard's dots or item icons on the
-minimap, the icon's frame and size; learning by toggling tracking.
+minimap, the icon's frame and size; the experimental compass; learning by toggling tracking.
 
 ## Commands
 
@@ -78,6 +84,7 @@ minimap, the icon's frame and size; learning by toggling tracking.
 - `/nr icons`: each node's item icon on the minimap instead of Blizzard's dot (off by default)
 - `/nr iconstyle auto | plain | glass | bronze`: the icon's frame (auto: glass with Glass MiniMap,
   else bronze); `/nr iconsize small | medium | large`
+- `/nr compass`: the experimental compass toward the alerted node (off by default)
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`
