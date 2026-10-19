@@ -8,13 +8,13 @@ dofile("tests/harness.lua")
 
 rawset(_G, "Screenshot", function() WoW.shots = (WoW.shots or 0) + 1 end)
 rawset(_G, "EnumerateFrames", function() return nil end)
-WoW.Methods.AddMaskTexture = function(t, m) t._mask = m end
 
 WoW.tracking[1].active = true
 WoW.BLIP_HALF = 12.5
 WoW.cvars.rotateMinimap = "0"
 WoW.map, WoW.mapPos, WoW.mapSize = 1411, { x = 0.5, y = 0.5 }, { 5287, 3525 }
 local NR = loadAddon()
+NR.db.iconStyle = "plain"                                  -- #28's icon (the looks: test_styles)
 local FP = loadForeverProbe()
 loadProbe()
 local S = FP.Steps

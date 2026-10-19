@@ -5,7 +5,8 @@
 -- new node's centre is measured once (Scan.Centre) and kept as a record in
 -- world yards (UnitPosition: north, west). Later sweeps match records to blips
 -- by name and distance; every frame draws them from the player's position.
--- Off (the default, Blizzard's dots), none of this runs.
+-- Off (the default, Blizzard's dots), none of this runs. Each icon's frame
+-- follows the minimap (#41): glass with Glass MiniMap, else bronze.
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
@@ -20,16 +21,42 @@ Icons.RETRY = 5        -- seconds before a blip that failed is tried again
 Icons.FORGET = 30      -- seconds unseen before a failed try is forgotten
 Icons.GATHERED = 15    -- yards: a gather drops the records of its name this near the player
 Icons.GRACE = 2        -- seconds past the idle interval without a sweep before the icons hide
-Icons.SIZE = 12        -- map units (the dot is about 8)
-Icons.FADE = 4         -- map units of fading before the icon's edge meets the rim
+Icons.SIZE = 12        -- map units: the medium icon (the dot is about 8), what the looks are built at
+Icons.FADE = 4         -- map units of fading before the look's edge meets the rim
 Icons.DIM = 0.6        -- alpha of a node the player can't gather
 Icons.FALLBACK = { herbs = 2383, ore = 2580 }   -- Find Herbs, Find Minerals: their icons
 
-local records = {}     -- { name, kind, north, west, icon, misses, dim, x, y, frame }
+-- The look (#41, docs/PLAN.md "Icon styles and sizes"): the icon's size, and
+-- its frame following the minimap: glass with Glass MiniMap, bronze otherwise.
+Icons.SIZES = { small = 10, medium = 12, large = 14 }
+Icons.STYLES = { auto = true, plain = true, glass = true, bronze = true }
+Icons.GLASS_MINOR = 6  -- LibGlass-1.0's clean preset (r6); Disc is r2
+Icons.ARROW = 8        -- map units: our height arrow (Blizzard's is hidden by a ring, #41)
+-- Half of what each look draws, at an icon of `s`: the rim fades and drops by it.
+Icons.EXTENT = {
+    plain = function(s) return s / 2 end,
+    glass = function(s) return s * 0.75 end,        -- the disc, 1.5 times the icon
+    bronze = function(s) return s * 31 / 34 end,    -- the button, 31/17 times the icon
+}
+
+-- Blizzard's round minimap button as LibDBIcon lays it out on a 31-unit button
+-- (bronze round, docs/FOREVER-PROBE.md): the ring 53 at its top left, the dark
+-- background 20 at (7, -5), the icon 17 at (7, -6).
+local RING, RING_BG = 136430, 136467    -- MiniMap-TrackingBorder, UI-Minimap-Background
+local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local ARROWS = "Interface\\Minimap\\Minimap-PositionArrows"
+
+local records = {}     -- { name, kind, north, west, icon, misses, dim, height, x, y, frame }
 local tries = {}       -- { name, north, west, at, seen }: blips that failed to measure
 local free = {}        -- hidden frames, reused
 local lastSweep        -- when the icons last reconciled
 local instance         -- UnitPosition's fourth value at that sweep
+local look = { style = "plain", size = Icons.SIZE, extent = Icons.SIZE / 2 }   -- the effective look
+-- LibGlass, borrowed from Glass MiniMap (nothing embedded): nil untried, false
+-- failed for the session (the latch), else our clean instance.
+local glass
+local glassMiniMap     -- nil unread, else whether Glass MiniMap is loaded
+local restyle          -- the glass latch tripped during a pass: bind everything again
 
 local driver = CreateFrame("Frame")
 
@@ -68,9 +95,189 @@ local function acquire()
     f.tex = f:CreateTexture(nil, "ARTWORK")
     f.tex:SetAllPoints(f)
     f.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- the icon's border trimmed
+    -- The height arrow, over any look (the glass's top is its host's level + 10).
+    f.arrowFrame = CreateFrame("Frame", nil, f)
+    f.arrowFrame:EnableMouse(false)
+    f.arrowFrame:SetAllPoints(f)
+    f.arrowFrame:SetFrameLevel(f:GetFrameLevel() + 12)
+    f.arrow = f.arrowFrame:CreateTexture(nil, "OVERLAY")
+    f.arrow:SetTexture(ARROWS)
+    f.arrow:SetSize(Icons.ARROW, Icons.ARROW)
+    f.arrowFrame:Hide()
     f:Hide()
     Icons._test.frames = Icons._test.frames + 1
     return f
+end
+
+--------------------------------------------------------------------------------
+-- The looks (#41)
+--------------------------------------------------------------------------------
+
+-- The glass failed: no glass again this session, and everything is bound again
+-- (to bronze) when the pass that tripped it ends (Codex, #41).
+local function glassFailed(why)
+    glass = false
+    restyle = true
+    API.Fail("glass", why)
+end
+
+-- Our LibGlass instance, or nil: the copy a Glass addon loaded, minor 6 or more.
+local function glassInst()
+    if glass ~= nil then return glass or nil end
+    local stub = rawget(_G, "LibStub")
+    if not stub then
+        glassFailed("LibGlass-1.0 isn't loaded (glass needs Glass MiniMap)")
+        return nil
+    end
+    local ok, lib, minor = pcall(stub, "LibGlass-1.0", true)
+    if not (ok and lib) then
+        glassFailed("LibGlass-1.0 isn't loaded (glass needs Glass MiniMap)")
+        return nil
+    end
+    if not (API.Num(minor) and minor >= Icons.GLASS_MINOR) then
+        glassFailed("LibGlass-1.0 minor " .. tostring(minor) .. " is older than " .. Icons.GLASS_MINOR)
+        return nil
+    end
+    local okNew, inst = pcall(lib.New, lib, { preset = "clean" })
+    if not (okNew and type(inst) == "table") then
+        glassFailed("LibGlass-1.0 New: " .. tostring(inst))
+        return nil
+    end
+    glass = inst
+    return inst
+end
+
+local function hasGlassMiniMap()
+    if glassMiniMap == nil then
+        local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, "GlassMiniMap")
+        glassMiniMap = ok and API.Yes(loaded) or false
+    end
+    return glassMiniMap
+end
+
+-- The effective look from the settings: an unknown value is the default, auto
+-- follows the minimap, glass that can't be had is bronze.
+local function resolve()
+    local db = NR.db
+    local size = Icons.SIZES[db.iconSize] or Icons.SIZES[NR.DEFAULTS.iconSize]
+    local style = Icons.STYLES[db.iconStyle] and db.iconStyle or NR.DEFAULTS.iconStyle
+    if style == "auto" then style = hasGlassMiniMap() and "glass" or "bronze" end
+    if style == "glass" and not glassInst() then style = "bronze" end
+    look = { style = style, size = size, extent = Icons.EXTENT[style](size) }
+    return look
+end
+
+-- A glass disc as Glass MiniMap's Ring.AddDisc builds one, at the medium size:
+-- a square host, the icon inset a quarter of its size, masked round. Built
+-- hidden, shown only once whole (Disc isn't transactional: Codex, #41).
+local function buildGlass(f, inst)
+    local host = CreateFrame("Frame", nil, f)
+    host:Hide()
+    host:EnableMouse(false)
+    local size = Icons.SIZE * 1.5
+    host:SetSize(size, size)
+    host:SetPoint("CENTER", f, "CENTER")
+    local ok, err = pcall(function()
+        local g = inst.Disc(host, "disc_small")
+        if type(g) == "table" and g.top then g.top:EnableMouse(false) end
+        local inset = Icons.SIZE / 4
+        local icon = host:CreateTexture(nil, "ARTWORK")
+        icon:SetPoint("TOPLEFT", host, "TOPLEFT", inset, -inset)
+        icon:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+        icon:AddMaskTexture(inst.Mask(host, "disc_mask_small", nil, inset))
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        host.icon = icon
+    end)
+    if not ok then
+        glassFailed("Disc: " .. tostring(err))
+        return nil
+    end
+    return host
+end
+
+-- Blizzard's round button, at the medium size; SetScale resizes it, the
+-- offset scaling with it, so the icon's centre stays on the node.
+local function buildBronze(f)
+    local k = Icons.SIZE / 17
+    local host = CreateFrame("Frame", nil, f)
+    host:Hide()
+    host:EnableMouse(false)
+    host:SetSize(31 * k, 31 * k)
+    host:SetPoint("CENTER", f, "CENTER", 0, -1 * k)  -- the icon's centre is 1 above the button's
+    local ring = host:CreateTexture(nil, "OVERLAY")
+    ring:SetSize(53 * k, 53 * k)
+    ring:SetTexture(RING)
+    ring:SetPoint("TOPLEFT", host, "TOPLEFT")
+    local bg = host:CreateTexture(nil, "BACKGROUND")
+    bg:SetSize(20 * k, 20 * k)
+    bg:SetTexture(RING_BG)
+    bg:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -5 * k)
+    local icon = host:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(Icons.SIZE, Icons.SIZE)
+    icon:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -6 * k)
+    local mask = host:CreateMaskTexture()
+    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(icon)
+    icon:AddMaskTexture(mask)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    host.icon = icon
+    return host
+end
+
+-- A frame shows its record in the effective look: the look built if needed,
+-- the others hidden, its icon, dim and arrow set, then shown (Codex, #41: a
+-- cached look switched to between sweeps never shows another record's state).
+local function bind(r)
+    local f = r.frame
+    local style, size = look.style, look.size
+    if style == "glass" and f.glass == nil then
+        local inst = glassInst()
+        f.glass = inst and buildGlass(f, inst) or false
+    end
+    if style == "glass" and not (f.glass and glass) then style = "bronze" end
+    if style == "bronze" and not f.bronze then f.bronze = buildBronze(f) end
+    local host = style == "glass" and f.glass or style == "bronze" and f.bronze or nil
+    if f.glass and f.glass ~= host then f.glass:Hide() end
+    if f.bronze and f.bronze ~= host then f.bronze:Hide() end
+    f:SetSize(size, size)
+    if host then
+        host:SetScale(size / Icons.SIZE)
+        host.icon:SetTexture(r.icon)
+        host.icon:SetDesaturated(r.dim)
+        f.tex:Hide()
+        host:Show()
+    else
+        f.tex:SetTexture(r.icon)
+        f.tex:SetDesaturated(r.dim)
+        f.tex:Show()
+    end
+    if r.height == "above" or r.height == "below" then
+        local up = r.height == "above"
+        f.arrow:SetTexCoord(0, 1, up and 0 or 0.5, up and 0.5 or 1)
+        f.arrow:ClearAllPoints()
+        f.arrow:SetPoint("CENTER", f, "CENTER", 0, (up and 1 or -1) * (Icons.EXTENT[style](size) + 2))
+        f.arrowFrame:Show()
+    else
+        f.arrowFrame:Hide()
+    end
+end
+
+-- Every shown record bound again; once more if the glass latch tripped meanwhile.
+local function bindAll()
+    for _ = 1, 2 do
+        restyle = false
+        resolve()
+        for _, r in ipairs(records) do
+            if r.frame and r.misses == 0 then bind(r) end
+        end
+        if not restyle then return end
+    end
+end
+
+-- The style or size changed (NR.Set): every icon shown in the new look now.
+function Icons.Restyle()
+    if not Icons.On() then return end
+    bindAll()
 end
 
 local function stop()
@@ -120,7 +327,7 @@ local function draw()
     end
     local half = w / 2
     local k = radius / half
-    local edge = half - Icons.SIZE / 2
+    local edge = half - look.extent
     for _, r in ipairs(records) do
         local f = r.frame
         if f and r.misses == 0 then
@@ -161,6 +368,7 @@ function Icons.Update(result, now)
     instance = inst
     local half = g.w / 2
     local k = where.radius / half
+    resolve()
 
     local blips = {}
     for _, b in ipairs(result.blips) do
@@ -184,6 +392,7 @@ function Icons.Update(result, now)
         if not matched[p.r] and not p.b.record then
             matched[p.r] = true
             p.b.record = p.r
+            p.r.height = p.b.height                -- nil too: an arrow never outlives its height
         end
     end
 
@@ -191,7 +400,7 @@ function Icons.Update(result, now)
     local kept = {}
     for _, r in ipairs(records) do
         r.misses = matched[r] and 0 or r.misses + 1
-        if r.misses >= 2 or dist(r.x, r.y) >= half - Icons.SIZE / 2 then
+        if r.misses >= 2 or dist(r.x, r.y) >= half - look.extent then
             release(r)
         else
             if r.misses > 0 and r.frame then r.frame:Hide() end
@@ -226,7 +435,7 @@ function Icons.Update(result, now)
         for _, b in ipairs(measure) do
             if b.cx then
                 local r = { name = b.name, kind = NR.Learn.Kind(b.name), north = pn + b.cy * k, west = pw - b.cx * k,
-                            misses = 0, x = b.cx, y = b.cy }
+                            misses = 0, x = b.cx, y = b.cy, height = b.height }
                 r.icon = iconOf(r.name, r.kind)
                 records[#records + 1] = r
                 b.record = r
@@ -243,18 +452,18 @@ function Icons.Update(result, now)
     end
     tries = keptTries
 
-    -- Shown: every record seen this sweep, dimmed as the alert's skill rule says.
+    -- Shown: every record seen this sweep, dimmed as the alert's skill rule
+    -- says, each frame bound to its record in the look.
     lastSweep = now
     local any = false
     for _, r in ipairs(records) do
         if r.misses == 0 then
             r.dim = not NR.Alert.Gatherable(r.name)
             if not r.frame then r.frame = acquire() end
-            r.frame.tex:SetTexture(r.icon)
-            r.frame.tex:SetDesaturated(r.dim)
             any = true
         end
     end
+    bindAll()
     if any then
         driver:SetScript("OnUpdate", draw)
         draw()
@@ -288,4 +497,5 @@ function Icons.At(b)
 end
 
 Icons._test = { frames = 0, records = function() return records end, tries = function() return tries end,
-                draw = draw, driver = driver }
+                draw = draw, driver = driver, look = function() return look end,
+                reset = function() glass, glassMiniMap, restyle, free = nil, nil, nil, {} end }

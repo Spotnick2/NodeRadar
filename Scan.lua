@@ -47,7 +47,27 @@ function Scan.Plain(s)
     return (s:match("^%s*(.-)%s*$"))
 end
 
--- The names under the mouseover, or throws: a secret answer fails the sweep.
+-- A row's height arrow (#41): the minimap marks a node above or below the
+-- player with Minimap-PositionArrows' upper half (texels 0-16 of 32) or lower
+-- half (16-32), measured on 70450. "above", "below", or "level" (no arrow, or
+-- one not seen before). Its texture coordinates, never a display string.
+function Scan.Height(row)
+    if not row:find("Minimap-PositionArrows", 1, true) then return "level" end
+    local top, bottom = row:match("Minimap%-PositionArrows[^|]-:(%d+):(%d+)|t")
+    if top == "0" and bottom == "16" then return "above" end
+    if top == "16" and bottom == "32" then return "below" end
+    return "level"
+end
+
+-- Two observations of a node's height as one: the same, or "mixed" (Codex,
+-- #41: a cluster can hold two nodes of a name at different heights).
+local function fold(a, b)
+    if a == nil or a == b then return b end
+    return "mixed"
+end
+
+-- The names under the mouseover and their heights ({ [name] = height }, the
+-- name's rows folded), or throws: a secret answer fails the sweep.
 local function names()
     local data = C_TooltipInfo.GetMinimapMouseover()
     if data == nil then return nil end
@@ -55,7 +75,7 @@ local function names()
     local lines = data.lines
     if API.IsSecret(lines) then error("the mouseover reads secret", 0) end
     if type(lines) ~= "table" then return nil end
-    local list
+    local list, heights
     for _, line in ipairs(lines) do
         local t = type(line) == "table" and line.leftText or nil
         if API.IsSecret(t) then error("a mouseover line reads secret", 0) end
@@ -63,13 +83,14 @@ local function names()
             for row in t:gmatch("[^\n]+") do
                 local name = Scan.Plain(row)
                 if name ~= "" then
-                    list = list or {}
+                    list, heights = list or {}, heights or {}
                     list[#list + 1] = name
+                    heights[name] = fold(heights[name], Scan.Height(row))
                 end
             end
         end
     end
-    return list
+    return list, heights
 end
 
 -- Cells that touch (8 neighbours) are one cluster: { name, cells = { cell, ... } }.
@@ -110,12 +131,12 @@ local function sample(g, step, x0, y0, x1, y1, cells, want)
         local col = 0
         for ox = x0 + step / 2, x1, step do
             Minimap:UpdateMouseoverAtPoint((g.l + ox) * g.es, (g.b + oy) * g.es)
-            local found = names()
+            local found, heights = names()
             if found then
                 for _, name in ipairs(found) do
                     if want == nil or name == want then
                         cells[name] = cells[name] or {}
-                        cells[name][col .. ":" .. row] = { ox, oy, col = col, row = row }
+                        cells[name][col .. ":" .. row] = { ox, oy, col = col, row = row, height = heights[name] }
                     end
                 end
             end
@@ -149,11 +170,16 @@ local function refine(cl, g, step, count)
     return out
 end
 
--- A blip at the centre of its cells, in the map's units from its centre, as drawn.
+-- A blip at the centre of its cells, in the map's units from its centre, as
+-- drawn. Its height is "above" or "below" when all its cells agree, else nil.
 local function blip(name, members, g)
-    local sx, sy = 0, 0
-    for _, c in ipairs(members) do sx, sy = sx + c[1], sy + c[2] end
-    return { name = name, x = sx / #members - g.w / 2, y = sy / #members - g.h / 2, cells = #members }
+    local sx, sy, h = 0, 0, nil
+    for _, c in ipairs(members) do
+        sx, sy = sx + c[1], sy + c[2]
+        h = fold(h, c.height)
+    end
+    return { name = name, x = sx / #members - g.w / 2, y = sy / #members - g.h / 2, cells = #members,
+             height = (h == "above" or h == "below") and h or nil }
 end
 
 -- Where the sweep was taken, for a blip's map coordinates (#27): the player's

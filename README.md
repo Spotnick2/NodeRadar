@@ -47,6 +47,9 @@ turn on Find Herbs or Find Minerals.
   of Blizzard's yellow dot, dimmed when your skill can't gather it yet (`/nr icons`, off by
   default). NodeRadar measures where each new node is once and keeps it in place
   as you move; near the map's edge, and where nodes of one name crowd together, the dot shows.
+  Each icon sits in a frame that follows your minimap: a glass disc with Glass MiniMap, a bronze
+  ring like Blizzard's minimap buttons otherwise (or none, or the one you pick), small, medium or
+  large, with a small arrow when the node is above or below you.
 
 **Limits:** names are what it goes by. A quest or NPC with exactly a node's name would be taken for
 one. A node leaving the map's edge in the same half second another of its name comes in may not
@@ -62,7 +65,7 @@ notification, sci-fi HUD ping), the sonar on the node, a chat line (each node wi
 map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
 can't be told), Blizzard's ping, the time
 between alerts, a test button; only nodes you can gather; Blizzard's dots or item icons on the
-minimap; learning by toggling tracking.
+minimap, the icon's frame and size; learning by toggling tracking.
 
 ## Commands
 
@@ -73,6 +76,8 @@ minimap; learning by toggling tracking.
   everyone's minimap)
 - `/nr skill`: alert only for nodes your skill can gather (on by default)
 - `/nr icons`: each node's item icon on the minimap instead of Blizzard's dot (off by default)
+- `/nr iconstyle auto | plain | glass | bronze`: the icon's frame (auto: glass with Glass MiniMap,
+  else bronze); `/nr iconsize small | medium | large`
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`

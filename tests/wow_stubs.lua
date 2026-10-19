@@ -189,6 +189,9 @@ function Methods.GetWidth(w) return w._width end
 function Methods.GetHeight(w) return w._height end
 function Methods.GetSize(w) return w._width, w._height end
 function Methods.GetEffectiveScale(w) return w._effScale or 1 end
+function Methods.SetScale(w, s) w._scale = s end
+function Methods.GetScale(w) return w._scale or 1 end
+function Methods.AddMaskTexture(t, m) t._mask = m end
 function Methods.SetAlpha(w, a) w._alpha = a end
 function Methods.GetAlpha(w) return w._alpha or 1 end
 function Methods.GetParent(w) return w._parent end

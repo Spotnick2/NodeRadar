@@ -62,6 +62,28 @@ O.panel:Hide(); O.panel:Show()
 eq(checked("icons"), true, "...shown on the page")
 SlashCmdList.NODERADAR("icons")
 eq(db.icons, false, "/nr icons again: off")
+-- The icon's frame and size (#41): following the minimap and medium by default.
+eq(checked("iconStyle"), "auto", "the frame: follow the minimap checked")
+eq(checked("iconSize"), "medium", "the size: medium checked")
+eq(#O.radios.iconStyle, 4, "four frames: follow the minimap, none, glass, bronze")
+WoW.click(O.radios.iconStyle[4])
+eq(rawget(db, "iconStyle"), "bronze", "bronze chosen")
+WoW.click(O.radios.iconSize[3])
+eq(rawget(db, "iconSize"), "large", "large chosen")
+SlashCmdList.NODERADAR("iconstyle glass")
+eq(db.iconStyle, "glass", "/nr iconstyle glass")
+SlashCmdList.NODERADAR("iconsize small")
+eq(db.iconSize, "small", "/nr iconsize small")
+SlashCmdList.NODERADAR("iconstyle neon")
+eq(db.iconStyle, "glass", "/nr iconstyle neon: refused, glass kept")
+O.panel:Hide(); O.panel:Show()
+eq(checked("iconStyle"), "glass", "...shown on the page")
+eq(checked("iconSize"), "small", "...the size too")
+db.iconStyle = "neon"                                      -- a value no choice offers, from the file
+O.panel:Hide(); O.panel:Show()
+eq(checked("iconStyle"), nil, "an unknown frame: none checked")
+eq(db.iconStyle, "neon", "...and kept")
+db.iconStyle, db.iconSize = nil, nil
 
 -- A click saves the choice, raw (only what the player sets is saved).
 WoW.click(O.radios.interval[3])

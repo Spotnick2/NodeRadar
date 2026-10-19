@@ -69,6 +69,10 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   (`UnitPosition`: north, west), matched to each radar sweep's blips by name within 8 units,
   drawn every frame as unnamed mouse-through children of `Minimap`; `NR.Step` reconciles them
   before the alert and the learner. Off, nothing runs. docs/PLAN.md has every rule.
+  The look (#41, `iconStyle`, `iconSize`): plain, a glass disc (LibGlass borrowed from Glass
+  MiniMap, nothing embedded; any failure latches to bronze) or a bronze ring (Blizzard's
+  `MiniMap-TrackingBorder` as LibDBIcon lays it out); auto follows the minimap. One `bind` sets a
+  frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.
