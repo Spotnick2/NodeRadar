@@ -562,30 +562,54 @@ a GUID; Forever draws no waypoint marker).
 
 ### Records without icons
 
-The compass aims at #28's records, so they're kept when icons **or** the compass is on:
-`Icons.Keeping()` (radar on, and `icons` or `compass`) gates `Icons.Update`, `Icons.Gathered` and
-the measuring; `Icons.On()` (radar and `icons`) still alone decides whether anything is drawn (no
-frames acquired, no `OnUpdate` for the icons). So with the compass on and icons off, a new node
-still costs its 29 reads once, and nothing changes on the minimap. `NR.Set` clears the records when
-`compass` changes too.
+The compass aims at #28's records, so they're kept while icons **or** the compass is on, and each
+setting does only its own part (Codex, #29):
+- `Icons.Keeping()` (radar on, and `icons` or `compass`) gates `Icons.Update`'s matching and
+  measuring and `Icons.Gathered`.
+- `Icons.On()` (radar on and `icons`) alone gates **everything drawn**: in `Icons.Update`'s last
+  part, acquiring frames, `bindAll` (so no look is resolved and no glass is built for the compass
+  alone) and the driver's `OnUpdate`. Not just `draw()`: by then the frames would exist.
+- **Settings:** the radar off, or both off: records cleared. `icons` off with the compass on: the
+  icon frames released and the driver stopped, the records kept. `icons` on: the records kept are
+  bound and drawn at once. `compass` off: its target dismissed, the records kept while icons are on.
+  `compass` on: nothing to do until the next sweep.
+
+With the compass on and icons off, a new node still costs its 29 reads once, and nothing changes
+on the minimap.
 
 ### The target
 
 An alert fires when a node enters at the map's edge, where it isn't measured yet (#28 measures a
-blip only once it's whole: 18 units inside). So the target starts at the alert's blip and is
-refined by its record:
-1. **Chosen at the alert** (`Alert.Fire`, after the cooldown and the skill filter): of the alerted
-   names' blips, those without a record (an unmeasured node) or with a record made this sweep (a new
-   one measured at once), the nearest the player. None: no target for this alert. A target is
-   `{ name, kind, north, west, record, at, misses }`, its world position from the record if it has
-   one, else from the blip (the centroid, within 5.5 units: about 13 yd at zoom 0).
-2. **Refined each radar sweep:** while it has no record, a record of its name within `Icons.MATCH`
-   (in yards, at this sweep's scale) becomes its record, and its position the record's. Once
-   bound, it follows the record (records don't move).
-3. **Seen or missed each sweep:** a blip of its name within `MATCH` of it (projected) is a sighting;
-   two missed sweeps in a row dismiss it (as #28 drops a record). A bound record dropped (two misses,
-   the rim) dismisses it too.
-4. **One at a time:** a later alert's target replaces it.
+blip only once it's whole: 18 units inside). An unmeasured position isn't one to point at: a blip's
+centroid is within 5.5 units of an isolated node, but a merged pair of a name or a blip clipped at
+the rim can be farther off, by no bound we have (Codex, #29, round 2). So **the compass only ever
+points at a measured record**, and an alert waits for one:
+
+1. **The alert** (`Alert.Fire`, after the cooldown and the skill filter; not while dead or on a
+   taxi) leaves a **pending** target: its names and the time. If a record of one of those names was
+   made this very sweep (a node measured at once), the nearest such record is the target at once.
+2. **Pending → target:** at each radar sweep, the first record of a pending name **made after the
+   alert** (the nearest, when several are made in one sweep) becomes the target. None within 15 s of
+   the alert: the pending target lapses, and nothing is shown. A crowded node (never measured) is
+   never a target: stated.
+3. A target is `{ name, kind, north, west, record, height, at }`: the record's world position and
+   height, the alert's time.
+   - **A heuristic, stated as one:** the alert knows a name's count rose, not which blip is new
+     (`Alert.Update`). So the target is the first node of an alerted name measured after the alert,
+     which is usually the new one (it was the unmeasured blip at the rim), but can be an old node of
+     that name measured late. The Options note and the README say "points toward a node of the
+     alerted name, the first one NodeRadar measures; it may be one already in view" (Codex's wording).
+4. **Reconciled each radar sweep**, in `NR.Step` right after `Icons.Update` and **before**
+   `Alert.Update` (which may leave a new pending target) and `Learn.Consider`: seen while its record
+   is kept and matched this sweep; its height follows the record's (nil included). Its record dropped
+   (two misses, or the rim): dismissed, never switched to another node.
+5. **Records cleared for a passing reason** (`Icons.Update` finds no position or no `where`, a
+   rotation): the target **keeps its world position**, drops its record reference and is hidden; the
+   next record of its name made within 3 yards of that position (a node measured again lands within
+   a yard: six halvings of 24 units, about 0.6 yd at zoom 0) becomes its record again. Records
+   cleared for a reason that ends the compass too (below) dismiss it explicitly.
+6. **One at a time:** a later alert's pending target replaces it once that one resolves; until then
+   the current target stays.
 
 ### The ring
 
@@ -599,46 +623,75 @@ refined by its record:
   `SetRotation(a)`, and the distance in the middle (`"73 yd"`, updated when the whole number
   changes).
 - **Per frame while shown** (an `OnUpdate` unset when hidden): one `UnitPosition`, one
-  `GetPlayerFacing`, a `SetPoint` and a `SetRotation`. Nothing allocated.
+  `GetPlayerFacing`, the timeout and arrival checks, a `SetPoint` and a `SetRotation`. Nothing
+  allocated.
 
 ### Dismissed, hidden
 
-- **Dismissed** (target gone, ring hidden): arrival, within 15 yards horizontally **unless** its
-  record has a height (#41: above or below, so a node on a ledge over the player isn't "arrived");
-  a successful gather of its name within 15 yards of the target (`Icons.Gathered`'s cast; an
-  interrupted cast doesn't count); missed twice or its record dropped; 60 s after the alert (not
-  restarted by sightings); a later alert's target; the setting or the radar off; a loading screen,
-  `PLAYER_ENTERING_WORLD`, a new instance (`UnitPosition`'s fourth value), death; tracking changed
-  (the records are cleared); `UnitOnTaxi("player")`.
+- **Arrival:** within 15 yards horizontally of the record, unless the target has a height (above
+  or below: a node on a ledge over the player isn't "arrived"; it ends at the timeout or the gather
+  instead).
+- **Dismissed** (target gone, ring hidden): arrival; a successful gather of its name within 15
+  yards of the target (`Icons.Gathered`'s cast; an interrupted cast doesn't count; another node of
+  that name within 15 yards counts too: an approximation, as there's no node identity); its record
+  dropped; 60 s after the alert (not restarted by sightings); a later alert's
+  target; `compass` or the radar off; a loading screen, `PLAYER_ENTERING_WORLD`, a new instance
+  (`UnitPosition`'s fourth value), death; tracking changed (`MINIMAP_UPDATE_TRACKING`);
+  `UnitOnTaxi("player")`.
+- **The learner, explicitly** (Codex, round 2: `Learn.Consider` only calls `C_Minimap.SetTracking`,
+  and when the client delivers `MINIMAP_UPDATE_TRACKING` isn't established): right after
+  `Learn.Consider`, `NR.Step` checks `Learn.Busy()`; an experiment just started dismisses the target
+  and the pending one and clears the records, whether the event comes now, later or not at all.
 - **Hidden, kept,** while the position or facing reads nil or secret, or no radar sweep succeeded
   for the idle interval plus 2 s (as #28's icons: the learner's pause, the Gamepad UI, every sweep
-  failing); shown again when both read and a sweep has run. The 60 s still counts.
+  failing). The next usable sweep's reconciliation shows it again and re-arms its `OnUpdate`, **after**
+  checking the 60 s, so a target that expired while hidden never reappears.
 - The distance is horizontal: the minimap gives no node height.
 
 ### Tests
 
-- The target: chosen at an alert from an unmeasured blip (the centroid's position) and from a
-  record made this sweep; none when every alerted blip has an older record; the nearest of several;
-  bound to the record that appears later within `MATCH`, not to one of another name or farther;
-  missed twice, dismissed; its record dropped, dismissed; replaced by a later alert.
-- Records with the compass on and icons off: measured and kept, no frame, no icon `OnUpdate`; the
-  icons then turned on show them.
+- The pending target: an alert whose node isn't measured shows nothing; the record made for it a
+  sweep later becomes the target; a record made the same sweep is the target at once; the nearest
+  of two made in one sweep; a record of another name, or one made before the alert, never; lapsed
+  after 15 s without one; **an old node of the name measured late after the alert is chosen** (the
+  stated heuristic); a merged pair (actual `Scan.Sweep` output, refused by `Scan.Centre`) never
+  targeted, nor a rim blip, until measured.
+- Lifetime: its record dropped at the rim or by retreating, dismissed, never switched; a later
+  alert replaces it only once its own pending target resolves; records cleared for a passing reason
+  (no `where`) through `NR.Step`: hidden, kept, bound again to the re-measured record within 3 yd
+  (not to one farther, nor of another name), the alert time unchanged; expired while hidden: not
+  shown again; the height following the record, cleared when level.
+- The order in `NR.Step`: reconciled before the alert; **the learner starting in the same step,
+  with `MINIMAP_UPDATE_TRACKING` delivered later or never**: no target, no pending one, no ring, no
+  `OnUpdate`, no records.
+- Settings: icons off with the compass on keeps the records and draws nothing (no frame acquired,
+  no look resolved, no glass built, no icon `OnUpdate`); icons on then shows them; compass off
+  dismisses the target and keeps the records for the icons; both off clears them.
 - The ring: the arrow's point and rotation for a node ahead, left, right and behind, across the
   0/2π wrap, at the measured convention; the distance text; tinted by kind; no mouse; a child of
   `UIParent`.
-- Every dismissal and hide trigger, one by one (arrival with and without a height, the gather near
-  and far and of another name, the timeout, taxi, death, loading, instance, tracking, the setting,
-  the radar, unreadable position or facing, no sweep), and shown again after a hide.
+- Every dismissal and hide trigger, one by one: arrival with and without a height; the gather near,
+  far, and of another node of the name within 15 yards; the timeout; taxi; death, and **no pending
+  target while dead**; loading; instance; tracking; the setting; the radar; unreadable position or
+  facing; no sweep; and shown again after a hide.
 - Off: no target, no frame shown, no `OnUpdate`, no extra reads (icons off too).
 - Options and `/nr compass`.
 - Every new test mutation-tested.
 
 ### Probe round 2 (`/fp steps nr compass2`, the feature on)
 
-An alert's ring appearing, with a screenshot; riding to the node by the ring alone; arrival
-dismissing it at 15 yards; a node above (no early arrival); the timeout; a flight (`UnitOnTaxi`);
-the camera turned alone (the stated limit); readability over bright and dark ground; the cost of
-the records with icons off.
+- An alert at the rim: how long until its node is measured and the ring appears (the log times
+  it), riding toward it and riding across; a zoom meanwhile; a crowded node that never gets a ring;
+  riding away until the record drops.
+- Riding to the node by the ring alone; arrival dismissing it at 15 yards; a node above (no early
+  arrival).
+- The timeout.
+- A flight: the step waits for `UnitOnTaxi` to read **true** before it accepts a landing.
+- The camera turned alone (the stated limit).
+- In combat and in Edit Mode: no error, no blocked action; a click through the ring reaches the
+  world.
+- Readability over bright and dark ground.
+- The cost of the records with icons off, with the whole compass running.
 
 ### Not in this issue
 
