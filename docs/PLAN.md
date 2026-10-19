@@ -444,8 +444,9 @@ ore NodeRadar doesn't know yet, until it's learned.
 step 4: "Silverleaf at most x1", "Peacebloom at most x1"). The tooltip lists a name once at a point
 however many of its dots cover it (or no overlap was in view; both other addons read the outline
 instead, which they'd hardly do if a count were there). So a heavily overlapping pair (centres under
-about 13 units apart) can't be told from one node by reading alone: **the stated limit**, one icon
-over both, covering them only in part (Codex's (2.75, 2.75) and (10.95, 10.95)).
+about 13 units apart) isn't reliably separated by this bounded sampling and peeling (targeted
+outline reads could tell some apart: not attempted): **the stated limit**, one icon over both,
+covering them only in part (Codex's (2.75, 2.75) and (10.95, 10.95)).
 
 **The principle: explain every cell.** A blip's sampled cells (`b.points`, #66) are where its name
 reads. A cell is **explained** when it lies inside a known node's square of its name, with a
@@ -496,7 +497,8 @@ four blips a sweep and the 5 s retry kept):
   leave its middle node unpeelable** at some phases of the sweep's grid (every walk across from its
   exposed edges crosses an outer node, which still reads: (1, 1), (14, 14), (27, 27)), so the
   middle gets a provisional icon, not an exact one; a same-name area that isn't a node, shaped like
-  squares, would be peeled as nodes. Pairs, the owner's case, are exact at every phase.
+  squares, would be peeled as nodes. Pairs, the owner's case, are exact at every phase **when their
+  centres are at least `NODE / 2` apart on the peeled axis**; closer, partial cover (above).
 
 **2. Provisional icons for cells still unexplained** after the sweep's measuring, whatever matched or
 covered the rest of the blip (Codex): the unexplained cells, grouped (8-neighbour, at the sweep's
@@ -524,10 +526,12 @@ lopsided diagonal ((-19, -16) and (-6, 11)): both; **pairs at several phases of 
 same pair shifted by 1, 3 and 5 units): always both exact; a pair with one record already: the
 other peeled, no duplicate; the boundary column ((-10, -5) and (16, -5)): explained, no retry past
 RETRY, no stray provisional; a compact triple ((0, 0), (13, 13), (26, 26)) and shifted
-((1, 1), (14, 14), (27, 27)): the outer two exact, the middle exact or provisional, never a bare
-dot; three in a row 12 apart: the middle one not found (the stated limit); **suspension**: a
-shape left unexplained isn't measured again while unchanged (no reads over sweeps past RETRY),
-re-armed at 5 s when a record is dropped, backing off to 60 s otherwise, **not** re-armed by the
+((1, 1), (14, 14), (27, 27)): the outer two exact, the middle exact or provisional icons that may
+cover it only in part (the shifted one leaves (8, 22) and (22, 8) unexplained, two provisional icons
+beside the middle dot: Codex; accepted, partial cover); a close pair ((2.75, 2.75), (10.95, 10.95)):
+one icon, partial cover (the stated limit); three in a row 12 apart: the middle one not found (the
+stated limit); **suspension**: a shape left unexplained is retried at 5, 10, 20, 40, then 60 s
+(no measuring reads between), re-armed at 5 s when a record is dropped, backing off to 60 s otherwise, **not** re-armed by the
 player moving back and forth (the spot in world terms; Codex), **the read ceiling** (a sweep with many
 merged blips stops at 200 measuring reads); **a merged blip reaching the rim**: its inner node
 peeled, the clipped one refused (provisional, under the rim exception); a lone unmeasured blip: one provisional, a
@@ -538,8 +542,9 @@ compass on; the rim: a clipped blip's provisional faded, as records (the excepti
 or a failure inside a peel: no record, the soft cursor off; the reads (about 25 a node).
 
 **Look round** (`/fp steps nr nodots`): at the owner's pair after a reload, standing still: two icons
-at once; elsewhere, moving: no dot without an icon but in the outer band; `/fp nr icons` lists the
-provisional ones and the peels.
+at once; elsewhere, moving: no dot without an icon but in the outer band and the stated cases (close
+pairs, compact triples, a node inside others); `/fp nr icons` lists the provisional ones and the
+peels.
 
 ## Icon styles and sizes (#41)
 
