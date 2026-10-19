@@ -272,7 +272,7 @@ function Methods.CreateAnimation(ag, atype) return newWidget(atype or "Animation
 function Methods.Play(ag) ag._playing = true end
 function Methods.Stop(ag) ag._playing = false end
 function Methods.IsPlaying(ag) return ag._playing == true end
-function Methods.SetText(fs, text) fs._text = text end
+function Methods.SetText(fs, text) fs._text = text; if fs._type == "GameTooltip" then fs._lines = {} end end
 function Methods.GetText(fs) return fs._text end
 function Methods.SetFont(fs, file, size, flags) fs._font = { file, size, flags }; return true end
 function Methods.SetFontObject(fs, obj) fs._fontObject = obj end
@@ -296,6 +296,8 @@ GameTooltip._shown = false
 function Methods.SetOwner(t, owner, anchor) t._owner, t._anchor = owner, anchor end
 function Methods.GetOwner(t) return t._owner end
 function Methods.SetItemByID(t, id) t._item = id; t._shown = true; return true end
+-- Its lines (#47): SetText starts over, AddLine adds.
+function Methods.AddLine(t, text) t._lines = t._lines or {}; table.insert(t._lines, text) end
 function Methods.SetMouseMotionEnabled(w, v) w._motion = v end
 function Methods.SetMouseClickEnabled(w, v) w._click = v end
 

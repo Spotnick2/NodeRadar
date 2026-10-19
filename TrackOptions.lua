@@ -11,7 +11,9 @@ local Track = NR.Track
 local TrackOptions = {}
 NR.TrackOptions = TrackOptions
 
-local ROW = 40        -- a row's height: the item's line and its nodes' line
+local COLUMNS = 3     -- the owner: a few columns, not a long list
+local COL_W = 205     -- a column's width (three fill the page)
+local ROW = 26        -- a row's height: one line, its nodes in its tooltip
 local SKILL_NAMES = { herbs = "Herbalism", ore = "Mining" }
 
 -- The gathering colours of a node's requirement at a rank: red (not yet),
@@ -45,8 +47,15 @@ local function makePage(kind, name)
     panel:Hide()
     local ui = { panel = panel, rows = {}, asked = {}, buttons = {} }
 
+    -- An item's skills coloured at a rank: "15", or "245-275" when its nodes differ.
+    local function skills(row, rank)
+        local low = ("|c%s%d|r"):format(colour(row.low, rank), row.low)
+        if row.high == row.low then return low end
+        return ("%s-|c%s%d|r"):format(low, colour(row.high, rank), row.high)
+    end
+
     -- Each row from the list: tracked, the item's icon and name (asking the
-    -- client once for one it hasn't), its nodes with their skills coloured.
+    -- client once for one it hasn't), its skills coloured.
     local function refresh()
         if not ui.built then return end
         local rank = Track.Rank(kind)
@@ -62,14 +71,21 @@ local function makePage(kind, name)
             end
             r.icon:SetTexture(okI and API.Num(icon) or nil)
             r.name:SetText(itemName or row.nodes[1].name)
-            local parts = {}
-            for _, n in ipairs(row.nodes) do
-                parts[#parts + 1] = ("%s |c%s%d|r"):format(n.name, colour(n.skill, rank), n.skill)
-            end
-            r.nodes:SetText(table.concat(parts, ", "))
+            r.skill:SetText(skills(row, rank))
         end
     end
     ui.refresh = refresh
+
+    -- A row's tooltip: the item, then each node with its own skill, coloured.
+    local function tooltip(r)
+        local row, rank = r.row, Track.Rank(kind)
+        GameTooltip:SetOwner(r.cell, "ANCHOR_RIGHT")
+        GameTooltip:SetText(Track.ItemName(row) or row.nodes[1].name, 1, 1, 1)
+        for _, n in ipairs(row.nodes) do
+            GameTooltip:AddLine(("%s |c%s%d|r"):format(n.name, colour(n.skill, rank), n.skill), 0.9, 0.9, 0.9)
+        end
+        GameTooltip:Show()
+    end
 
     local function build()
         local scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
@@ -129,23 +145,41 @@ local function makePage(kind, name)
         if #list == 0 then
             why:SetText(("No %s listed for this client's language (%s)."):format(name:lower(), GetLocale()))
         end
+        -- In columns, filled top to bottom then across: the lowest skills first.
+        local perCol = math.max(1, math.ceil(#list / COLUMNS))
         for i, row in ipairs(list) do
-            local check = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+            local col, line = math.floor((i - 1) / perCol), (i - 1) % perCol
+            local cell = CreateFrame("Frame", nil, page)
+            cell:SetSize(COL_W - 5, ROW - 2)
+            cell:SetPoint("TOPLEFT", why, "BOTTOMLEFT", col * COL_W, -8 - line * ROW)
+            cell:EnableMouse(true)
+            local check = CreateFrame("CheckButton", nil, cell, "UICheckButtonTemplate")
             check:SetSize(24, 24)
-            check:SetPoint("TOPLEFT", why, "BOTTOMLEFT", 0, -8 - (i - 1) * ROW)
-            local icon = page:CreateTexture(nil, "ARTWORK")
-            icon:SetSize(20, 20)
-            icon:SetPoint("LEFT", check, "RIGHT", 4, 0)
-            local itemName = label(page, "")
-            itemName:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-            local nodes = label(page, "", "GameFontHighlightSmall")
-            nodes:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -2)
-            nodes:SetWidth(520)
-            nodes:SetJustifyH("LEFT")
+            check:SetPoint("LEFT", cell, "LEFT")
+            local icon = cell:CreateTexture(nil, "ARTWORK")
+            icon:SetSize(18, 18)
+            icon:SetPoint("LEFT", check, "RIGHT", 2, 0)
+            local itemName = label(cell, "")
+            itemName:SetPoint("LEFT", icon, "RIGHT", 5, 0)
+            itemName:SetWidth(112)
+            itemName:SetJustifyH("LEFT")
+            itemName:SetWordWrap(false)
+            local skill = label(cell, "", "GameFontHighlightSmall")
+            skill:SetPoint("LEFT", itemName, "RIGHT", 3, 0)
+            local r = { row = row, cell = cell, check = check, icon = icon, name = itemName, skill = skill }
             check:SetScript("OnClick", function() Track.Set(row.item, check:GetChecked() == true) end)
-            ui.rows[i] = { row = row, check = check, icon = icon, name = itemName, nodes = nodes }
+            -- The name clicks the box too; hovering shows the nodes.
+            cell:SetScript("OnMouseUp", function()
+                check:SetChecked(not check:GetChecked())
+                Track.Set(row.item, check:GetChecked() == true)
+            end)
+            cell:SetScript("OnEnter", function() tooltip(r) end)
+            cell:SetScript("OnLeave", function()
+                if GameTooltip:GetOwner() == cell then GameTooltip:Hide() end
+            end)
+            ui.rows[i] = r
         end
-        page:SetSize(620, 220 + #list * ROW)
+        page:SetSize(620, 230 + perCol * ROW)
         ui.built = true
     end
 

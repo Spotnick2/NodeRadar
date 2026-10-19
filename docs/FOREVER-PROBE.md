@@ -518,3 +518,16 @@ white outlined triangle turning with the bearing, a fixed capsule), no LibGlass.
 | The height arrow on yellow | Silverleaf above: our arrow above the ring, clear of it |
 | The compass's rim yellow | `yellow medium`; liked (yes): yellow on top, darker below, as pearl and bronze |
 | **The narrower arrow** (30 px base) | at 0.52 rad (ahead-left) and -2.48 (behind-right) it points clearly along the slant; the owner: yes at the slants. Ahead-right and behind-left were passed by hand (their screenshots show the arrow straight ahead and straight behind, read right) |
+
+### Choosing herbs and ores: `track`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar, Herbalism 38) (#47)
+
+| What | Measured |
+|---|---|
+| The sub-pages | **Herbs and Ores under NodeRadar** with a +/− (the screenshots), each full on its first visit (yes, yes): `RegisterCanvasLayoutSubcategory` as measured by the siblings |
+| The lists | 28 herb items and 12 ore items in enUS. Herb items share their node's name (Peacebloom gives Peacebloom), so the herbs' rows read the same named or not; the 12 ore rows all had the item's name (Copper Ore, ...) |
+| What smart chose at 38 | Silverleaf, Peacebloom, Earthroot followed; the 25 above 38 skipped (Mageroyal 50 on); ores untouched (no Mining). The owner: right (yes) |
+| A herb skipped (Silverleaf) | its icon dimmed and the compass left it (hidden, no other node) at once (yes); with Blizzard's dot, its record gone and only the dot (yes); tracked again, its icon back at the next sweep |
+| The four presets | each set the list as computed at 38, waited for and logged; the checkboxes followed (yes) |
+| **Smart off, then on** | off: logged. On: the step was passed by hand and answered no; its screenshot shows the list re-applied (skill-ups only) but the Smart box unticked, and smart read off: most likely clicked twice (on, then off, which keeps the list). Round 2 logs every toggle |
+| A node's tooltip in the world | not seen: Next can't be pressed while hovering a node (the owner's note). Round 2 reads it itself |
+| The owner's verdict | "looks perfect in the settings"; "do a few columns instead of a long list" (done: three columns, a tooltip per row); the full test of skipping needs the live game's node density |

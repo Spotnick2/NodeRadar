@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track (#47).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3967,6 +3967,97 @@ local steps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("track", steps)
+
+-- Round 2: the columns, a row's tooltip, smart off and on (each toggle logged),
+-- and a node's own tooltip in the world read by the probe (round 1: Next can't
+-- be pressed while hovering a node).
+local realSetSmart
+local function logSmart(n)
+    if realSetSmart then return end
+    realSetSmart = n.Track.SetSmart
+    n.Track.SetSmart = function(on)
+        say(("SMART %s (was %s)"):format(str(on), str(n.Track.Smart())))
+        return realSetSmart(on)
+    end
+end
+local function unlogSmart(n)
+    if realSetSmart and n then n.Track.SetSmart = realSetSmart end
+    realSetSmart = nil
+end
+
+-- The game's tooltip lines with their colours: "Earthroot [1.00 1.00 1.00] | ...".
+local function tipLines()
+    local out = {}
+    for i = 1, 6 do
+        local fs = rawget(_G, "GameTooltipTextLeft" .. i)
+        local text = ask(fs, "GetText")
+        if type(text) == "string" and text ~= "" then
+            local ok, r, g, b = pcall(fs.GetTextColor, fs)
+            out[#out + 1] = ok and ("%s [%.2f %.2f %.2f]"):format(text, r or -1, g or -1, b or -1) or text
+        end
+    end
+    return table.concat(out, " | ")
+end
+
+local steps2 = {
+    rev = 1,
+    title = "Herbs and Ores in columns, smart again, a node's tooltip (#47)",
+    { text = "Have NodeRadar loaded with Find Herbs on. Your list comes back as it was at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Track and n.TrackOptions) then return false, "NodeRadar (#47) isn't loaded" end
+          trOn(n)
+          logSmart(n)
+          return true, listText(n)
+      end },
+    { text = "Open Esc > Options > AddOns > NodeRadar > Herbs.", wait = pageShown("herbs", "Herbs"),
+      screenshot = "track2: Herbs in columns" },
+    { text = "Herbs in three columns: does every name fit, with its skill beside it? (Note box.)", ask = true },
+    { text = "Hold the mouse on a herb's name in the list.", wait = function()
+          local ui = pageOf("herbs")
+          if not (ui and ui.built) then return false, "the Herbs page isn't built" end
+          local owner = ask(rawget(_G, "GameTooltip"), "GetOwner")
+          for _, r in ipairs(ui.rows) do
+              if owner == r.cell and yes(ask(rawget(_G, "GameTooltip"), "IsShown")) then
+                  return true, tipLines()
+              end
+          end
+          return false, "no row's tooltip yet"
+      end, screenshot = "track2: a row's tooltip" },
+    { text = "Does the tooltip list that herb's node(s) with the skill each needs?", ask = true },
+    { text = "Open Ores.", wait = pageShown("ore", "Ores"), screenshot = "track2: Ores in columns" },
+    { text = "Ores right too? Hover Thorium Ore (bottom right): its veins at 245 and 275?", ask = true },
+    { text = "Back to Herbs. Click Smart once to turn it off.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if n.Track.Smart() then return false, "smart is still on" end
+          return true, listText(n)
+      end },
+    { text = "Click it once more to turn it on, and wait.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if not n.Track.Smart() then return false, "smart is off" end
+          local ui = pageOf("herbs")
+          return true, listText(n) .. "; the box " .. str(ui and ask(ui.smart, "GetChecked"))
+      end, screenshot = "track2: smart on" },
+    { text = "Is Smart ticked, with the herbs you can't gather yet unchecked?", ask = true },
+    { text = "Close Options. Put the mouse on a herb in the world (not the minimap) and keep it there until this "
+          .. "step completes.", wait = function()
+          local n = nr()
+          local tip = rawget(_G, "GameTooltip")
+          if not (n and yes(ask(tip, "IsShown"))) then return false, "no tooltip" end
+          if ask(tip, "GetOwner") == rawget(_G, "Minimap") then return false, "that's the minimap's tooltip" end
+          local first = ask(rawget(_G, "GameTooltipTextLeft1"), "GetText")
+          if not (type(first) == "string" and n.Learn.Kind(first)) then return false, "not a node's tooltip" end
+          return true, ("Herbalism %s: %s"):format(str(n.Track.Rank("herbs")), tipLines())
+      end, screenshot = "track2: a node's tooltip" },
+    { text = "Putting your list back.", auto = true, run = function()
+          local n = nr()
+          unlogSmart(n)
+          return trBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("track2", steps2)
 end)()
 
 --------------------------------------------------------------------------------

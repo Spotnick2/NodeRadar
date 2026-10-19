@@ -711,7 +711,11 @@ requirement, then item ID), the states, the presets, `Follow` and `Set`.
   - the smart checkbox, the same setting on both pages: "Smart: follow my skill (check a node when I
     can gather it, uncheck it when it turns grey)";
   - the four preset buttons;
-  - one row per item of the kind: a checkbox (checked = tracked), the item's icon, the item's name
+  - one row per item of the kind, **in three columns filled top to bottom** (the owner, after the first
+    round: "a few columns instead of a long list"), each one line: a checkbox (checked = tracked),
+    the item's icon, the item's name (clicking it clicks the box), its skill coloured ("15", or
+    "245-275" when its nodes differ); **hovering it shows each node with its own skill** in a
+    tooltip. What follows was the first round's single column, kept for its details: the item's name
     (`GetItemNameByID`; until the client has it, the first node's name: the page asks for each missing
     one, `RequestLoadItemDataByID`, keeps the asked IDs, and re-reads its rows on `ITEM_DATA_LOAD_RESULT`
     for one of them while shown: Codex), and under it each node with its own skill, lowest first
