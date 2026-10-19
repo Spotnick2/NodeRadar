@@ -189,6 +189,9 @@ function Methods.GetWidth(w) return w._width end
 function Methods.GetHeight(w) return w._height end
 function Methods.GetSize(w) return w._width, w._height end
 function Methods.GetEffectiveScale(w) return w._effScale or 1 end
+function Methods.GetTop(w) return w._top end              -- nil until a test lays it out
+function Methods.GetBottom(w) return w._bottom end
+function Methods.SetScrollChild(sf, child) sf._scrollChild = child end
 function Methods.SetAlpha(w, a) w._alpha = a end
 function Methods.GetAlpha(w) return w._alpha or 1 end
 function Methods.GetParent(w) return w._parent end
