@@ -35,7 +35,7 @@
 -- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
--- icons in game, #28).
+-- icons in game, #28); /fp steps nr glass (glass discs around them, #41).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -2519,6 +2519,157 @@ Probe:Steps("iconcheck", {
       end },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
+
+--------------------------------------------------------------------------------
+-- Glass discs around NodeRadar's icons (#41)
+--------------------------------------------------------------------------------
+
+-- LibGlass-1.0 as a Glass addon (Glass MiniMap) loaded it: nothing embedded. Each
+-- look is a disc as Glass MiniMap's Ring.AddDisc builds one (a square host, the
+-- icon inset 18% and masked round), a child of NodeRadar's icon frame so it
+-- follows its position, fade and dim; NodeRadar's own texture is hidden meanwhile.
+local LOOKS = {
+    A = { size = 18, preset = "clean", text = "18 units, clean (Glass MiniMap's), the icon 12 as today" },
+    B = { size = 22, preset = "clean", text = "22 units, clean, the icon 14" },
+    C = { size = 15, preset = "clean", text = "15 units, clean, the icon 9" },
+    D = { size = 18, preset = "pearl", text = "18 units, pearl (the Glass suite's theme)" },
+    E = { size = 18, preset = "clean", shadow = false, text = "18 units, clean, no shadow" },
+}
+local glass = { look = nil, insts = {}, discs = {} }       -- discs[frame][key] = { host, icon }
+local glassFrame = CreateFrame("Frame")
+
+local function libGlass()
+    local stub = rawget(_G, "LibStub")
+    if not stub then return nil end
+    local ok, lib, minor = pcall(stub, "LibGlass-1.0", true)
+    if ok and lib then return lib, minor end
+end
+
+local function glassInst(preset)
+    if glass.insts[preset] == nil then
+        local lib = libGlass()
+        local ok, inst = pcall(lib.New, lib, { preset = preset })
+        glass.insts[preset] = ok and inst or false
+        if not ok then say("LibGlass New(" .. preset .. "): ERROR " .. str(inst)) end
+    end
+    return glass.insts[preset] or nil
+end
+
+local function discFor(f, key)
+    glass.discs[f] = glass.discs[f] or {}
+    local d = glass.discs[f][key]
+    if d then return d end
+    local look, inst = LOOKS[key], glassInst(LOOKS[key].preset)
+    if not inst then return nil end
+    local host = CreateFrame("Frame", nil, f)
+    host:SetSize(look.size, look.size)
+    host:SetPoint("CENTER", f, "CENTER")
+    local ok, g = pcall(inst.Disc, host, "disc_small")
+    if not ok then
+        say("Glass.Disc: ERROR " .. str(g))
+        glass.discs[f][key] = false
+        return nil
+    end
+    if look.shadow == false then inst.SetSurfaceAlpha(g, "shadow", 0) end
+    local inset = math.floor(look.size * 0.18 + 0.5)
+    local icon = host:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", host, "TOPLEFT", inset, -inset)
+    icon:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+    icon:AddMaskTexture(inst.Mask(host, "disc_mask_small", nil, inset))
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    d = { host = host, icon = icon }
+    glass.discs[f][key] = d
+    return d
+end
+
+-- Every frame while a look is on: each icon frame shows that look's disc only,
+-- with the frame's own icon (frames are reused for other nodes). Every frame
+-- ever given a disc gets its own texture back first, released ones included.
+local function glassSync()
+    for f, list in pairs(glass.discs) do
+        for key, d in pairs(list) do
+            if d and key ~= glass.look then d.host:Hide() end
+        end
+        f.tex:SetAlpha(1)
+    end
+    if not glass.look then return end
+    for _, r in ipairs(iconRecords()) do
+        local f = r.frame
+        local d = f and f.tex and discFor(f, glass.look)
+        if d then
+            d.icon:SetTexture(f.tex:GetTexture())
+            d.icon:SetDesaturated(yes(f.tex:IsDesaturated()))
+            d.host:Show()
+            f.tex:SetAlpha(0)
+        end
+    end
+end
+
+local function glassLook(key)
+    glass.look = key
+    glassSync()
+    glassFrame:SetScript("OnUpdate", key and glassSync or nil)
+end
+
+-- Every icon on the map wears the look: what a look's step waits for.
+local function lookShown(key)
+    return function()
+        if glass.look ~= key then glassLook(key) end
+        local list = shownIcons()
+        if #list == 0 then return false, "no icon in view" end
+        for _, r in ipairs(list) do
+            local d = glass.discs[r.frame] and glass.discs[r.frame][key]
+            if not (d and yes(ask(d.host, "IsShown"))) then return false, "building the discs" end
+        end
+        return true, ("look %s on %s"):format(key, iconsText())
+    end
+end
+
+local glassSteps = {
+    rev = 1,
+    title = "Glass discs around NodeRadar's icons (#41)",
+    { text = "Have NodeRadar and Glass MiniMap loaded and gathering tracking on. NodeRadar's icons go on now, and "
+          .. "back as they were at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons) then return false, "NodeRadar (with icons) isn't loaded" end
+          local lib, minor = libGlass()
+          if not lib then return false, "LibGlass-1.0 isn't loaded (turn Glass MiniMap on)" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          iconsOn(n, true)
+          return true, "icons on, LibGlass-1.0 minor " .. str(minor)
+      end },
+    { text = "Stand still where herbs or ore show on the minimap, until icons cover their dots. Stay still for the "
+          .. "looks that follow.", wait = function()
+          glassLook(nil)
+          if #shownIcons() == 0 then return false, "no icon yet" end
+          return true, iconsText()
+      end, screenshot = "glass: plain icons" },
+}
+for _, key in ipairs({ "A", "B", "C", "D", "E" }) do
+    table.insert(glassSteps, { text = "Look " .. key .. ": " .. LOOKS[key].text .. ". Stay still.",
+                               wait = lookShown(key), screenshot = "glass: look " .. key })
+    table.insert(glassSteps, { text = "Look " .. key .. " (" .. LOOKS[key].text .. "): do you like it? Note box: "
+                                   .. "what you'd change (size, the icon inside, the glass).", ask = true })
+end
+for _, s in ipairs({
+    { text = "Which look did you like best? Type its letter in the Note box (A to E, or plain).", ask = true },
+    { text = "Look A again: run past nodes, turning a bit, until this step completes.", wait = function()
+          if glass.look ~= "A" then glassLook("A") end
+          if not moving() then state.glRun = nil; return false, "not moving" end
+          if #shownIcons() == 0 then return false, "moving, no icon in view" end
+          state.glRun = (state.glRun or 0) + 1
+          if state.glRun < 3 then return false, "moving with discs" end
+          state.glRun = nil
+          return true, iconsText()
+      end, screenshot = "glass: running" },
+    { text = "Running, did the discs stay on their nodes? (Note box: lagging, blinking, too busy.)", ask = true },
+    { text = "Taking the discs off, NodeRadar's icons setting back.", auto = true, run = function()
+          glassLook(nil)
+          return iconsBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}) do table.insert(glassSteps, s) end
+Probe:Steps("glass", glassSteps)
 
 --------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs

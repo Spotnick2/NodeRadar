@@ -254,6 +254,8 @@ function Methods.SetColorTexture(t, r, g, b, a) t._color = { r, g, b, a } end
 function Methods.SetVertexColor(t, r, g, b, a) t._vertex = { r, g, b, a } end
 function Methods.SetTexCoord(t, ...) t._texCoord = { ... } end
 function Methods.SetDesaturated(t, v) t._desaturated = v end
+function Methods.IsDesaturated(t) return t._desaturated == true end
+function Methods.GetTexture(t) return t._file end
 -- Animations: groups record whether they play.
 function Methods.CreateAnimationGroup(w) return newWidget("AnimationGroup", w) end
 function Methods.CreateAnimation(ag, atype) return newWidget(atype or "Animation", ag) end
