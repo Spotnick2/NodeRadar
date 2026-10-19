@@ -435,6 +435,18 @@ resizes every minimap dot, quests and party included, and minimap skins may set 
 every node's dot gets an icon over it. Other addons doing the same split merged groups (a fine grid
 and the outline) and place an icon per node; none hides the dots.
 
+**Only herbs and ore** (the owner): everything here is about blips whose name NodeRadar knows as a
+node (`Learn.Kind`: the shipped library and the names it learned). Every other dot on the minimap,
+treasure from Find Treasure, other trackings, quests, party, keeps Blizzard's dot; so does a herb or
+ore NodeRadar doesn't know yet, until it's learned.
+
+**Overlap counts, measured: none** (`/fp nr twice`, the owner, 2026-10-19: every point of the map,
+step 4: "Silverleaf at most x1", "Peacebloom at most x1"). The tooltip lists a name once at a point
+however many of its dots cover it (or no overlap was in view; both other addons read the outline
+instead, which they'd hardly do if a count were there). So a heavily overlapping pair (centres under
+about 13 units apart) can't be told from one node by reading alone: **the stated limit**, one icon
+over both, covering them only in part (Codex's (2.75, 2.75) and (10.95, 10.95)).
+
 **The principle: explain every cell.** A blip's sampled cells (`b.points`, #66) are where its name
 reads. A cell is **explained** when it lies inside a known node's square of its name, with a
 tolerance: `|cell - centre| <= Scan.NODE / 2 + Icons.EXPLAIN_TOL` (1.5 units: the measure's 0.25 and
@@ -451,7 +463,9 @@ four blips a sweep and the 5 s retry kept):
   the node's other two edges, which must span `Scan.NODE` within `NODE_SLACK` (else that row or
   column crosses two nodes: this direction fails, the next is tried). The centre: `xL + NODE / 2`
   on the walked axis, the middle of the two edges on the other. The new square must contain its
-  starting cell.
+  starting cell. **Pairs** are exact when their centres are at least `NODE / 2` apart on the axis
+  peeled (the walk across 3 units in then stays in one node), at every phase of the grid; closer,
+  the stated limit above.
 - **Then the rest:** the new node explains its cells; with unexplained cells left, peel again, up to
   `Icons.PEEL = 4` nodes a blip. A centre within `Icons.MATCH` of a record of the name is that
   record (no duplicate). The single measure from the centroid stays the first try for a lone blip
@@ -462,12 +476,13 @@ four blips a sweep and the 5 s retry kept):
   dedupes to, at that record's position), it explains a cell that wasn't. One that doesn't is a
   failed direction. A pass tries the four directions in order, restarting the order after each
   node that made progress, and ends when four in a row fail or `PEEL` nodes are found.
-- **Not forever** (Codex): a blip whose pass ended with cells still unexplained is **suspended**,
-  remembered by its name, cell count, the rounded extent of its cells and the records explaining
-  any of them: while that stays the same it isn't measured again (its provisional icons stay).
-  Any change (cells, extent, a record added or dropped, the view's radius), a clear, or the blip
-  unseen for `FORGET` re-arms it. So a shape peeling can't explain costs its reads once, not every
-  5 s.
+- **Not forever** (Codex): a blip whose pass ended with cells still unexplained is **suspended** by
+  its **spot** (its name and the world position of its unexplained cells' centroid, within
+  `Icons.MATCH` units converted to yards), with a backoff: retried after 5 s, then 10, 20, 40, then
+  every 60 s at most, while seen; a record added or dropped among those explaining it, a change of
+  the view's radius, or a clear re-arms it at 5 s; unseen for `FORGET`, it's forgotten. Being a
+  world spot, the player riding past doesn't re-arm it (Codex's 7-unit back-and-forth); a new phase
+  of the grid still gets its retries, fewer over time. Provisional icons stay meanwhile.
 - **Cost, bounded:** a node found costs about 25 reads (an outward walk, a read, two walks across),
   a pair about 50; a failed direction about as much. A sweep stops measuring at
   `Icons.MEASURE_READS = 200` reads (the blip being peeled finishes its current direction, the
@@ -512,7 +527,8 @@ RETRY, no stray provisional; a compact triple ((0, 0), (13, 13), (26, 26)) and s
 ((1, 1), (14, 14), (27, 27)): the outer two exact, the middle exact or provisional, never a bare
 dot; three in a row 12 apart: the middle one not found (the stated limit); **suspension**: a
 shape left unexplained isn't measured again while unchanged (no reads over sweeps past RETRY),
-re-armed when a record is dropped or the shape changes; **the read ceiling** (a sweep with many
+re-armed at 5 s when a record is dropped, backing off to 60 s otherwise, **not** re-armed by the
+player moving back and forth (the spot in world terms; Codex), **the read ceiling** (a sweep with many
 merged blips stops at 200 measuring reads); **a merged blip reaching the rim**: its inner node
 peeled, the clipped one refused (provisional, under the rim exception); a lone unmeasured blip: one provisional, a
 wide one: two, a matched partial blip: provisional for its unexplained cells; provisional frames
