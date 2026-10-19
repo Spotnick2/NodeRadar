@@ -572,6 +572,132 @@ compass's rim, the colour of the minimap's own herb and ore tracking dots.
   small, medium and large over bright and dark map; next to the dots of nodes not yet measured; dim
   and the height arrow on yellow; the compass yellow; the narrower arrow at the four diagonals.
 
+## Choosing which herbs and ores (#47)
+
+The owner (2026-10-19): "we will have to do exactly what gathermate has done and have a full setting
+of which ore/herb we want to track, because I sure don't want to see this for Peacebloom when I'm
+level 300 herbalism", and that it covers "our typical minimap sonar" too. Then: "those will be their
+own setting sub-sections like GRF" (Glass Raid Frames' Indicators page under it in the AddOns list).
+The owner's choices: one row per item, each node keeping its own required skill; a grey rule; what
+an ignored node shows on the minimap a setting, the icon dimmed by default.
+
+### What it rests on
+
+- **GatherMate2** (`..\References\Addons\MapMinimap\GatherMate2\GatherMate2\Config.lua`): a
+  Filters page per profession, one checkbox per node ID, every node on by default (`filter["*"]["*"]
+  = true`), "Select All" / "Select None"; an unchecked node is still recorded, only not shown. No rule
+  by skill gap. We follow its shape (every node on, all/none per group) by item instead of by node.
+- **`NODE_INFO[locale][name] = { skill, item }`** (#26) has every classic node's required skill and
+  item: 26 herb items and 13 ore items in enUS. Several nodes give one item (Small, Rich and the two
+  Ooze Covered Thorium Veins give Thorium Ore, at 245 and 275), and German has two spellings of
+  Mountain Silversage. **Keyed by the item ID**, the setting is an ID (the repo's rule: never save a
+  display string), survives a client language change, and needs no export change.
+- **Sub-pages:** the porting guide's recipe ("An Options page with sub-pages and an About page"):
+  `Settings.RegisterCanvasLayoutSubcategory(category, page, name)` right after the main page from
+  the same `PLAYER_LOGIN`, in order; the page hidden at creation, built on its first `OnShow`,
+  re-read on every `OnShow`. Measured on 70205 (Glass Raid Frames' Click-casting, Gnomesweeper's
+  About) and used by Glass Raid Frames' Indicators (`IndicatorOptions.lua`, `IO.Register`, with
+  `API.Fail` when the API is missing or throws).
+- **Grey:** the classic gathering colours, by how far the skill is past the node's requirement:
+  orange, yellow from +25, green from +50, **grey from +100** (no skill-up). Not measured on Forever:
+  Wowhead's Forever tooltips give only "Requires Mining (1)". The look round asks for a node's
+  colour where it can (below).
+- `C_Item.GetItemNameByID`, `C_Item.GetItemIconByID` and `GET_ITEM_INFO_RECEIVED` are in the 70450
+  dump; the icons already use `GetItemIconByID`.
+
+### Settings (`NodeRadarDB`, per account)
+
+- `ignored`: `{ [itemID] = true }`, the items the player unchecked. Empty by default: every node
+  tracked, and an item added to `NODE_INFO` later starts tracked. A table, so `initDB` makes it as it
+  makes `learned` (never in `DEFAULTS`, a shared table). Non-number keys or non-`true` values are
+  dropped there.
+- `ignoreGrey = false`: skip a node when the player's skill is **100 or more past that node's own
+  requirement** (`Alert.GREY = 100`), so Small Thorium Vein (245) goes grey at 345 and Rich (275)
+  wouldn't before 375. No skill line (none learned, or unreadable): not grey.
+- `ignoredIcon = "dim"`: what an ignored node shows when the icons are on: `"dim"`, its icon
+  dimmed as a node the skill can't gather yet; `"dot"`, Blizzard's dot only (no record, nothing
+  measured, as if NodeRadar weren't there for it).
+
+### The rule
+
+In `Alert.lua`, beside `Alert.Gatherable`:
+- `Alert.Ignored(name)`: false for a name without `NODE_INFO` (learned on Forever, unknown: it can't
+  be listed, so it can't be ignored); true when its item is in `ignored`, or `ignoreGrey` is on and
+  `API.Skill(Alert.SKILL_LINES[kind]) >= skill + GREY`. Cultivation doesn't count toward grey (it's
+  #26's way in, not a skill).
+- `Alert.Wanted(name) = Alert.Gatherable(name) and not Alert.Ignored(name)`.
+
+Where it applies, everything NodeRadar does for a node:
+- **The alert** (sound, sonar, chat line, ping): `Alert.Update` fires only for `Wanted` names. A
+  name that is ignored still updates its count history, so tracking it again later doesn't alert
+  for nodes already in view.
+- **The compass:** `choose` takes only `Wanted` records, the incumbent too (an incumbent ignored
+  is dropped, the hysteresis doesn't keep it).
+- **The icons:** with `ignoredIcon = "dim"`, `r.dim = not Wanted`. With `"dot"`, or with the icons
+  off (the compass alone keeps records), an ignored name's blips are left out of the match and the
+  measuring (`Icons.Update`'s `blips`), so its records miss and drop as any missed record, and no new
+  one is measured: no `Scan.Centre` reads spent on it.
+- **A change applies at once** (`NR.SetIgnored(item, on)`, `NR.Set("ignoreGrey" | "ignoredIcon")`):
+  `Icons.Refilter()` releases the records of ignored names when they shouldn't be kept, and
+  re-binds the rest (`Icons.Show`, so a dim follows); `Compass.Refresh()` chooses again. The skill
+  rising past a grey line applies at the next sweep, as #26's rule does.
+
+### Options
+
+- **The main page**, under "Only nodes I can gather": a checkbox "Skip nodes my skill has outgrown
+  (grey: 100 past what they need)" (`ignoreGrey`), and a note: "Choose herbs and ores one by one on
+  the Herbs and Ores pages, under NodeRadar in the list." Under the icon size: "A node you skip"
+  with "Its icon, dimmed" | "Blizzard's dot" (`ignoredIcon`).
+- **Two sub-pages, "Herbs" and "Ores"**, registered right after the main page, in that order
+  (`Options.Register`, one builder for both: `TrackOptions.lua`, after `Options.lua` in the TOC). Each:
+  - a title and a note: "Unchecked: no alert, no chat line, never the compass's target; on the
+    minimap as the main page says. Names NodeRadar learned on Forever aren't listed and always
+    count.";
+  - "All" and "None" buttons (that kind's items only);
+  - one row per item of that kind from `NODE_INFO[GetLocale()]` (the kind from `LIBRARY`), sorted by
+    its lowest required skill, then item ID: a checkbox (checked = tracked), the item's icon, the
+    item's name (`GetItemNameByID`; until the client has it, the first node's name, and the page
+    re-reads on `GET_ITEM_INFO_RECEIVED` while shown), and under it each node with its own skill,
+    lowest first ("Small Thorium Vein 245, Ooze Covered Thorium Vein 245, Rich Thorium Vein 275,
+    ..."), a node that's grey at the current skill shown grey when `ignoreGrey` is on;
+  - in a scroll frame, as the main page (the herbs run past the window).
+- A locale without `NODE_INFO`: the pages say so and list nothing.
+
+### Commands
+
+- `/nr ignore <node or item>` and `/nr track <node or item>`: a node's name in the client's language
+  or an item's (case-insensitive; the item's name only once the client has it), or an item ID; the
+  item is set and named back ("Thorium Ore: ignored (Small Thorium Vein, ...)"). Unknown: says so.
+- `/nr ignore` alone lists the ignored items; `/nr grey` toggles the grey rule. The help and status
+  lines say both.
+
+### Tests
+
+- The rule: an ignored item silences every node of it (sound, sonar, chat, ping) and only those; a
+  name with no `NODE_INFO` is never ignored; grey at +99 not, at +100 yes, per node within one item;
+  no skill line not grey; Cultivation doesn't make grey; tracked again, nodes already in view don't
+  alert.
+- The compass: an ignored nearest skipped for a farther one; the incumbent ignored replaced at once
+  (`NR.SetIgnored`), the hysteresis not keeping it; all ignored: hidden.
+- The icons: `"dim"` dims an ignored node and undims it when tracked again, at once; `"dot"` drops its
+  record at once and measures none (no `Scan.Centre` for its blips), tracked again it's measured at
+  the next sweep; the compass alone measures none of it.
+- The settings: `ignored` made and cleaned at load, saved by item ID; `/nr ignore` and `/nr track` by
+  node name, item name, item ID, unknown; the list; `/nr grey`.
+- The pages: registered after the main page, Herbs then Ores, under it (the stub records the
+  order), a missing API recorded by `API.Fail`; built on the first show, not before; one row per
+  item, sorted, with every node and its skill; a checkbox click ignores and tracks; All and None
+  touch only their kind; re-read on show (a slash change shows); the item name filled when the
+  event comes.
+
+### Look round (`/fp steps nr track`)
+
+The sub-pages under NodeRadar with a +/−, both rendering on the first visit; the rows (icons, names,
+skills) and scrolling; Peacebloom (or what's near) unchecked: no alert, the compass skips it, its
+icon dimmed, then Blizzard's dot with the other choice; tracked again; All/None; the grey rule on
+with the current skill (nothing grey at Herbalism 38 but the colours readable) and, where the client
+colours a node's skill in its tooltip, that colour for a check of the +25/+50 lines.
+
 ## The compass, experimental (#29)
 
 A small ring under the character shows which way to turn and how far it is to **the nearest node
