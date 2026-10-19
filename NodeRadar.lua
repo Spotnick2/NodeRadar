@@ -16,7 +16,9 @@ local DEFAULTS = {
     sound    = true,    -- a sound with the alert
     soundKind = "ping", -- which: a key of Alert.SOUNDS (the map ping, the sonar, two FileDataIDs)
     skillOnly = true,   -- alert only for nodes the player's skill can gather (#26)
-    icons    = false,   -- the item's icon over each node's dot (#28): off until tested
+    icons    = false,   -- the item's icon over each node's dot (#28)
+    iconStyle = "auto", -- its frame (#41): auto (glass with Glass MiniMap, else bronze), plain, glass, bronze
+    iconSize = "medium", -- small, medium or large: Icons.SIZES
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -110,6 +112,7 @@ function NR.Set(key, value)
     NR.db[key] = value
     if key == "enabled" then Alert.Reset() end
     if key == "enabled" or key == "icons" then Icons.Clear() end
+    if key == "iconStyle" or key == "iconSize" then Icons.Restyle() end
 end
 
 function NR.VersionText()
@@ -207,7 +210,8 @@ local TOGGLES = { sound = "sound", ring = "sonar on the node", chat = "chat line
 local function status()
     local db = NR.db
     API.Say("radar " .. onOff(db.enabled) .. "; only nodes you can gather " .. onOff(db.skillOnly)
-        .. "; item icons on the minimap " .. onOff(db.icons)
+        .. "; item icons on the minimap " .. onOff(db.icons) .. " (" .. tostring(db.iconStyle) .. ", "
+        .. tostring(db.iconSize) .. ")"
         .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
         .. ", chat " .. onOff(db.chat) .. ", Blizzard's ping " .. onOff(db.ping) .. "; learning " .. onOff(db.learn)
         .. "; " .. db.cooldown .. " s between alerts")
@@ -245,6 +249,8 @@ local function help()
     API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea | bell | notify | hud: which sound.")
     API.Say("/nr skill: alert only for nodes your skill can gather (on by default)")
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
+    API.Say("/nr iconstyle auto | plain | glass | bronze: the icon's frame (auto: glass with Glass MiniMap, "
+        .. "else bronze). /nr iconsize small | medium | large")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -266,6 +272,12 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "icons" then
         NR.Set("icons", not db.icons)
         API.Say("item icons on the minimap " .. onOff(db.icons))
+    elseif cmd == "iconstyle" and Icons.STYLES[rest:lower()] then
+        NR.Set("iconStyle", rest:lower())
+        API.Say("icon style: " .. rest:lower())
+    elseif cmd == "iconsize" and Icons.SIZES[rest:lower()] then
+        NR.Set("iconSize", rest:lower())
+        API.Say("icon size: " .. rest:lower())
     elseif cmd == "options" or cmd == "config" then
         if not NR.Options.Open() then API.Say("the Options page can't open here: Esc > Options > AddOns") end
     elseif cmd == "sound" and Alert.SOUNDS[rest:lower()] then

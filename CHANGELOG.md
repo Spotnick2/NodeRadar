@@ -5,6 +5,9 @@
 - **Item icons on the minimap** (#28), off by default: each herb and ore node
   shows the icon of what it gives over Blizzard's dot, dimmed when your skill can't gather it yet.
   `/nr icons`, or Options. With icons on, the sonar plays on the node's measured centre.
+- **Frames for the icons** (#41): a glass disc with Glass MiniMap, a bronze ring like Blizzard's
+  minimap buttons on any other minimap, or none (`/nr iconstyle`); small, medium or large
+  (`/nr iconsize`). A small arrow marks a node above or below you, as Blizzard's dot does.
 - **WowUp can install NodeRadar from GitHub** (#35): every release now carries `release.json`, the
   file WowUp reads to find the Forever download (v1.0.0 and v1.0.1 have it too).
 

@@ -376,6 +376,164 @@ hold; about 2% more reads and garbage per sweep. The stock map's square is 25 to
 The compass (#29) reuses the records later. Alternating tracking for dual gatherers, nodes beyond
 the tracking range (GatherMate2), replacing the count-based alert with records.
 
+## Icon styles and sizes (#41)
+
+The owner's choices after three probe rounds (docs/FOREVER-PROBE.md, "Glass discs" and "Bronze
+rings", 70450):
+- The icon's frame **follows the minimap**: a glass disc with Glass MiniMap, a bronze ring like
+  Blizzard's round minimap buttons on any other minimap.
+- A size choice: "same as the other, make it a choice".
+- Icons stay off by default (#28).
+
+### What it rests on
+
+- **Glass:** LibGlass-1.0's `Disc` (r2) built as Glass MiniMap's `Ring.AddDisc`: `disc_small` on a
+  square host, the icon inset 18% and masked with `disc_mask_small`. All five looks were liked; at
+  these sizes the presets and the shadow barely differ, so clean with its shadow it is, Glass
+  MiniMap's own preset. Minor 11 was loaded.
+- **Bronze:** Blizzard's round button as LibDBIcon lays it out on a 31-unit button:
+  `MiniMap-TrackingBorder` (136430) 53 at its top left, `UI-Minimap-Background` (136467) 20 at
+  (7, -5), the icon 17 at (7, -6), masked round (`TempPortraitAlphaMask`). Scaled to the icon, it
+  sat centred on every node.
+- **The ring hides Blizzard's arrow for a node below the player** (three of three). The arrow for
+  a node above stayed visible at the medium size, and only "barely" with plain icons (#28). The
+  arrow is in the line's text: `|TInterface\Minimap\Minimap-PositionArrows:0:0:0:0:16:32:0:16:T:B|t`,
+  with `0:16` (the upper half) for above and `16:32` for below (both measured).
+- LibGlass is loaded whenever Glass MiniMap is (it embeds it); `C_AddOns.IsAddOnLoaded` is in the
+  70450 dump.
+
+### Settings
+
+- `iconStyle`: `"auto"` (the default), `"plain"`, `"glass"` or `"bronze"`. Auto is glass when
+  Glass MiniMap is loaded and LibGlass can make a clean disc (below), else bronze. A glass choice
+  without a usable LibGlass draws bronze; Options says why under the choice.
+- `iconSize`: `"small"`, `"medium"` (the default) or `"large"`: the icon exactly 10, 12 or 14 units
+  (G, F and H in the bronze round; C's 9 rounded up). The glass disc is 1.5 times the icon (15, 18,
+  21) with the icon inset a quarter of its size, not the probe's rounded 18% (which drew 9, 12 and
+  13: Codex). The bronze button is 31/17 times the icon (18, 22, 26).
+- An unknown saved value (`/nr iconstyle` refuses one, but a file can hold anything) draws as the
+  default and is kept as saved, for Options to show.
+- Options, under "Nodes on the minimap": "Icon style: Follow the minimap | Plain | Glass | Bronze"
+  and "Icon size: Small | Medium | Large", which apply once icons are on. `/nr iconstyle <name>` and
+  `/nr iconsize <name>`. A value Options doesn't offer shows and is kept (the page's rule).
+
+### LibGlass, borrowed
+
+No copy is embedded: NodeRadar only draws glass where Glass MiniMap is, and Glass MiniMap embeds
+LibGlass. So there's no `.pkgmeta` external, no `Libs\` folder, and nothing new in the package.
+- At the first draw that needs it: `rawget(_G, "LibStub")`, then `LibStub("LibGlass-1.0", true)`.
+  The minor must be at least 6 (`preset = "clean"`, r6; `Disc` is r2). Then one instance,
+  `lib:New({ preset = "clean" })`, in a `pcall`. Any failure (missing, older, a throw): no glass
+  this session (`API.Fail("glass", why)`, `/nr failures`), and bronze is drawn.
+- Built per frame inside one `pcall` (the host, `Disc`, the icon and its mask). The host is
+  created **hidden** and shown only once all of it succeeded: `Disc` isn't transactional (it makes
+  the shadow, mask and body, then `g.top`, one after another), so a throw part-way would leave glass
+  over the bronze (Codex). A failed host stays hidden for good; the session latch means no glass is
+  built or selected again, those already built included, and bronze is drawn.
+- Nothing past r6 is used (no `SetWash`, no `SetSurfaceAlpha`): the shadow stays, as liked.
+- **Tint:** the instance's clear default. Glass MiniMap's smoked and class themes aren't followed:
+  it has no public API for its theme, and its `GlassMiniMap.Theme` is internal. Accepted for now;
+  the way to follow it is a Glass MiniMap public API, or #4's API run the other way, the skin
+  styling our icons. Its own issue if the owner wants it.
+
+### Drawing
+
+- **The effective look** is resolved once from the settings and LibGlass's state: `style` in plain,
+  glass, bronze (auto and a glass that can't be built resolved) and `size` in 10, 12, 14 (an
+  unknown value is the default). Only resolved values reach the frames.
+- An icon frame keeps its plain texture (`f.tex`) and gains at most **two hosts**, built once each
+  when first needed: `f.glass` and `f.bronze`, children centred on `f`, built at the medium size
+  and resized with `SetScale(size / 12)` (LibGlass's rule for discs; Codex's simpler shape). A
+  child follows the frame's position, its fade (frame alpha) and the dim. Frames are pooled and
+  never freed, so that's at most two hosts per pooled frame. For plain, `f:SetSize(size)`.
+- **One function binds a frame to its record** (Codex): it selects and builds the effective look,
+  hides the others (`f.tex` too, unless plain), and sets the shown look's icon, its desaturation and
+  the arrow from the record, **before** showing it. It runs when a frame is acquired, at every sweep
+  for each shown record (as `f.tex` is set today), and for every shown record when the style or size
+  changes (`NR.Set` calls `Icons.Restyle()`): so a cached look switched to between sweeps never
+  shows another record's icon, dim or arrow.
+- **The glass latch tripping is a restyle too** (Codex, round 2): a bind that trips it (a later
+  record's `Disc` throws after an earlier one's glass was shown) marks a restyle pending; when the
+  pass that tripped it ends (a sweep's binding loop, or `Icons.Restyle` itself), every shown record
+  is bound again, now to bronze. One deferred pass, no recursion: the latch trips only once.
+- **The rim** uses the effective look's half-extent instead of `SIZE / 2`, both for the fade and
+  for the drop, so a record is still dropped only once its drawn look has faded out (#28's rim fix):
+  plain, the icon's half; glass, the disc's; bronze, the button's (about 0.91 × the icon). The
+  arrow and the glass's shadow stick out past it but fade with the frame. `INSIDE` (the hit square)
+  and `MATCH` (the position's uncertainty) don't depend on the look.
+- **Our own height arrow**, for every style (Blizzard's is covered by a ring, and barely visible by
+  a plain icon):
+  - `Scan`'s `names()` looks at each row for the `Minimap-PositionArrows` escape (one plain `find`)
+    and reads its last two numbers: `0`/`16` is above, `16`/`32` below; no escape is level. It's a
+    numeric texture coordinate, not a display string. The row then goes through `Scan.Plain`
+    unchanged, so the names Alert and Learn see don't change. No table per row: the height is a
+    scalar beside the name.
+  - **Heights fold** (Codex): a cell's height for a name is the one observation if all agree
+    (rows of that name in the same read included), else `"mixed"`. A blip's height folds its cells
+    the same way, through the coarse grid and the refinement. A blip's `height` is `"above"` or
+    `"below"` only when every observation agrees; level, mixed or none is nil. So a cluster holding
+    two nodes of a name at different heights shows no arrow rather than a wrong one.
+  - `Icons.Update` sets the matched record's height from its blip each sweep, nil included, so an
+    arrow never outlives its height.
+  - Drawn as Blizzard's own texture (`Interface\Minimap\Minimap-PositionArrows`, `SetTexCoord(0,
+    1, 0, 0.5)` above, `(0, 1, 0.5, 1)` below), on a child frame above the look (its frame level
+    over the glass's top), just outside the look's top or bottom edge. About 6 units wide; the
+    round below settles it against Blizzard's.
+- The arrow's frame level is above the shown look's top: the glass's `g.top` is the host's level + 10.
+- Nothing takes the mouse: looks and arrows are plain frames and textures (never `Ring.AddDisc`'s
+  clickable `Button`), and every frame made, `g.top` included, gets `EnableMouse(false)` explicitly.
+
+### Cost
+
+No extra reads. Per new record, one look built once per frame ever (a disc: about 8 textures; a
+ring: 3 and a mask). Per frame, still one `SetPoint` and `SetAlpha` per icon: children move with
+it. Per sweep, a `find` per mouseover row for the arrow.
+
+### Tests
+
+- The style rule: auto with Glass MiniMap loaded and LibGlass minor 6 or more is glass; without
+  either it's bronze; minor 5, a `New` that throws, or a `Disc` that throws is bronze plus a
+  failure. A glass choice without LibGlass is bronze. Plain is the #28 icon, unchanged. An unknown
+  saved style or size draws the default and stays saved.
+- **A `Disc` that throws part-way** (the fake makes a texture and a top child, then throws): only
+  bronze shows, the failed host stays hidden, the glass hosts already built stop being shown, and
+  later draws build nothing more (Codex). Two records in one sweep, the first's glass built, the
+  second's throwing: both are bronze when the sweep returns, with no further sweep or setting change.
+- The geometry per style and size: disc 15/18/21 with the icon exactly 10/12/14; the button 31/17
+  scaled, the icon at (7, -6), its centre on the node; `SetScale` for a size change, not a rebuild.
+- **Binding** (Codex): a frame released and reused for another item and a dimmed node, then a
+  switch to its cached other look **without a sweep**: that look shows the new icon, the new dim and
+  no stale arrow (above, then level). A size or style change shows the new look only, `f.tex` back
+  for plain.
+- The rim fade and drop at each look's extent.
+- The arrow: `Scan` reads above, below and level from the measured raw rows; opposite heights in one
+  cluster give none; two rows of a name at one cell fold; two separate blips of a name keep their
+  own; a matched record's arrow goes when its next sweep reads level. **A sweep's `byName` and
+  `blips`** are the same with and without arrows in the rows, every field but the new `height` (the
+  names, counts, positions, cell counts), and `height` is asserted on its own (Codex: Scan.Plain's
+  own tests can't catch the metadata changing names). A row with an arrow and a quest's lines: only
+  the node's row carries it.
+- Mouse: every frame under an icon frame, `g.top` included, takes no mouse; the arrow's level is
+  above `g.top`.
+- Options and `/nr`: both settings, an unoffered value kept.
+- Every new test mutation-tested; the stubs' fake LibGlass is the probe test's, the methods
+  checked against the dump.
+
+### Probe round (`/fp steps nr styles`, the feature on)
+
+- Each style at each size, with a screenshot, Glass MiniMap on and then off (auto switching after
+  the reload).
+- Our arrow beside a node above and a node below, against Blizzard's.
+- Hovering through a disc and through a ring (Blizzard's tooltip).
+- A dimmed node in each style.
+- The rim fade.
+- The cost again (icons off, then on in each style, the same loop), with quest rows in view: the
+  arrow's parsing is on every read.
+
+### Not in this issue
+
+Following Glass MiniMap's theme tint. Square minimap skins (#4). Mouse interaction with the icons.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock

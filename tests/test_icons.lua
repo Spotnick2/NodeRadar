@@ -11,6 +11,7 @@ WoW.cvars.rotateMinimap = "0"
 WoW.map, WoW.mapPos, WoW.mapSize = 1411, { x = 0.5, y = 0.5 }, { 5287, 3525 }
 TEST_LIBRARY.enUS["Mageroyal"] = "herbs"
 local NR = loadAddon()
+NR.db.iconStyle = "plain"                                  -- #28's icon (the looks: test_styles)
 local Icons, Scan = NR.Icons, NR.Scan
 local T = Icons._test
 WoW.itemCached[765] = true                                 -- Silverleaf's item: its icon answers

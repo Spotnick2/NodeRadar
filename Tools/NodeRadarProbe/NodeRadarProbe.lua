@@ -35,7 +35,7 @@
 -- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
--- icons in game, #28).
+-- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -2517,6 +2517,403 @@ Probe:Steps("iconcheck", {
           hideMarks()
           return iconsBack()
       end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
+
+--------------------------------------------------------------------------------
+-- Glass discs around NodeRadar's icons (#41)
+--------------------------------------------------------------------------------
+
+-- LibGlass-1.0 as a Glass addon (Glass MiniMap) loaded it: nothing embedded. Each
+-- look is a disc as Glass MiniMap's Ring.AddDisc builds one (a square host, the
+-- icon inset 18% and masked round), a child of NodeRadar's icon frame so it
+-- follows its position, fade and dim; NodeRadar's own texture is hidden meanwhile.
+local LOOKS = {
+    A = { size = 18, preset = "clean", text = "18 units, clean (Glass MiniMap's), the icon 12 as today" },
+    B = { size = 22, preset = "clean", text = "22 units, clean, the icon 14" },
+    C = { size = 15, preset = "clean", text = "15 units, clean, the icon 9" },
+    D = { size = 18, preset = "pearl", text = "18 units, pearl (the Glass suite's theme)" },
+    E = { size = 18, preset = "clean", shadow = false, text = "18 units, clean, no shadow" },
+    -- Bronze, for Blizzard's own minimap (the owner): its round button's ring.
+    F = { bronze = true, icon = 12, text = "bronze ring, the icon 12 as today (the ring about 22 units)" },
+    G = { bronze = true, icon = 10, text = "bronze ring, the icon 10 (the ring about 18, the glass disc's size)" },
+    H = { bronze = true, icon = 14, text = "bronze ring, the icon 14 (the ring about 26)" },
+}
+
+-- Blizzard's round minimap button as LibDBIcon lays it out on a 31-unit button:
+-- the ring (MiniMap-TrackingBorder) 53 at its top left, the dark background 20
+-- at (7, -5), the icon 17 at (7, -6), here masked round. Scaled to the icon.
+local RING, RING_BG = 136430, 136467
+local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+
+local function bronzeFor(f, look)
+    local k = look.icon / 17
+    local host = CreateFrame("Frame", nil, f)
+    host:SetSize(31 * k, 31 * k)
+    host:SetPoint("CENTER", f, "CENTER", 0, -1 * k)    -- the icon's centre on the node: 1 above the button's
+    local ring = host:CreateTexture(nil, "OVERLAY")
+    ring:SetSize(53 * k, 53 * k)
+    ring:SetTexture(RING)
+    ring:SetPoint("TOPLEFT", host, "TOPLEFT")
+    local bg = host:CreateTexture(nil, "BACKGROUND")
+    bg:SetSize(20 * k, 20 * k)
+    bg:SetTexture(RING_BG)
+    bg:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -5 * k)
+    local icon = host:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(look.icon, look.icon)
+    icon:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -6 * k)
+    local mask = host:CreateMaskTexture()
+    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(icon)
+    icon:AddMaskTexture(mask)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    return { host = host, icon = icon, ring = ring }
+end
+local glass = { look = nil, insts = {}, discs = {} }       -- discs[frame][key] = { host, icon }
+local glassFrame = CreateFrame("Frame")
+
+local function libGlass()
+    local stub = rawget(_G, "LibStub")
+    if not stub then return nil end
+    local ok, lib, minor = pcall(stub, "LibGlass-1.0", true)
+    if ok and lib then return lib, minor end
+end
+
+local function glassInst(preset)
+    if glass.insts[preset] == nil then
+        local lib = libGlass()
+        local ok, inst = pcall(lib.New, lib, { preset = preset })
+        glass.insts[preset] = ok and inst or false
+        if not ok then say("LibGlass New(" .. preset .. "): ERROR " .. str(inst)) end
+    end
+    return glass.insts[preset] or nil
+end
+
+local function discFor(f, key)
+    glass.discs[f] = glass.discs[f] or {}
+    local d = glass.discs[f][key]
+    if d then return d end
+    if LOOKS[key].bronze then
+        d = bronzeFor(f, LOOKS[key])
+        glass.discs[f][key] = d
+        return d
+    end
+    local look, inst = LOOKS[key], glassInst(LOOKS[key].preset)
+    if not inst then return nil end
+    local host = CreateFrame("Frame", nil, f)
+    host:SetSize(look.size, look.size)
+    host:SetPoint("CENTER", f, "CENTER")
+    local ok, g = pcall(inst.Disc, host, "disc_small")
+    if not ok then
+        say("Glass.Disc: ERROR " .. str(g))
+        glass.discs[f][key] = false
+        return nil
+    end
+    if look.shadow == false then inst.SetSurfaceAlpha(g, "shadow", 0) end
+    local inset = math.floor(look.size * 0.18 + 0.5)
+    local icon = host:CreateTexture(nil, "ARTWORK")
+    icon:SetPoint("TOPLEFT", host, "TOPLEFT", inset, -inset)
+    icon:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -inset, inset)
+    icon:AddMaskTexture(inst.Mask(host, "disc_mask_small", nil, inset))
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    d = { host = host, icon = icon }
+    glass.discs[f][key] = d
+    return d
+end
+
+-- Every frame while a look is on: each icon frame shows that look's disc only,
+-- with the frame's own icon (frames are reused for other nodes). Every frame
+-- ever given a disc gets its own texture back first, released ones included.
+local function glassSync()
+    for f, list in pairs(glass.discs) do
+        for key, d in pairs(list) do
+            if d and key ~= glass.look then d.host:Hide() end
+        end
+        f.tex:SetAlpha(1)
+    end
+    if not glass.look then return end
+    for _, r in ipairs(iconRecords()) do
+        local f = r.frame
+        local d = f and f.tex and discFor(f, glass.look)
+        if d then
+            d.icon:SetTexture(f.tex:GetTexture())
+            d.icon:SetDesaturated(yes(f.tex:IsDesaturated()))
+            d.host:Show()
+            f.tex:SetAlpha(0)
+        end
+    end
+end
+
+local function glassLook(key)
+    glass.look = key
+    glassSync()
+    glassFrame:SetScript("OnUpdate", key and glassSync or nil)
+end
+
+-- Every icon on the map wears the look: what a look's step waits for.
+local function lookShown(key)
+    return function()
+        if glass.look ~= key then glassLook(key) end
+        local list = shownIcons()
+        if #list == 0 then return false, "no icon in view" end
+        for _, r in ipairs(list) do
+            local d = glass.discs[r.frame] and glass.discs[r.frame][key]
+            if not (d and yes(ask(d.host, "IsShown"))) then return false, "building the discs" end
+        end
+        return true, ("look %s on %s"):format(key, iconsText())
+    end
+end
+
+local glassSteps = {
+    rev = 1,
+    title = "Glass discs around NodeRadar's icons (#41)",
+    { text = "Have NodeRadar and Glass MiniMap loaded and gathering tracking on. NodeRadar's icons go on now, and "
+          .. "back as they were at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons) then return false, "NodeRadar (with icons) isn't loaded" end
+          local lib, minor = libGlass()
+          if not lib then return false, "LibGlass-1.0 isn't loaded (turn Glass MiniMap on)" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          iconsOn(n, true)
+          return true, "icons on, LibGlass-1.0 minor " .. str(minor)
+      end },
+    { text = "Stand still where herbs or ore show on the minimap, until icons cover their dots. Stay still for the "
+          .. "looks that follow.", wait = function()
+          glassLook(nil)
+          if #shownIcons() == 0 then return false, "no icon yet" end
+          return true, iconsText()
+      end, screenshot = "glass: plain icons" },
+}
+for _, key in ipairs({ "A", "B", "C", "D", "E" }) do
+    table.insert(glassSteps, { text = "Look " .. key .. ": " .. LOOKS[key].text .. ". Stay still.",
+                               wait = lookShown(key), screenshot = "glass: look " .. key })
+    table.insert(glassSteps, { text = "Look " .. key .. " (" .. LOOKS[key].text .. "): do you like it? Note box: "
+                                   .. "what you'd change (size, the icon inside, the glass).", ask = true })
+end
+for _, s in ipairs({
+    { text = "Which look did you like best? Type its letter in the Note box (A to E, or plain).", ask = true },
+    { text = "Look A again: run past nodes, turning a bit, until this step completes.", wait = function()
+          if glass.look ~= "A" then glassLook("A") end
+          if not moving() then state.glRun = nil; return false, "not moving" end
+          if #shownIcons() == 0 then return false, "moving, no icon in view" end
+          state.glRun = (state.glRun or 0) + 1
+          if state.glRun < 3 then return false, "moving with discs" end
+          state.glRun = nil
+          return true, iconsText()
+      end, screenshot = "glass: running" },
+    { text = "Running, did the discs stay on their nodes? (Note box: lagging, blinking, too busy.)", ask = true },
+    { text = "Taking the discs off, NodeRadar's icons setting back.", auto = true, run = function()
+          glassLook(nil)
+          return iconsBack()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}) do table.insert(glassSteps, s) end
+Probe:Steps("glass", glassSteps)
+
+local function glassMiniMapOn()
+    local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, "GlassMiniMap")
+    return ok and yes(loaded)
+end
+
+local bronzeSteps = {
+    rev = 1,
+    title = "Bronze rings around NodeRadar's icons, on Blizzard's minimap (#41)",
+    { text = "Have NodeRadar loaded and gathering tracking on. NodeRadar's icons go on now, and back as they were "
+          .. "at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons) then return false, "NodeRadar (with icons) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          iconsOn(n, true)
+          return true, "icons on"
+      end },
+    { text = "Turn Glass MiniMap off in the AddOns list, then press Reload.", reload = true },
+    { text = "Stand still where herbs or ore show on the minimap, until icons cover their dots. Stay still for the "
+          .. "looks that follow.", wait = function()
+          glassLook(nil)
+          if glassMiniMapOn() then return false, "Glass MiniMap is still on: turn it off and reload" end
+          if #shownIcons() == 0 then return false, "no icon yet" end
+          return true, iconsText()
+      end, screenshot = "bronze: plain icons" },
+}
+for _, key in ipairs({ "F", "G", "H" }) do
+    table.insert(bronzeSteps, { text = "Look " .. key .. ": " .. LOOKS[key].text .. ". Stay still.",
+                                wait = lookShown(key), screenshot = "bronze: look " .. key })
+    table.insert(bronzeSteps, { text = "Look " .. key .. " (" .. LOOKS[key].text .. "): do you like it? Note box: "
+                                    .. "what you'd change (size, the ring, the icon inside).", ask = true })
+end
+for _, s in ipairs({
+    { text = "Which look did you like best? Type its letter in the Note box (F, G, H, or plain).", ask = true },
+    { text = "Look F again: run past nodes, turning a bit, until this step completes.", wait = function()
+          if glass.look ~= "F" then glassLook("F") end
+          if not moving() then state.glRun = nil; return false, "not moving" end
+          if #shownIcons() == 0 then return false, "moving, no icon in view" end
+          state.glRun = (state.glRun or 0) + 1
+          if state.glRun < 3 then return false, "moving with rings" end
+          state.glRun = nil
+          return true, iconsText()
+      end, screenshot = "bronze: running" },
+    { text = "Running, did the rings stay on their nodes? (Note box: lagging, blinking, too busy.)", ask = true },
+    { text = "Taking the rings off.", auto = true, run = function()
+          glassLook(nil)
+          return "rings off"
+      end },
+    { text = "Turn Glass MiniMap back on in the AddOns list, then press Reload.", reload = true },
+    { text = "Putting NodeRadar's icons setting back.", auto = true, run = iconsBack },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}) do table.insert(bronzeSteps, s) end
+Probe:Steps("bronze", bronzeSteps)
+
+--------------------------------------------------------------------------------
+-- NodeRadar's own looks in game (#41): /fp steps nr styles
+--------------------------------------------------------------------------------
+
+-- NodeRadar's icons, style and size, raw, put back by the last step.
+local function lookOn(n, style, size)
+    if NodeRadarProbeDB.restoreLook == nil then
+        NodeRadarProbeDB.restoreLook = { icons = rawget(n.db, "icons"), style = rawget(n.db, "iconStyle"),
+                                         size = rawget(n.db, "iconSize") }
+    end
+    if n.db.icons ~= true then n.Set("icons", true) end
+    if style ~= nil and n.db.iconStyle ~= style then n.Set("iconStyle", style) end
+    if size ~= nil and n.db.iconSize ~= size then n.Set("iconSize", size) end
+end
+
+local function lookBack()
+    local n, saved = nr(), NodeRadarProbeDB.restoreLook
+    if not (n and saved) then return "nothing to put back" end
+    n.Set("iconStyle", saved.style)
+    n.Set("iconSize", saved.size)
+    n.Set("icons", saved.icons)
+    NodeRadarProbeDB.restoreLook = nil
+    return ("put back: icons %s, style %s, size %s"):format(str(saved.icons), str(saved.style), str(saved.size))
+end
+
+local function lookText(n)
+    local l = n.Icons._test.look()
+    return ("%s %s (setting %s, %s)"):format(l.style, l.size, str(n.db.iconStyle), str(n.db.iconSize))
+end
+
+-- Waits until icons show in this look: the setting set, the effective look and
+-- the frames read back.
+local function showLook(style, size, want)
+    return function()
+        local n = nr()
+        if not (n and n.Icons and n.Icons._test.look) then return false, "NodeRadar (#41) isn't loaded" end
+        lookOn(n, style, size)
+        local l = n.Icons._test.look()
+        if want and l.style ~= want then return false, "the look is " .. lookText(n) .. ", not " .. want end
+        local list = shownIcons()
+        if #list == 0 then return false, "no icon in view" end
+        return true, lookText(n) .. "; " .. iconsText()
+    end
+end
+
+-- A shown record matching `test`, or nil.
+local function shownWhere(test)
+    for _, r in ipairs(shownIcons()) do if test(r) then return r end end
+end
+
+local function costLook(label, style)
+    return function()
+        local n = nr()
+        if not n then return false, "NodeRadar isn't loaded" end
+        if not (cost.on and cost.label == label) then
+            if not moving() then return false, "start riding the loop" end
+            if style then lookOn(n, style, "medium") else n.Set("icons", false) end
+            costStart(n, label)
+        end
+        local left = COST_SECONDS - (GetTime() - cost.t0)
+        if left > 0 then return false, ("%.0f s left"):format(left) end
+        local text = costStop(n)
+        iconsDB().cost[label].style = style or "off"
+        return true, text
+    end
+end
+
+Probe:Steps("styles", {
+    rev = 1,
+    title = "Icon frames and sizes, NodeRadar's own (#41)",
+    { text = "Have NodeRadar and Glass MiniMap loaded and gathering tracking on. NodeRadar's icons go on now, and "
+          .. "your settings come back at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons and n.Icons._test.look) then return false, "NodeRadar (#41) isn't loaded" end
+          if not glassMiniMapOn() then return false, "Glass MiniMap is off: turn it on and reload" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          NodeRadarProbeDB.icons = nil
+          lookOn(n, "auto", "medium")
+          return true, "icons on: " .. lookText(n)
+      end },
+    { text = "Stand still where herbs or ore show on the minimap, until NodeRadar's icons cover their dots. Stay "
+          .. "still for the sizes that follow.", wait = showLook("auto", "medium", "glass"),
+      screenshot = "styles: auto, Glass MiniMap" },
+    { text = "Following the minimap with Glass MiniMap: glass discs, medium. Is each on its node?", ask = true },
+    { text = "Glass, small.", wait = showLook("glass", "small", "glass"), screenshot = "styles: glass small" },
+    { text = "Glass, large.", wait = showLook("glass", "large", "glass"), screenshot = "styles: glass large" },
+    { text = "Did glass look right at small and large? (Note box: which size you'd keep as the default.)",
+      ask = true },
+    { text = "Bronze, small.", wait = showLook("bronze", "small", "bronze"), screenshot = "styles: bronze small" },
+    { text = "Bronze, medium.", wait = showLook("bronze", "medium", "bronze"), screenshot = "styles: bronze medium" },
+    { text = "Bronze, large.", wait = showLook("bronze", "large", "bronze"), screenshot = "styles: bronze large" },
+    { text = "Did bronze look right at each size on Glass MiniMap?", ask = true },
+    { text = "No frame (the plain icon), medium.", wait = showLook("plain", "medium", "plain"),
+      screenshot = "styles: plain" },
+    { text = "Bronze again: find a node above or below you (a slope, a ledge), until NodeRadar's arrow shows by "
+          .. "it.", wait = function()
+          local n = nr()
+          if n then lookOn(n, "bronze", "medium") end
+          local r = shownWhere(function(r) return r.height ~= nil end)
+          if not r then return false, "no icon with an arrow yet" end
+          return true, ("%s %s"):format(r.name, r.height)
+      end, screenshot = "styles: our arrow" },
+    { text = "Is NodeRadar's small arrow where Blizzard's would be (above the frame for a node above, under it "
+          .. "for one below), and does it look like Blizzard's?", ask = true },
+    { text = "Put the mouse on a framed icon and hold it there.", wait = function()
+          local over
+          for _, r in ipairs(shownIcons()) do
+              if yes(ask(r.frame, "IsMouseOver")) then over = r end
+          end
+          if not over then return false, "the mouse isn't on an icon" end
+          if not yes(ask(rawget(_G, "GameTooltip"), "IsShown")) then return false, "on " .. over.name .. ", no tooltip yet" end
+          return true, ("on %s: the tooltip shows %s"):format(over.name, str(ask(rawget(_G, "GameTooltipTextLeft1"),
+              "GetText")))
+      end, screenshot = "styles: hovering" },
+    { text = "Did Blizzard's tooltip show the node through the frame?", ask = true },
+    { text = "Optional: a node your skill can't gather in view (dimmed). Skip if none.", wait = function()
+          local r = shownWhere(function(r) return r.dim end)
+          if not r then return false, "no dimmed icon in view" end
+          return true, r.name .. " dimmed"
+      end, screenshot = "styles: dimmed" },
+    { text = "Walk so a node with an icon leaves past the minimap's edge, watching it go.", wait = function()
+          local r = shownWhere(function(r) return r.frame and (ask(r.frame, "GetAlpha") or 1) < 0.95 and not r.dim end)
+          if not r then return false, "no icon fading at the edge yet" end
+          return true, r.name .. " fading at the edge"
+      end, screenshot = "styles: the rim" },
+    { text = "Did the framed icon fade out at the edge, rather than pop off?", ask = true },
+    { text = "Open Esc > Options > AddOns > NodeRadar and leave it open.", wait = function()
+          local n = nr()
+          local p = n and n.Options and n.Options._test and n.Options._test.panel
+          if not yes(ask(p, "IsVisible")) then return false, "NodeRadar's page isn't open" end
+          return true, "the page is open"
+      end, screenshot = "styles: the Options page" },
+    { text = "Does the whole page fit, down to the Learning section and the /nr help line, without anything cut "
+          .. "off? Then close it.", ask = true },
+    { text = "The cost, icons OFF: ride a loop past nodes for a minute (the step starts when you move).",
+      wait = costLook("styles off", nil), timeout = 300 },
+    { text = "The cost, GLASS: ride the same loop again for a minute.", wait = costLook("styles glass", "glass"),
+      timeout = 300 },
+    { text = "The cost, BRONZE: the same loop once more.", wait = costLook("styles bronze", "bronze"), timeout = 300 },
+    { text = "Now Blizzard's own minimap: turn Glass MiniMap off in the AddOns list, then press Reload.",
+      reload = true },
+    { text = "Stand still with nodes in view.", wait = function()
+          local n = nr()
+          if n then lookOn(n, "auto", "medium") end            -- the cost loops left bronze chosen
+          if glassMiniMapOn() then return false, "Glass MiniMap is still on: turn it off and reload" end
+          return showLook("auto", "medium", "bronze")()
+      end, screenshot = "styles: auto, Blizzard's minimap" },
+    { text = "Following the minimap without Glass MiniMap: bronze rings. Is each on its node, as in the bronze round?",
+      ask = true },
+    { text = "Turn Glass MiniMap back on in the AddOns list, then press Reload.", reload = true },
+    { text = "Putting your NodeRadar settings back.", auto = true, run = lookBack },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
 

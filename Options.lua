@@ -151,7 +151,7 @@ local function note(parent, anchor, text)
     return fs
 end
 
--- The page grew past the Options window (#28, Codex on PR #40): everything
+-- The page grew past the Options window (#41, the owner's run): everything
 -- sits on a scroll child, GlassPanel's recipe (UIPanelScrollFrameTemplate
 -- exists on Forever: porting guide), its height fitted to what it holds.
 local page, last
@@ -212,8 +212,15 @@ local function build()
         { { false, "Blizzard's dots" }, { true, "Each node's item icon" } }, "")
     local iconsWhy = note(page, icons, "An icon covers Blizzard's dot once NodeRadar has measured where the node "
         .. "is; near the map's edge the dot shows. Dimmed: your skill can't gather it yet.")
+    -- #41: the icon's frame and size, for when icons are on.
+    local style = radios(page, iconsWhy, "Each icon's frame", "iconStyle",
+        { { "auto", "Follow the minimap" }, { "plain", "None" }, { "glass", "Glass" }, { "bronze", "Bronze" } }, "")
+    local styleWhy = note(page, style, "Following the minimap: glass with Glass MiniMap, else a bronze ring like "
+        .. "Blizzard's minimap buttons. Glass needs Glass MiniMap (or another Glass addon); without it, bronze.")
+    local size = radios(page, styleWhy, "Icon size", "iconSize",
+        { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
 
-    local learning = heading(page, iconsWhy, "Learning")
+    local learning = heading(page, size, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
     local why = note(page, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
         .. "it's off by default; NodeRadar also learns every node you gather.")

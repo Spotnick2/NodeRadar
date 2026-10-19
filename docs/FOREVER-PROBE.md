@@ -321,3 +321,62 @@ NodeRadar's icons on (`Icons.lua` as committed), Glass MiniMap on, then the stoc
 So the icons sit on their nodes standing, zooming, running and turning, cost nothing noticeable, and
 leave Blizzard's above and below arrows visible; the 25-unit square holds on the stock map, which is
 also 198 units here, so whether it scales with a map's size is still unknown.
+
+### Glass discs around the icons: `glass`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#41)
+
+LibGlass-1.0 minor 11 as Glass MiniMap loaded it. Each look is a disc built as Glass MiniMap's `Ring.AddDisc`
+builds one (`disc_small`, the icon inset 18% and masked round), a child of NodeRadar's icon frame.
+
+| Look | Owner |
+|---|---|
+| A: 18 units, clean (Glass MiniMap's), the icon 12 | yes |
+| B: 22 units, clean, the icon 14 | yes |
+| C: 15 units, clean, the icon 9 | yes; note: "i think we can have an optional size" |
+| D: 18 units, pearl | yes |
+| E: 18 units, clean, no shadow | yes |
+| The best | note: "honestly at this size, it doesn't change much, I'd probably take the minimap setup by default" |
+| Running with A | the discs stayed on their nodes (yes) |
+
+The screenshots: every look builds and follows its icon; the glass reads as a thin ring round the
+icon, and at these sizes the presets and the shadow are hard to tell apart. Blizzard's above and
+below arrows still show at the disc's edge. Two observations, not explained yet:
+- In the running screenshot the two Silverleaf showed as Blizzard's dots, not icons, 0.7 s after
+  the step listed both as icons. The two were about 33 units apart, near the "crowded" distance (36).
+- In the plain screenshot, two nodes that had just come into view were still dots: they hadn't been
+  measured yet, which is expected.
+
+### Bronze rings around the icons: `bronze`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar, Blizzard's minimap) (#41)
+
+Glass MiniMap off. Each look is Blizzard's round minimap button as LibDBIcon lays it out (`MiniMap-TrackingBorder`
+136430 and `UI-Minimap-Background` 136467, the icon masked round with `TempPortraitAlphaMask`), scaled to the icon.
+
+| Look | Owner |
+|---|---|
+| F: the icon 12 (the ring about 22 units) | yes |
+| G: the icon 10 (the ring about 18) | yes |
+| H: the icon 14 (the ring about 26) | yes |
+| The best | unsure; note: "same as the other, make it a choice" (a size setting) |
+| Running with F | the rings stayed on their nodes (yes) |
+
+The screenshots: every ring is centred on its node, the icon round inside it, the same bronze as the
+minimap's own border. **The ring hides Blizzard's arrow for a node below the player**: the plain
+screenshot shows the downward triangle under three nodes (Earthroot, two Peacebloom), and with any ring
+on they're gone. The upward triangle above a node above stayed visible at F's size. So with a ring (or
+a large icon) the height has to be drawn by us. No icon blinked in the running screenshot.
+
+### NodeRadar's own icon frames: `styles`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#41)
+
+The #41 build: `iconStyle` and `iconSize`, Glass MiniMap on, then off for the last steps.
+
+| What | Measured |
+|---|---|
+| Following the minimap, Glass MiniMap on | glass, medium (read back: `glass 12`); each disc on its node (yes) |
+| Glass small and large; bronze small, medium and large; no frame | each read back as set (`glass 10`, `glass 14`, `bronze 10`/`12`/`14`, `plain 12`); right at every size (yes, yes) |
+| Our arrow | shown for a node below (Peacebloom, bronze): the screenshot shows a small downward triangle under each ring of a node below, an upward one over a node above. The owner answered "unsure" so the screenshots would decide; asked after: "if it's the mini-arrows next to the nodes they are ok" |
+| Hovering a framed icon | Blizzard's tooltip as without icons (`Peacebloom` with its arrow escape); yes |
+| A dimmed node | none in view (skipped); Blizzard's minimap step later showed Mageroyal dimmed |
+| The rim | the framed icon faded out at the edge (yes); the step was done by hand, its wait never saw an icon below 0.95 alpha |
+| **The Options page** | **it overflows** (owner's note): from "Each icon's frame" down, the page draws past the Options window's bottom. Fixed after the run: the page scrolls (GlassPanel's `UIPanelScrollFrameTemplate` recipe); the owner checked it in game: fixed |
+| The cost, 60 s each on one loop | off: 102 sweeps, 270 reads and 670 KB a sweep, worst 14.8 ms. Glass: 104 sweeps, 264 reads, 699 KB, worst 11.7 ms. Bronze: 97 sweeps, 253 reads, 682 KB, **worst 100.8 ms**: one spike, the rest as the others; the owner's computer was likely downloading something then: not NodeRadar's |
+| Following the minimap, Glass MiniMap off | bronze, medium (`bronze 12`), on their nodes (yes) |
+| Settings put back | `icons`, `iconStyle`, `iconSize` back to the player's (nil) |

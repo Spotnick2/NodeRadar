@@ -192,6 +192,9 @@ function Methods.GetEffectiveScale(w) return w._effScale or 1 end
 function Methods.GetTop(w) return w._top end              -- nil until a test lays it out
 function Methods.GetBottom(w) return w._bottom end
 function Methods.SetScrollChild(sf, child) sf._scrollChild = child end
+function Methods.SetScale(w, s) w._scale = s end
+function Methods.GetScale(w) return w._scale or 1 end
+function Methods.AddMaskTexture(t, m) t._mask = m end
 function Methods.SetAlpha(w, a) w._alpha = a end
 function Methods.GetAlpha(w) return w._alpha or 1 end
 function Methods.GetParent(w) return w._parent end
@@ -250,6 +253,9 @@ function Methods.CreateFontString(w, name)
     if name then rawset(_G, name, fs) end
     return fs
 end
+function Methods.CreateMaskTexture(w, name)
+    return addRegion(w, newWidget("MaskTexture", w, name))
+end
 function Methods.GetRegions(w) return unpack(w._regions or {}) end
 function Methods.GetObjectType(w) return w._type end
 function Methods.SetTexture(t, file) t._file = file; return true end
@@ -257,6 +263,8 @@ function Methods.SetColorTexture(t, r, g, b, a) t._color = { r, g, b, a } end
 function Methods.SetVertexColor(t, r, g, b, a) t._vertex = { r, g, b, a } end
 function Methods.SetTexCoord(t, ...) t._texCoord = { ... } end
 function Methods.SetDesaturated(t, v) t._desaturated = v end
+function Methods.IsDesaturated(t) return t._desaturated == true end
+function Methods.GetTexture(t) return t._file end
 -- Animations: groups record whether they play.
 function Methods.CreateAnimationGroup(w) return newWidget("AnimationGroup", w) end
 function Methods.CreateAnimation(ag, atype) return newWidget(atype or "Animation", ag) end
@@ -307,6 +315,10 @@ function GetAddOnMemoryUsage() return collectgarbage("count") end
 WoW.addonVersion = "dev"
 C_AddOns = {
     GetAddOnMetadata = function(name, field) if field == "Version" then return WoW.addonVersion end end,
+    IsAddOnLoaded = function(name)
+        local on = WoW.loadedAddons ~= nil and WoW.loadedAddons[name] == true
+        return on, on
+    end,
 }
 
 -- C_Timer.After keeps its delay: WoW.flushTimers(upTo) runs those due within
