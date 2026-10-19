@@ -380,3 +380,22 @@ The #41 build: `iconStyle` and `iconSize`, Glass MiniMap on, then off for the la
 | The cost, 60 s each on one loop | off: 102 sweeps, 270 reads and 670 KB a sweep, worst 14.8 ms. Glass: 104 sweeps, 264 reads, 699 KB, worst 11.7 ms. Bronze: 97 sweeps, 253 reads, 682 KB, **worst 100.8 ms**: one spike, the rest as the others; the owner's computer was likely downloading something then: not NodeRadar's |
 | Following the minimap, Glass MiniMap off | bronze, medium (`bronze 12`), on their nodes (yes) |
 | Settings put back | `icons`, `iconStyle`, `iconSize` back to the player's (nil) |
+
+### The compass, first round: `compass`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#29)
+
+A draft ring under the screen's centre, its arrow at `bearing - GetPlayerFacing()` toward one of #28's
+records, the bearing from `UnitPosition` as `atan2(-east, north)`.
+
+| What | Measured |
+|---|---|
+| **`GetPlayerFacing()`**, the minimap's arrow pointed by the owner | north 6.215, west 1.658, south 3.244, east 4.736 rad: **counter-clockwise from north**, 0 to 2π, each within 0.1 of 0, π/2, π, 3π/2 |
+| Across north | 6.238 → 0.420 between two polls: it wraps at 2π, as expected |
+| The bearing to a record | Silverleaf at 3.05 rad (south), 72.7 yd; facing it (the node above the arrow on the minimap) read 3.04: **0.01 rad apart** |
+| **The arrow, the node ahead** | at the ring's top (yes) |
+| **The arrow, the node on the left** (off by +1.43 rad) | on the ring's left side, pointing left (yes; screenshot) |
+| **The walk** to the node following the compass, then a gather | 72.7 yd at the start, 72.0 yd walked in a straight line (start to gather), the record 1.0 yd from the player at the cast: the distance and the record hold over 70 yards |
+| Led to the node | yes (no note on the draft's look) |
+| `UnitOnTaxi` on a flight | **not measured**: the flight was skipped, and the landing step read false at once (a flaw of the step: it didn't wait for a flight) |
+
+So `atan2(-east, north) - GetPlayerFacing()` (counter-clockwise from straight ahead) points the compass
+right, and #28's records are good to a yard or so at 70 yards. The flight stays to measure.
