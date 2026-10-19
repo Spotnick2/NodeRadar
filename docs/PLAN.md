@@ -365,6 +365,12 @@ above the player (the arrow's raw text); a gathered node's record against `UnitP
 cast (the axes); the cost, icons off then on along the same route; the stock map (Glass MiniMap
 off): the square's size there. Defaults (the setting, the icon's size) are the owner's call after it.
 
+**Done** (docs/FOREVER-PROBE.md, "Item icons, second round"): the icons on their dots standing,
+zoomed, running and turning, on Glass MiniMap and the stock map; the hover tooltip unchanged; the
+12-unit icon over the player's arrow acceptable; Blizzard's arrow for a node above still shows
+(upper half, measured): no chevron; a gather put the record 2.6 yd from the player, so the axes
+hold; about 2% more reads and garbage per sweep. The stock map's square is 25 too.
+
 ### Not in this issue
 
 The compass (#29) reuses the records later. Alternating tracking for dual gatherers, nodes beyond

@@ -300,3 +300,24 @@ So a node's blip answers over a fixed 25-unit square around its dot: one edge pe
 halving inside the grid's 14-unit bracket, places it within about 2 units; and the icon needs no
 item cache. Whether the 1-2 units are the dot's own offset or our rounding waits for marks big
 enough to see (the icons themselves).
+
+### Item icons, second round: `iconcheck`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#28)
+
+NodeRadar's icons on (`Icons.lua` as committed), Glass MiniMap on, then the stock map for four steps.
+
+| What | Measured |
+|---|---|
+| Icons over the dots, standing still | yes (owner); the screenshot shows each node's item icon where its dot was, no dot beside one |
+| Hovering an icon | Blizzard's tooltip as without icons: `GameTooltip`'s first line read the node (`Earthroot`, with its arrow escape), the owner said yes. The icons are mouse-through |
+| Standing on a node | the 12-unit icon covers the player's arrow; **acceptable** at this size (owner) |
+| **A node above the player** | `\|TInterface\Minimap\Minimap-PositionArrows:0:0:0:0:16:32:0:16:0:16\|tSilverleaf`: the file's **upper half**, drawn as a small white **upward** triangle above the dot. With the icon on, it shows just above the icon's top edge: "barely but yes" (owner). No chevron of our own |
+| Right after a zoom (to 4), running, turning while running | the icons on their dots (owner, three yes); the screenshots agree |
+| Indoors | no nodes in view there, no icons: nothing to compare |
+| **A gather** (Earthroot) | its record **2.6 yd** from `UnitPosition` at the cast (north +2.5, west +0.6), within gathering reach. A flipped axis would put it tens of yards off: the first value is north and the second west, as HereBeDragons-2.0 has it |
+| **The cost**, the same loop for 60 s each | icons off: 105 sweeps, 30677 reads (292 a sweep), 67 MB allocated by all addons (640 KB a sweep), worst sweep 11.7 ms. Icons on: 86 sweeps, 25560 reads (297 a sweep), 56 MB (653 KB a sweep), worst sweep 9.0 ms. So **about 2% more per sweep**, within the noise of two rides (fewer sweeps the second time: a slower ride) |
+| **The stock map** (Glass MiniMap off) | the map 198 x 198 units at the same scale and zoom: Silverleaf x2 and Earthroot, each **a 25 x 25 square**. The probe's red crosses (the measured centre) are visible here, on each icon's centre; the icons on their dots there too (owner's yes; note "blue square not red cross" for the boxes, as in round 1) |
+| The setting put back | `icons` back to the player's default (nil) after the reloads |
+
+So the icons sit on their nodes standing, zooming, running and turning, cost nothing noticeable, and
+leave Blizzard's above and below arrows visible; the 25-unit square holds on the stock map, which is
+also 198 units here, so whether it scales with a map's size is still unknown.
