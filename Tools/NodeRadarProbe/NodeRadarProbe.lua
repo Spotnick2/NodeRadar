@@ -35,7 +35,7 @@
 -- /fp steps nr cultivation (the gathering skill and Cultivation, #26); /fp steps nr
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
--- icons in game, #28); /fp steps nr glass (glass discs around them, #41).
+-- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -2534,7 +2534,41 @@ local LOOKS = {
     C = { size = 15, preset = "clean", text = "15 units, clean, the icon 9" },
     D = { size = 18, preset = "pearl", text = "18 units, pearl (the Glass suite's theme)" },
     E = { size = 18, preset = "clean", shadow = false, text = "18 units, clean, no shadow" },
+    -- Bronze, for Blizzard's own minimap (the owner): its round button's ring.
+    F = { bronze = true, icon = 12, text = "bronze ring, the icon 12 as today (the ring about 22 units)" },
+    G = { bronze = true, icon = 10, text = "bronze ring, the icon 10 (the ring about 18, the glass disc's size)" },
+    H = { bronze = true, icon = 14, text = "bronze ring, the icon 14 (the ring about 26)" },
 }
+
+-- Blizzard's round minimap button as LibDBIcon lays it out on a 31-unit button:
+-- the ring (MiniMap-TrackingBorder) 53 at its top left, the dark background 20
+-- at (7, -5), the icon 17 at (7, -6), here masked round. Scaled to the icon.
+local RING, RING_BG = 136430, 136467
+local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+
+local function bronzeFor(f, look)
+    local k = look.icon / 17
+    local host = CreateFrame("Frame", nil, f)
+    host:SetSize(31 * k, 31 * k)
+    host:SetPoint("CENTER", f, "CENTER", 0, -1 * k)    -- the icon's centre on the node: 1 above the button's
+    local ring = host:CreateTexture(nil, "OVERLAY")
+    ring:SetSize(53 * k, 53 * k)
+    ring:SetTexture(RING)
+    ring:SetPoint("TOPLEFT", host, "TOPLEFT")
+    local bg = host:CreateTexture(nil, "BACKGROUND")
+    bg:SetSize(20 * k, 20 * k)
+    bg:SetTexture(RING_BG)
+    bg:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -5 * k)
+    local icon = host:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(look.icon, look.icon)
+    icon:SetPoint("TOPLEFT", host, "TOPLEFT", 7 * k, -6 * k)
+    local mask = host:CreateMaskTexture()
+    mask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetAllPoints(icon)
+    icon:AddMaskTexture(mask)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    return { host = host, icon = icon, ring = ring }
+end
 local glass = { look = nil, insts = {}, discs = {} }       -- discs[frame][key] = { host, icon }
 local glassFrame = CreateFrame("Frame")
 
@@ -2559,6 +2593,11 @@ local function discFor(f, key)
     glass.discs[f] = glass.discs[f] or {}
     local d = glass.discs[f][key]
     if d then return d end
+    if LOOKS[key].bronze then
+        d = bronzeFor(f, LOOKS[key])
+        glass.discs[f][key] = d
+        return d
+    end
     local look, inst = LOOKS[key], glassInst(LOOKS[key].preset)
     if not inst then return nil end
     local host = CreateFrame("Frame", nil, f)
@@ -2670,6 +2709,59 @@ for _, s in ipairs({
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }) do table.insert(glassSteps, s) end
 Probe:Steps("glass", glassSteps)
+
+local function glassMiniMapOn()
+    local ok, loaded = pcall(C_AddOns.IsAddOnLoaded, "GlassMiniMap")
+    return ok and yes(loaded)
+end
+
+local bronzeSteps = {
+    rev = 1,
+    title = "Bronze rings around NodeRadar's icons, on Blizzard's minimap (#41)",
+    { text = "Have NodeRadar loaded and gathering tracking on. NodeRadar's icons go on now, and back as they were "
+          .. "at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Icons) then return false, "NodeRadar (with icons) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          iconsOn(n, true)
+          return true, "icons on"
+      end },
+    { text = "Turn Glass MiniMap off in the AddOns list, then press Reload.", reload = true },
+    { text = "Stand still where herbs or ore show on the minimap, until icons cover their dots. Stay still for the "
+          .. "looks that follow.", wait = function()
+          glassLook(nil)
+          if glassMiniMapOn() then return false, "Glass MiniMap is still on: turn it off and reload" end
+          if #shownIcons() == 0 then return false, "no icon yet" end
+          return true, iconsText()
+      end, screenshot = "bronze: plain icons" },
+}
+for _, key in ipairs({ "F", "G", "H" }) do
+    table.insert(bronzeSteps, { text = "Look " .. key .. ": " .. LOOKS[key].text .. ". Stay still.",
+                                wait = lookShown(key), screenshot = "bronze: look " .. key })
+    table.insert(bronzeSteps, { text = "Look " .. key .. " (" .. LOOKS[key].text .. "): do you like it? Note box: "
+                                    .. "what you'd change (size, the ring, the icon inside).", ask = true })
+end
+for _, s in ipairs({
+    { text = "Which look did you like best? Type its letter in the Note box (F, G, H, or plain).", ask = true },
+    { text = "Look F again: run past nodes, turning a bit, until this step completes.", wait = function()
+          if glass.look ~= "F" then glassLook("F") end
+          if not moving() then state.glRun = nil; return false, "not moving" end
+          if #shownIcons() == 0 then return false, "moving, no icon in view" end
+          state.glRun = (state.glRun or 0) + 1
+          if state.glRun < 3 then return false, "moving with rings" end
+          state.glRun = nil
+          return true, iconsText()
+      end, screenshot = "bronze: running" },
+    { text = "Running, did the rings stay on their nodes? (Note box: lagging, blinking, too busy.)", ask = true },
+    { text = "Taking the rings off.", auto = true, run = function()
+          glassLook(nil)
+          return "rings off"
+      end },
+    { text = "Turn Glass MiniMap back on in the AddOns list, then press Reload.", reload = true },
+    { text = "Putting NodeRadar's icons setting back.", auto = true, run = iconsBack },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}) do table.insert(bronzeSteps, s) end
+Probe:Steps("bronze", bronzeSteps)
 
 --------------------------------------------------------------------------------
 -- Boot, and the events worth a line while the procedure runs

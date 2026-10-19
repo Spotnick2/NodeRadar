@@ -247,6 +247,9 @@ function Methods.CreateFontString(w, name)
     if name then rawset(_G, name, fs) end
     return fs
 end
+function Methods.CreateMaskTexture(w, name)
+    return addRegion(w, newWidget("MaskTexture", w, name))
+end
 function Methods.GetRegions(w) return unpack(w._regions or {}) end
 function Methods.GetObjectType(w) return w._type end
 function Methods.SetTexture(t, file) t._file = file; return true end
@@ -306,6 +309,10 @@ function GetAddOnMemoryUsage() return collectgarbage("count") end
 WoW.addonVersion = "dev"
 C_AddOns = {
     GetAddOnMetadata = function(name, field) if field == "Version" then return WoW.addonVersion end end,
+    IsAddOnLoaded = function(name)
+        local on = WoW.loadedAddons ~= nil and WoW.loadedAddons[name] == true
+        return on, on
+    end,
 }
 
 -- C_Timer.After keeps its delay: WoW.flushTimers(upTo) runs those due within
