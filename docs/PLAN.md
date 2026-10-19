@@ -1052,24 +1052,37 @@ takes clicks and says "Drag to move"; its state read from live input, never one 
 
 The owner (2026-10-19): a way to say "not that one" when the compass's node is out of reach (above
 the player, or guarded by mobs too strong), so it moves on to the next. Not permanent: "a 'snooze'
-button like Outlook". Their choices: a **NodeRadar minimap button** (left-click: the snooze menu,
-right-click: the settings) and a **key binding**; the menu asks for how long (15 minutes, 30
-minutes, 1 hour, this session); a way to clear them, a reload doing it too.
+button like Outlook". Their choices: a **NodeRadar minimap button** (left-click: a context menu,
+right-click: the settings) and a **key binding**; the snooze asks for how long (15 minutes, 30
+minutes, 1 hour, this session); a way to clear them, a reload doing it too. And: "left-click on the
+minimap button will probably lead to more actions in the future, so maybe we should add a menu to
+toggle icons/compass and the snooze there (contextual menu, not a full panel)".
 
 - **A snooze** is `{ name, north, west, instance, untilT }` in memory only (`math.huge` for "this
   session"): never saved, so a `/reload` or a logout clears every one. It covers the record the
   compass points at **and that node measured again later** (the record is dropped when it leaves
   the minimap, and a new one is made when it comes back): a record of the same name, the same
-  instance, within `Compass.SNOOZE_NEAR = 8` yards of the snoozed spot (a re-measured node lands
-  within about 2 yards: #28's measure is to 0.25 units, about 0.4 yards at the default zoom).
-  Expired snoozes are dropped as they're met.
+  instance, within `Compass.SNOOZE_NEAR = 8` **world yards** of the snoozed spot (a re-measured
+  node lands within about 2 yards: #28's measure is to 0.25 units, about 0.4 yards at the default
+  zoom; not `Icons.MATCH`, which is in map units). The instance is `UnitPosition`'s fourth value:
+  records hold none (Icons clears them on an instance change), so a snooze stamps the player's at
+  the time and is compared with the player's now. Same-name nodes within 8 yards count as one spot
+  (Codex: accepted). Expired snoozes are dropped as they're met: the next sweep's `Icons.Show` and
+  `Compass.Reconcile` redraw and re-choose, so no timer runs.
+- **Kept apart from the clears:** `Compass.Reset` and `Icons.Clear` (loading screens, death,
+  tracking changed, the settings) leave snoozes alone; only a reload, a logout or a clear ends them.
 - **The compass:** `choose` skips records under an active snooze, the incumbent too (the
   hysteresis can't keep a snoozed target). A snooze chooses again at once (`refresh`): the next
   nearest wins outright, as the issue asked. With every node snoozed, no target: hidden.
 - **The icons:** a snoozed node's icon is dimmed (`r.dim` also when `Compass.Snoozed(r)`), so the
-  player sees which one they put aside. The alert is untouched (it's about nodes coming into range).
-- **Snoozing** (`Compass.Snooze(seconds | "session")`): the compass's current target; nothing
-  without one. **Clearing** (`Compass.ClearSnoozes()`): every snooze, the compass chooses again.
+  player sees which one they put aside. **At once:** a snooze and a clear call `Icons.Show()` (which
+  recomputes `r.dim` and binds), not only the compass's refresh: `Icons.draw` reads the cached dim
+  (Codex). The alert is untouched (it's about nodes coming into range); #47's `Alert.Wanted` and
+  the gathered-dot rule stay as they are, a snooze an extra filter on top of them.
+- **Snoozing** (`Compass.Snooze(seconds | "session", record)`): a given record, by default the
+  compass's current target; nothing without one. `lastSweep` is kept (an immediate re-choice, not a
+  sweep). **Clearing** (`Compass.ClearSnoozes()`): every snooze, the compass chooses again, the
+  icons re-dim.
 - **The minimap button** (the owner's sibling addons' recipe, GuildSpy's `Minimap.lua` after
   Gnomesweeper's): a LibDataBroker launcher shown by LibDBIcon-1.0, so it drags around the ring, and
   minimap skins and button collectors (Glass MiniMap Bar) take it like any other. Its position and
@@ -1077,16 +1090,24 @@ minutes, 1 hour, this session); a way to clear them, a reload doing it too.
   never replaced; shown by default, a checkbox in Options ("A NodeRadar button on the minimap").
   Registered at `PLAYER_LOGIN` inside a `pcall`: no libraries, or the name taken, means no button
   and nothing else breaks.
-  - **Left-click:** the snooze menu (`MenuUtil.CreateContextMenu`, Blizzard_Menu, 70450):
-    a title "Snooze: <item's name>, <yards> yd"; "15 minutes", "30 minutes", "1 hour", "This
-    session"; a divider; "Clear snoozes (N)" when there are some. No target: the title says why
-    ("The compass has no node now", or "The compass is off: turn it on in Options") and only the
-    clear entry is offered.
+  - **Left-click: NodeRadar's context menu** (`MenuUtil.CreateContextMenu`, Blizzard_Menu,
+    70450), the place for quick actions, more later (the owner):
+    - checkboxes: "Radar on", "Item icons on the minimap", "The compass (experimental)" (`NR.Set`,
+      so the page and `/nr` agree);
+    - a divider; "Snooze <item's name>, <yards> yd" opening a submenu: "15 minutes", "30 minutes",
+      "1 hour", "This session". No target: a disabled line saying why ("The compass has no node
+      now", or "The compass is off"). **The node is captured when the menu opens** and the choice
+      snoozes that one, even if the compass moved on meanwhile (sweeps go on while it's open:
+      Codex);
+    - "Clear snoozes (N)" when there are some.
   - **Right-click:** NodeRadar's Options page.
   - **Its tooltip:** "NodeRadar"; the compass's node and distance, or none; how many are snoozed;
     the hints (left-click, right-click, drag).
   - **The AddOns compartment** (the TOC's `AddonCompartmentFunc*`) clicks the same way, for players
-    who hide minimap buttons. The TOC gets `## IconTexture` (Find Herbs' icon).
+    who hide minimap buttons. Its callback gets `(addonName, mouseButton)`, not a frame
+    (Blizzard's AddonCompartment.lua), so the menu's owner is the minimap button only when the
+    first argument is that shown button, else `nil` (the cursor: `CreateContextMenu`'s default)
+    (Codex). The TOC gets `## IconTexture` (Find Herbs' icon).
 - **The key binding** (Esc > Options > Key Bindings > NodeRadar, `Bindings.xml`, its own
   category): "Snooze the compass's node", for `snoozeFor` (Options: 15 minutes, 30 minutes, 1 hour,
   this session; "this session" by default), with a line in chat saying what and for how long.
@@ -1094,22 +1115,33 @@ minutes, 1 hour, this session); a way to clear them, a reload doing it too.
   `/nr snooze clear`.
 - **The libraries:** LibStub, CallbackHandler-1.0, LibDataBroker-1.1 and LibDBIcon-1.0, committed
   in `Libs\` with their licence files, as GuildSpy ships them (the same versions: LibDBIcon minor
-  56), loaded first in the TOC. CI's package check allows exactly those files (the TOC's Lua and
-  each library's LICENSE).
+  56), loaded first in the TOC (LibStub, CallbackHandler, LibDataBroker, LibDBIcon). CI's package
+  check allows exactly those files: the TOC's Lua, **`Bindings.xml`** (found by its name, not in the
+  TOC: porting guide), and the licences that exist (`Libs/LibStub/LICENSE.txt`,
+  `Libs/CallbackHandler-1.0/LICENSE.txt`, `Libs/LibDBIcon-1.0/LICENSE.txt`; LibDataBroker has none)
+  (Codex).
+- **Tests and the libraries** (GuildSpy's recipe, Codex): the harness's `tocFiles()` leaves `Libs\`
+  out of the files behaviour tests load (`tocFiles(true)` lists them for the inventory; `luac -p`
+  checks every one); the stubs answer `LibStub("LibDataBroker-1.1")` and `("LibDBIcon-1.0")` with
+  recording fakes (objects, registrations, the button, Show/Hide), and a test's own `LibStub` (the
+  LibGlass fakes) can still be set.
 - **The UI contract** gains one exception: LibDBIcon's button is a **named** child of `Minimap`
   (`LibDBIcon10_NodeRadar`, the library's), as every LibDBIcon addon's is; NodeRadar still never
   moves, resizes or hides `Minimap` itself.
 - **Tests:** a snooze skips the target and the next wins outright (even within 5 yards); the same
   node re-measured (a new record within 8 yards) still skipped, one 12 yards off not; another name
-  at the spot not; each duration expires at its time, "session" never; clear; no target: nothing;
-  the dim on the icon and gone when it expires; the menu's entries with and without a target and
-  with the compass off; the clicks (left, right, the compartment); the key binding's duration from
-  the setting; the commands; the button shown and hidden by the setting; no libraries: no button,
-  no error.
+  at the spot not; another instance not; each duration expires at its time, "session" never; clear;
+  no target: nothing; a loading screen or death (records cleared) keeps the snoozes; the dim on the
+  icon **at once, without a sweep**, and gone at the sweep after it expires; the menu's entries
+  (the toggles, the snooze with and without a target, the compass off, the clear) and its
+  toggles doing `NR.Set`; **the target changing between opening and choosing: the shown node
+  snoozed**; the clicks (left, right, the compartment, with the button hidden and with no
+  libraries); the key binding's duration from the setting; the commands; the button shown and
+  hidden by the setting (the saved `hide`); no libraries: no button, no error.
 - **Look round** (`/fp steps nr snooze`): the button around the minimap (and dragged), its
-  tooltip; left-click, 15 minutes: the compass on the next node, the snoozed icon dimmed; the key
-  binding; clear; right-click opens Options; the compartment entry; Glass MiniMap Bar collecting
-  it, if loaded; `/reload` clears.
+  tooltip; left-click: the menu, its toggles; snooze 15 minutes: the compass on the next node, the
+  snoozed icon dimmed; the key binding; clear; right-click opens Options; the compartment entry;
+  Glass MiniMap Bar collecting it, if loaded; `/reload` clears.
 
 ### Shown, hidden
 
