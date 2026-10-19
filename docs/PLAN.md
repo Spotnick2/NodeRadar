@@ -534,6 +534,42 @@ it. Per sweep, a `find` per mouseover row for the arrow.
 
 Following Glass MiniMap's theme tint. Square minimap skins (#4). Mouse interaction with the icons.
 
+## A yellow frame (#50)
+
+The owner, after the refined compass (2026-10-19): "for the icon frame, you have glass, bronze, let's
+add the yellow from the original minimap tracker dots too". A third frame for the item icons and the
+compass's rim, the colour of the minimap's own herb and ore tracking dots.
+
+- **The setting:** `iconStyle` gains `"yellow"`: Options' "Each icon's frame" gets "Yellow" after
+  Bronze, `/nr iconstyle yellow`, the help line and the status line's value. **Auto doesn't change**
+  (glass with Glass MiniMap, else bronze): yellow is only ever chosen. It needs nothing loaded, so it
+  never falls back, and the glass latch doesn't touch it.
+- **The colour** (`Icons.YELLOW`, one constant both use): measured from the dots in game, from the
+  look round's screenshot of a dot with the icons off (the dot's lit centre, sampled). Until then a
+  provisional `{ 1, 0.82, 0 }`, the client's gold text colour; the measured value replaces it in
+  the round's fix-up commit, and docs/FOREVER-PROBE.md records it.
+- **The icons' look: our own ring.** `Media/IconRing.tga` (`Tools/make_media.py`, 64 × 64): a white
+  band from radius 24.5 to 31.5 px with a 1.5 px dark edge on both sides, tinted by vertex colour (the
+  white takes the yellow, the dark edges stay dark, so it holds over a bright map). A third host per
+  pooled frame, `f.ring`, built once when first needed like `f.bronze`: the icon masked round
+  (`TempPortraitAlphaMask`, texcoords 0.08 to 0.92) at the medium size, the ring 1.3 times the icon
+  around it (its inner edge at the icon's edge, 24.5 / 32 × 0.65 ≈ 0.5), `SetScale(size / 12)`.
+  `bind` selects, hides and fills it as the other two. `Icons.EXTENT.yellow = s * 0.65` (the ring's
+  half), for the rim's fade and drop and the height arrow's offset.
+- **The compass:** `Compass.TINTS.yellow = Icons.YELLOW`: the greyscale rim tinted yellow (bright
+  on top, darker below, as pearl and bronze), the arc, arrow, lens and capsule unchanged.
+- **The arrow, narrower** (compass5's finding: 44 px wide by 44 tall reads sideways at a slant): the
+  base 30 px wide (from (17, 52) to (47, 52)), the apex and the base line where they were, so the
+  orbit, the reach and the capsule don't move.
+- **Tests:** `"yellow"` stored by Options and the slash command, shown as chosen; the ring host built
+  once and reused, its file `IconRing.tga`, tinted `Icons.YELLOW`, the icon masked and set, the dim
+  on it; switching yellow ↔ glass ↔ bronze ↔ plain hides the others; sizes scale it; the extent used
+  for the fade, the drop and the arrow; auto never yellow; a glass latch leaves yellow alone; the
+  compass's rim yellow; the arrow art's base corners.
+- **Look round** (`yellow`): a dot with the icons off (the colour's screenshot); the icons yellow at
+  small, medium and large over bright and dark map; next to the dots of nodes not yet measured; dim
+  and the height arrow on yellow; the compass yellow; the narrower arrow at the four diagonals.
+
 ## The compass, experimental (#29)
 
 A small ring under the character shows which way to turn and how far it is to **the nearest node
@@ -698,10 +734,11 @@ only the drawing changes.
      arrow (`SetRotation(a)`, the texture's centre the disc's): the bearing's accent, not a gauge.
   6. `CompassArrow`: a solid white triangle with a fine dark outline, flat base toward the centre, no
      stem; 16 units at medium (was 14), turned by `SetRotation(a)`. White in every style. **Its art,
-     64 px:** the apex 24 px above the centre (0.375 × the arrow), the base 20 px below (0.3125), 44 px
-     wide (0.69), the 3 px outline inside those bounds. So its centre on an orbit of half the disc + 1
+     64 px:** the apex 24 px above the centre (0.375 × the arrow), the base 20 px below (0.3125), 30 px
+     wide (0.47; 44 until #50: near equilateral, it read sideways at a slant), the 3 px outline inside
+     those bounds. So its centre on an orbit of half the disc + 1
      + 0.3125 × the arrow puts the base 1 unit outside the rim, and its farthest point (the apex) is
-     the orbit + 0.375 × the arrow: 38 units at medium (the base corners reach less, 27.6).
+     the orbit + 0.375 × the arrow: 38 units at medium (the base corners reach less, 27.3).
 - **The capsule:** `CompassPill`, a dark translucent capsule with a thin subdued outline, **fixed
   width** (56 × 18 units at medium: no width change as the number changes), crisp white text
   (`GameFontHighlightSmall`), its top 3 units below the arrow's farthest reach (41 under the centre
