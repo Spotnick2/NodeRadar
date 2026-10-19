@@ -79,12 +79,11 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   `MiniMap-TrackingBorder` as LibDBIcon lays it out); auto follows the minimap. One `bind` sets a
   frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
 - `Compass.lua` (#29, `compass`, experimental, off by default): a ring under the character whose
-  arrow points at the alerted node (`atan2(-east, north) - GetPlayerFacing()`, measured). It only
-  points at a measured record: an alert leaves a pending target that the first record of its names
-  made after it resolves (15 s), and it stops within 15 yards (the glow is Lueur's). Records are
-  kept while icons or the compass is on (`Icons.Keeping`); `Icons.On` alone draws icons.
-  `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` (`Compass.Alerted`) →
-  `Learn.Consider`, then a learner experiment just started clears both.
+  arrow points at the nearest gatherable record (`atan2(-east, north) - GetPlayerFacing()`,
+  measured), chosen again every sweep with a 5-yard hysteresis and after a gather; hidden within 15
+  yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);
+  `Icons.On` alone draws icons. `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` →
+  `Learn.Consider`, then a learner experiment just started clears the records.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

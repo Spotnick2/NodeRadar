@@ -1,12 +1,12 @@
--- Compass.lua: which way to the alerted node (#29, experimental, off by
+-- Compass.lua: which way to the nearest node (#29, experimental, off by
 -- default; docs/PLAN.md, "The compass, experimental").
 --
--- A ring under the character, its arrow toward the node and the distance in
--- the middle. It points only at a measured record (#28): an alert leaves a
--- pending target, which the first record of its names made after it resolves
--- (a blip at the rim, merged or clipped, has no bounded error: Codex, #29).
--- Within 15 yards it stops: the glow on the node is Lueur's (the soft target),
--- and NodeRadar never touches the soft-targeting settings (owner).
+-- A ring under the character, its arrow toward the nearest node the player
+-- can gather that NodeRadar has measured (#28's records), and the distance in
+-- the middle. Chosen again at every radar sweep, so it moves on as the player
+-- gathers and rides (the owner: following the alerted node fell short). Within
+-- 15 yards it hides: the glow on the node is Lueur's (the soft target), and
+-- NodeRadar never touches the soft-targeting settings (owner).
 --
 -- Measured on 70450 (docs/FOREVER-PROBE.md, "The compass, first round"):
 -- GetPlayerFacing is counter-clockwise from north, 0 to 2pi; a point's bearing
@@ -20,17 +20,14 @@ local API = NR.API
 local Compass = {}
 NR.Compass = Compass
 
-Compass.PENDING = 15   -- seconds an alert waits for a node of its names to be measured
-Compass.TIMEOUT = 60   -- seconds from the alert, whatever is seen meanwhile
-Compass.ARRIVED = 15   -- yards: Lueur's soft target takes over (Forever loses it at 15)
-Compass.REBIND = 3     -- yards: the same node measured again after a passing clear
+Compass.NEAR = 15      -- yards: hidden this close (Lueur's soft target takes over; Forever loses it at 15)
+Compass.HYSTERESIS = 5 -- yards: another node must be this much nearer to take over
 Compass.GRACE = 2      -- seconds past the idle interval without a sweep before it hides
 Compass.RADIUS = 48    -- the arrow's distance from the ring's centre
 Compass.ARROWS = "Interface\\Minimap\\Minimap-PositionArrows"   -- its upper half points up (#41)
 
 local TAU = 2 * math.pi
-local pending          -- { names = { [name] = true }, at }
-local target           -- { name, kind, north, west, record, height, at }
+local target           -- the record pointed at
 local lastSweep        -- the last radar sweep reconciled
 local shownDist        -- the whole yards on the text
 
@@ -59,6 +56,8 @@ local function onTaxi()
     return ok and API.Yes(v)
 end
 
+local function yards(r, pn, pw) return math.sqrt((r.north - pn) ^ 2 + (r.west - pw) ^ 2) end
+
 --------------------------------------------------------------------------------
 -- The ring
 --------------------------------------------------------------------------------
@@ -83,27 +82,23 @@ local function hide()
     shownDist = nil
 end
 
--- The target gone, and any pending one: the ring hidden.
-function Compass.Dismiss()
-    target, pending = nil, nil
-    hide()
-end
-
--- Each frame while shown: the arrow at (bearing - facing), the distance; the
--- timeout and arrival; hidden (kept) when the position or facing can't be read.
+-- Each frame while shown: the arrow at (bearing - facing), the distance.
+-- Hidden (the target kept) within 15 yards of a level node, when the position
+-- or facing can't be read, without a recent sweep, dead or on a taxi; the next
+-- usable sweep shows it again.
 local function frame()
     local t = target
     if not t then hide(); return end
-    if GetTime() - t.at > Compass.TIMEOUT or onTaxi() then Compass.Dismiss(); return end
     local pn, pw = here()
     local f = facing()
-    if not (pn and f) or not lastSweep or GetTime() - lastSweep > NR.db.interval + Compass.GRACE then
+    if not (pn and f) or not lastSweep or GetTime() - lastSweep > NR.db.interval + Compass.GRACE
+        or API.Dead() or onTaxi() then
         hide()
         return
     end
     local north, east = t.north - pn, -(t.west - pw)
     local d = math.sqrt(north * north + east * east)
-    if t.record and not t.height and d <= Compass.ARRIVED then Compass.Dismiss(); return end
+    if d <= Compass.NEAR and not t.height then hide(); return end
     local a = wrap(math.atan2(-east, north) - f)           -- counter-clockwise from straight ahead
     arrow:ClearAllPoints()
     arrow:SetPoint("CENTER", ring, "CENTER", -Compass.RADIUS * math.sin(a), Compass.RADIUS * math.cos(a))
@@ -116,107 +111,58 @@ local function frame()
 end
 ring:SetScript("OnUpdate", frame)
 
-local function show()
+--------------------------------------------------------------------------------
+-- The target: the nearest gatherable record
+--------------------------------------------------------------------------------
+
+-- Chosen from the records as they are now: the nearest gatherable (#26's
+-- filter as the alert uses it, read fresh), unless the current one is still
+-- kept, still gatherable and within HYSTERESIS yards of it (Codex, #29).
+local function choose()
+    local pn, pw = here()
+    if not pn then target = nil; return end
+    local best, bestD, kept
+    for _, r in ipairs(NR.Icons.Records()) do
+        if NR.Alert.Gatherable(r.name) then
+            local d = yards(r, pn, pw)
+            if not bestD or d < bestD then best, bestD = r, d end
+            if r == target then kept = d end
+        end
+    end
+    if kept and best ~= target and kept - bestD < Compass.HYSTERESIS then best = target end
+    target = best
+end
+
+local function refresh()
+    choose()
+    if not target then hide(); return end
     local c = NR.Alert.COLOURS[target.kind] or NR.Alert.COLOURS.herbs
     circle:SetVertexColor(c[1], c[2], c[3], 0.85)
     ring:Show()
     frame()
 end
 
---------------------------------------------------------------------------------
--- The target
---------------------------------------------------------------------------------
-
-local function eligible() return Compass.On() and not API.Dead() and not onTaxi() end
-
--- The nearest record made at `now` whose name `names` holds, or nil.
-local function newest(names, now)
-    local pn, pw = here()
-    if not pn then return nil end
-    local best, bestD
-    for _, r in ipairs(NR.Icons.Records()) do
-        if r.born == now and names[r.name] then
-            local d = (r.north - pn) ^ 2 + (r.west - pw) ^ 2
-            if not bestD or d < bestD then best, bestD = r, d end
-        end
-    end
-    return best
-end
-
-local function aimAt(r, at)
-    target = { name = r.name, kind = r.kind, north = r.north, west = r.west, record = r, height = r.height, at = at }
-end
-
--- The alert fired (Alert.Update, after the cooldown and the skill filter): a
--- pending target, resolved at once by a record of its names made this sweep.
-function Compass.Alerted(names, now)
-    if not eligible() then return end
-    local set = {}
-    for _, name in ipairs(names) do set[name] = true end
-    local r = newest(set, now)
-    if r then
-        pending = nil
-        aimAt(r, now)
-        show()                                         -- this sweep was just reconciled
-    else
-        pending = { names = set, at = now }
-    end
-end
-
--- After each radar sweep's Icons.Update, before the alert and the learner:
--- the pending target resolved or lapsed, the target followed, shown.
+-- After each radar sweep's Icons.Update, before the alert and the learner.
 function Compass.Reconcile(result, now)
     if not Compass.On() then return end
     lastSweep = now
-    if pending then
-        if now - pending.at > Compass.PENDING then
-            pending = nil
-        else
-            local r = newest(pending.names, now)
-            if r then
-                aimAt(r, pending.at)
-                pending = nil
-            end
-        end
-    end
-    local t = target
-    if not t then hide(); return end
-    if not t.record then
-        -- After a passing clear: the same node measured again, within REBIND yards.
-        for _, r in ipairs(NR.Icons.Records()) do
-            if r.name == t.name and math.sqrt((r.north - t.north) ^ 2 + (r.west - t.west) ^ 2) <= Compass.REBIND then
-                t.record, t.north, t.west = r, r.north, r.west
-                break
-            end
-        end
-    end
-    if t.record then
-        t.height = t.record.height
-        show()                                         -- its first frame checks the timeout
-    else
-        hide()
-    end
+    refresh()
 end
 
--- Icons dropped a record (missed, the rim, gathered): its target is dismissed.
-function Compass.Dropped(r)
-    if target and target.record == r then Compass.Dismiss() end
+-- A gather took records out (Icons.Gathered, once the list is filtered):
+-- chosen again at once. Not a sweep: the freshness isn't renewed.
+function Compass.Refresh()
+    if not Compass.On() or not lastSweep then return end
+    refresh()
 end
 
--- Icons cleared every record: for a passing reason the target keeps its
--- position, hidden until its node is measured again; else it's dismissed.
-function Compass.Cleared(why)
-    if why == "passing" then
-        if target then
-            target.record = nil
-            hide()
-        end
-    else
-        Compass.Dismiss()
-    end
+-- The records cleared (Icons.Clear), or the compass turned off: no target.
+function Compass.Reset()
+    target = nil
+    hide()
 end
 
 Compass._test = {
     ring = ring, arrow = arrow, text = text, circle = circle, frame = frame,
-    target = function() return target end, pending = function() return pending end,
+    target = function() return target end,
 }

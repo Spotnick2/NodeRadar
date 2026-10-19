@@ -223,9 +223,9 @@ local function build()
     -- #29: experimental, off by default.
     local compass = checkbox(page, size, "Experimental: show which way to the node (a ring under your character)",
         "compass")
-    local compassWhy = note(page, compass, "Points toward a node of the alerted name, the first one NodeRadar "
-        .. "measures (it may be one already in view), and stops within 15 yards. It follows your character's "
-        .. "facing, not the camera's: turning the camera alone doesn't turn it.")
+    local compassWhy = note(page, compass, "Points toward the nearest node you can gather that NodeRadar has "
+        .. "measured, and hides within 15 yards of it. It follows your character's facing, not the camera's: "
+        .. "turning the camera alone doesn't turn it.")
 
     local learning = heading(page, compassWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")

@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- **Experimental: a compass toward the node** (#29), off by default (`/nr compass`, or Options):
-  when a node alerts, a ring under your character points toward it with the distance, until you're
-  within 15 yards. It follows your character's facing, not the camera's.
+- **Experimental: a compass toward the nearest node** (#29), off by default (`/nr compass`, or
+  Options): a ring under your character points toward the nearest node you can gather, with the
+  distance, and moves on as you gather; it hides within 15 yards. It follows your character's
+  facing, not the camera's.
 
 ## v1.1.0
 

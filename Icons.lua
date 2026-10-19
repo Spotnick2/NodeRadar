@@ -93,12 +93,6 @@ local function release(r)
     end
 end
 
--- A record gone for its own reasons (missed, past the rim, gathered): the
--- compass aiming at it lets go (#29).
-local function drop(r)
-    release(r)
-    if NR.Compass then NR.Compass.Dropped(r) end
-end
 
 local function acquire()
     local f = table.remove(free)
@@ -303,14 +297,13 @@ local function hideAll()
     stop()
 end
 
--- Everything forgotten: the records, the failed tries, the frames hidden.
--- `why` is "passing" for a sweep without a position or a map (the compass
--- keeps its target's position then, #29); anything else ends the compass too.
-function Icons.Clear(why)
+-- Everything forgotten: the records, the failed tries, the frames hidden;
+-- the compass pointing at none of them (#29).
+function Icons.Clear()
     for _, r in ipairs(records) do release(r) end
     records, tries, lastSweep, instance = {}, {}, nil, nil
     stop()
-    if NR.Compass then NR.Compass.Cleared(why) end
+    if NR.Compass then NR.Compass.Reset() end
 end
 
 -- The icons turned off while the compass keeps the records: the frames go,
@@ -413,10 +406,10 @@ function Icons.Update(result, now)
     local where, g = result.where, result.geometry
     local pn, pw, inst = player()
     if not (where and g and pn) then
-        Icons.Clear("passing")
+        Icons.Clear()
         return
     end
-    if instance and inst ~= instance then Icons.Clear("instance") end
+    if instance and inst ~= instance then Icons.Clear() end
     instance = inst
     local half = g.w / 2
     local k = where.radius / half
@@ -453,7 +446,7 @@ function Icons.Update(result, now)
     for _, r in ipairs(records) do
         r.misses = matched[r] and 0 or r.misses + 1
         if r.misses >= 2 or dist(r.x, r.y) >= half - look.extent then
-            drop(r)
+            release(r)
         else
             if r.misses > 0 and r.frame then r.frame:Hide() end
             kept[#kept + 1] = r
@@ -487,7 +480,7 @@ function Icons.Update(result, now)
         for _, b in ipairs(measure) do
             if b.cx then
                 local r = { name = b.name, kind = NR.Learn.Kind(b.name), north = pn + b.cy * k, west = pw - b.cx * k,
-                            misses = 0, x = b.cx, y = b.cy, height = b.height, born = now }
+                            misses = 0, x = b.cx, y = b.cy, height = b.height }
                 r.icon = iconOf(r.name, r.kind)
                 records[#records + 1] = r
                 b.record = r
@@ -520,12 +513,13 @@ function Icons.Gathered(name)
     local kept = {}
     for _, r in ipairs(records) do
         if r.name == name and dist(r.north - pn, r.west - pw) <= Icons.GATHERED then
-            drop(r)
+            release(r)
         else
             kept[#kept + 1] = r
         end
     end
     records = kept
+    if NR.Compass then NR.Compass.Refresh() end        -- on to the next node, once the list is filtered
 end
 
 -- Where the sonar goes for an alerted blip: its record's centre when it has one.

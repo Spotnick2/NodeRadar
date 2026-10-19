@@ -88,7 +88,7 @@ function NR.Step(now)
     if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset() end
     lastGeometry = result.geometry
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
-    Compass.Reconcile(result, now)                  -- the target followed, before a new alert (#29)
+    Compass.Reconcile(result, now)                  -- the nearest node, before the learner (#29)
     Alert.Update(result, now)
     Learn.Consider(result, now)
     -- An experiment just started turns tracking off: whenever the client
@@ -124,7 +124,7 @@ function NR.Set(key, value)
         elseif key == "icons" then
             if Icons.On() then Icons.Show() else Icons.Release() end
         elseif not Compass.On() then
-            Compass.Dismiss()
+            Compass.Reset()
         end
     end
     if key == "iconStyle" or key == "iconSize" then Icons.Restyle() end
@@ -266,7 +266,7 @@ local function help()
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
     API.Say("/nr iconstyle auto | plain | glass | bronze: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
-    API.Say("/nr compass: experimental, a ring under your character pointing at the alerted node (off by default)")
+    API.Say("/nr compass: experimental, a ring under your character pointing at the nearest node (off by default)")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end

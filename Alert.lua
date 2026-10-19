@@ -93,7 +93,6 @@ function Alert.Update(result, now)
     lastAlert = now
     table.sort(fire)
     Alert.Fire(fire, blips, result)
-    NR.Compass.Alerted(fire, now)                       -- #29: which way to it
     return fire
 end
 

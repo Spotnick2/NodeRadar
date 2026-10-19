@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass (#29, first round).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass and compass3 (#29).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3128,7 +3128,7 @@ Probe:Steps("compass", {
 })
 
 --------------------------------------------------------------------------------
--- The compass, second round (#29): NodeRadar's own, /fp steps nr compass2
+-- The compass, third round (#29): the nearest node, /fp steps nr compass3
 --------------------------------------------------------------------------------
 
 -- NodeRadar's compass and icons settings, raw, put back by the last step.
@@ -3149,63 +3149,52 @@ local function compassBack()
     return ("put back: compass %s, icons %s"):format(str(saved.compass), str(saved.icons))
 end
 
--- Every frame: NodeRadar's pending target and target, their changes logged
--- and kept (state.cw): when an alert left one, when it resolved, when it went.
+-- The candidates and the choice, logged when the target changes (cw.events):
+-- every record's name and distance, the chosen one's misses and height.
 local cw = { events = {} }
-local watch = CreateFrame("Frame")
 local function cwNote(kind, text)
-    local e = { kind = kind, at = GetTime(), text = text }
-    cw.events[#cw.events + 1] = e
-    say("compass2 " .. kind .. ": " .. text)
-    return e
+    cw.events[#cw.events + 1] = { kind = kind, at = GetTime(), text = text }
+    say("compass3 " .. kind .. ": " .. text)
 end
+local function candidates(n)
+    local parts = {}
+    for _, r in ipairs(n.Icons.Records()) do
+        local _, d = bearing(r.north, r.west)
+        parts[#parts + 1] = ("%s %s%s"):format(r.name, d and ("%.0f"):format(d) or "?",
+            n.Alert.Gatherable(r.name) and "" or " (not gatherable)")
+    end
+    return #parts > 0 and table.concat(parts, ", ") or "none"
+end
+local watch = CreateFrame("Frame")
 watch:SetScript("OnUpdate", function()
+    if not cw.on then return end
     local n = nr()
     local T = n and n.Compass and n.Compass._test
     if not T then return end
-    local p, t = T.pending(), T.target()
-    if p and p ~= cw.pending then
-        local names = {}
-        for name in pairs(p.names) do names[#names + 1] = name end
-        cw.pending = p
-        cwNote("pending", table.concat(names, ", "))
-    elseif not p and cw.pending and not t then
-        cw.pending = nil
-    end
+    local t = T.target()
     if t ~= cw.target then
         if t then
-            local b, d = bearing(t.north, t.west)
-            cwNote("target", ("%s %.1f yd, %.1f s after the alert, %s"):format(t.name, d or -1, GetTime() - t.at,
-                t.height and ("height " .. t.height) or "level"))
-            cw.pending = nil
-        elseif cw.target then
-            local old = cw.target
-            local _, d = bearing(old.north, old.west)
-            cwNote("gone", ("%s at %.1f yd, %.1f s after the alert"):format(old.name, d or -1, GetTime() - old.at))
+            local _, d = bearing(t.north, t.west)
+            cwNote("target", ("%s %.1f yd, misses %s, %s; candidates: %s"):format(t.name, d or -1, str(t.misses),
+                t.height and ("height " .. t.height) or "level", candidates(n)))
+            cw.changes = (cw.changes or 0) + 1
+        else
+            cwNote("none", "no target; candidates: " .. candidates(n))
         end
         cw.target = t
     end
-    if t then
-        local _, d = bearing(t.north, t.west)
-        cw.dist = d
+    local shownNow = yes(ask(T.ring, "IsShown"))
+    if shownNow ~= cw.shown then
+        local _, d = t and bearing(t.north, t.west)
+        cwNote(shownNow and "shown" or "hidden", t and ("%s at %.1f yd"):format(t.name, d or -1) or "no target")
+        cw.shown = shownNow
     end
 end)
 
 local function lastEvent(kind, since)
     for i = #cw.events, 1, -1 do
         local e = cw.events[i]
-        if e.kind == kind and (not since or e.at >= since) then return e end
-    end
-end
-
--- Waits for a `kind` event after the step began.
-local function cwWait(kind, hint)
-    return function()
-        state.cwStart = state.cwStart or GetTime()
-        local e = lastEvent(kind, state.cwStart)
-        if not e then return false, hint end
-        state.cwStart = nil
-        return true, e.text
+        if e.kind == kind and e.at >= since then return e end
     end
 end
 
@@ -3215,73 +3204,57 @@ local function ringShown()
     return T and yes(ask(T.ring, "IsShown"))
 end
 
-Probe:Steps("compass2", {
+Probe:Steps("compass3", {
     rev = 1,
-    title = "The compass, second round: NodeRadar's own (#29)",
-    { text = "Have NodeRadar loaded and gathering tracking on, outdoors. NodeRadar's compass goes on and its "
-          .. "icons off (the compass alone), and both back as they were at the end.", wait = function()
+    title = "The compass, third round: the nearest node (#29)",
+    { text = "Have NodeRadar loaded and gathering tracking on, outdoors among herbs or ore. NodeRadar's compass "
+          .. "goes on and its icons off (the compass alone), and both back as they were at the end.",
+      wait = function()
           local n = nr()
-          if not (n and n.Compass) then return false, "NodeRadar (with the compass, #29) isn't loaded" end
+          if not (n and n.Compass and n.Compass.Refresh) then return false, "NodeRadar (the nearest-node compass) isn't loaded" end
           if #tracking(true) == 0 then return false, "no gathering tracking on" end
           compassOn(n, true, false)
-          cw.events = {}
+          cw.events, cw.on, cw.changes, cw.target, cw.shown = {}, true, 0, nil, nil
           return true, "compass on, icons off"
       end },
-    { text = "Ride until a node alerts at the edge of the minimap (the ping). Keep riding toward it.",
-      wait = cwWait("pending", "no alert yet"), timeout = 600 },
-    { text = "Keep riding toward it until the ring appears under your character.",
-      wait = cwWait("target", "the ring isn't up yet (NodeRadar measures the node once it's well inside the map)"),
-      screenshot = "compass2: the ring appears", timeout = 120 },
-    { text = "Does the ring's arrow point toward that node? (Note box: how long after the ping it appeared felt "
-          .. "right or slow.)", ask = true },
-    { text = "Zoom the minimap in or out with the ring up.", wait = function()
+    { text = "Ride among nodes until the ring shows under your character.", wait = function()
+          if not ringShown() then return false, "no ring yet" end
+          return true, "the ring up; candidates: " .. candidates(nr())
+      end, screenshot = "compass3: the ring", timeout = 600 },
+    { text = "Does it point at the nearest node you can gather? (Note box: which it pointed at, if not.)",
+      ask = true },
+    { text = "Gather the node it points at (it hides within 15 yards), then press Next once it points at the "
+          .. "next one.", screenshot = "compass3: the next node" },
+    { text = "After the gather, did it move on to the next nearest node?", ask = true },
+    { text = "Ride on, gathering two or three more by the ring alone, then press Next.",
+      screenshot = "compass3: riding on" },
+    { text = "Riding, did it ever flick between two nodes about as far, or point somewhere odd? (Note box: "
+          .. "what.)", ask = true },
+    { text = "With the ring up, zoom the minimap in.", wait = function()
           local ok, zoom = pcall(Minimap.GetZoom, Minimap)
           zoom = ok and num(zoom)
           if zoom == nil then return false, "zoom unreadable" end
           state.cwZoom = state.cwZoom or zoom
           if zoom == state.cwZoom then return false, "zoom " .. zoom end
-          if not ringShown() then return false, "zoomed, the ring down: wait for it" end
           state.cwZoom = nil
-          return true, "zoom " .. zoom .. ", the ring up"
-      end, screenshot = "compass2: after a zoom" },
-    { text = "After the zoom, does the arrow still point at the node?", ask = true },
-    { text = "Ride to the node following the ring alone (not the minimap). It should go away about 15 yards "
-          .. "from the node.", wait = function()
-          state.cwStart = state.cwStart or GetTime()
-          local e = lastEvent("gone", state.cwStart)
-          if not e then return false, cw.dist and ("%d yd to go"):format(cw.dist) or "no ring up" end
-          state.cwStart = nil
-          return true, e.text
-      end, timeout = 600 },
-    { text = "Did the ring lead you there, and go away as you got close (about 15 yards)? (Note box: readable? "
-          .. "its size, where it sits, over bright and dark ground.)", ask = true, screenshot = "compass2: arrived" },
-    { text = "Optional: a node above you (on a ledge, up a slope) that alerts: ride under it. The ring should "
-          .. "stay up within 15 yards. Skip if none.", wait = function()
-          local n = nr()
-          local t = n and n.Compass._test.target()
-          if not (t and t.height) then return false, "no ring on a node above or below" end
-          if not cw.dist or cw.dist > 15 then return false, ("%s %s, %s yd"):format(t.name, t.height,
-              str(cw.dist and math.floor(cw.dist))) end
-          return true, ("%s %s, within %.1f yd, the ring still up"):format(t.name, t.height, cw.dist)
-      end, screenshot = "compass2: a node above" },
-    { text = "Optional: let a node's ring stand without going to it, for a minute. Skip if you'd rather not.",
+          return true, ("zoom %d; the ring %s; candidates: %s"):format(zoom, ringShown() and "up" or "DOWN",
+              candidates(nr()))
+      end, screenshot = "compass3: zoomed in" },
+    { text = "After the zoom, is the ring still on a node you can see on the minimap?", ask = true },
+    { text = "Optional: ride into a clump of one herb (several of a name close together). Press Next there.",
+      screenshot = "compass3: a clump" },
+    { text = "In the clump, was the ring still useful? (Note box: what it did.) Skip if you skipped.", ask = true },
+    { text = "Walk up to a node until the ring hides, then walk away from it (not gathering) until it shows again.",
       wait = function()
           state.cwStart = state.cwStart or GetTime()
-          local e = lastEvent("gone", state.cwStart)
-          if not e then return false, ringShown() and "the ring is up: wait" or "wait for an alert" end
+          local hid = lastEvent("hidden", state.cwStart)
+          local back = hid and lastEvent("shown", hid.at)
+          if not hid then return false, "walk up to the node" end
+          if not back then return false, "hidden (" .. hid.text .. "): now walk away" end
           state.cwStart = nil
-          return true, e.text
+          return true, ("hidden at %s, shown again at %s"):format(hid.text, back.text)
       end, timeout = 300 },
-    { text = "With a ring up, hold the left mouse button and turn the camera only (not your character). The arrow "
-          .. "doesn't follow the camera: that's the stated limit. Then press Next.",
-      screenshot = "compass2: the camera turned" },
-    { text = "With a ring up: click on the ground or a creature right where the ring is. Did the click reach the "
-          .. "world (the ring didn't catch it)?", ask = true },
-    { text = "With a ring up, open Edit Mode (Esc > Edit Mode) and close it again. Any error, or anything "
-          .. "odd with the ring?", ask = true },
-    { text = "Optional: fight a creature with a ring up. Any error or 'action blocked' message?", ask = true },
-    { text = "Optional: take a flight. The ring should go away once the flight starts. Skip if none is near.",
-      wait = function()
+    { text = "Optional: take a flight with nodes in view on the way. Skip if none is near.", wait = function()
           local ok, on = pcall(UnitOnTaxi, "player")
           if not (ok and yes(on)) then
               state.cwTaxi = nil
@@ -3306,19 +3279,20 @@ Probe:Steps("compass2", {
       wait = function()
           local n = nr()
           if not n then return false, "NodeRadar isn't loaded" end
-          if not (cost.on and cost.label == "compass alone") then
+          if not (cost.on and cost.label == "compass3") then
               if not moving() then return false, "start riding the loop" end
               compassOn(n, true, false)
-              costStart(n, "compass alone")
+              costStart(n, "compass3")
           end
           local left = COST_SECONDS - (GetTime() - cost.t0)
           if left > 0 then return false, ("%.0f s left"):format(left) end
           return true, costStop(n)
       end, timeout = 300 },
     { text = "Putting NodeRadar's compass and icons back.", auto = true, run = function()
+          cw.on = false
           local db = iconsDB()
-          db.compass2 = cw.events
-          return compassBack()
+          db.compass3 = { events = cw.events, changes = cw.changes }
+          return compassBack() .. "; " .. cw.changes .. " target changes"
       end },
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 })
