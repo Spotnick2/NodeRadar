@@ -23,6 +23,7 @@ local DEFAULTS = {
     ignoredIcon = "dim", -- a node the player skips (#47), icons on: "dim" (its icon dimmed) or "dot" (Blizzard's)
     compass  = false,   -- experimental (#29): a ring under the character toward the nearest node
     compassSize = "medium", -- its disc: small, medium or large (Compass.SIZES)
+    compassLock = false, -- its position locked (#57; else Alt-drag moves it); compassX, compassY: where, nil home
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -136,6 +137,7 @@ function NR.Set(key, value)
     if key == "ignoredIcon" then Icons.Refilter() end
     -- The compass follows the icons' frame (#29), with the icons on or off.
     if key == "iconStyle" or key == "compassSize" then Compass.Restyle() end
+    if key == "compassLock" then Compass.UpdateGrip() end
 end
 
 function NR.VersionText()
@@ -279,7 +281,7 @@ local function help()
     API.Say("/nr iconstyle auto | plain | glass | bronze | yellow: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
     API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
-        .. "/nr compasssize small | medium | large")
+        .. "/nr compasssize small | medium | large. Hold Alt and drag it to move it; /nr compass lock | unlock | reset")
     API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
@@ -312,6 +314,12 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "compasssize" and Compass.SIZES[rest:lower()] then
         NR.Set("compassSize", rest:lower())
         API.Say("compass size: " .. rest:lower())
+    elseif cmd == "compass" and rest:lower() == "reset" then
+        Compass.ResetPosition()
+        API.Say("the compass is back in its place, under your character")
+    elseif cmd == "compass" and (rest:lower() == "lock" or rest:lower() == "unlock") then
+        NR.Set("compassLock", rest:lower() == "lock")
+        API.Say("the compass's position " .. (db.compassLock and "locked" or "unlocked: hold Alt and drag it"))
     elseif cmd == "compass" then
         NR.Set("compass", not db.compass)
         API.Say("the compass (experimental) " .. onOff(db.compass))
@@ -382,6 +390,7 @@ SlashCmdList.NODERADAR = function(msg)
         if not any then API.Say("no failures") end
     elseif cmd == "reset" then
         for k in pairs(DEFAULTS) do db[k] = nil end
+        Compass.ResetPosition()                    -- compassX, compassY: nil defaults, outside DEFAULTS (Codex)
         API.Say("settings reset (learned names kept)")
     else
         help()

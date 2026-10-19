@@ -237,6 +237,10 @@ local function build()
         .. "doesn't turn it.")
     local compassSize = radios(page, compassWhy, "Compass size", "compassSize",
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
+    -- #57: Alt-drag moves it, as Apotheca.
+    local compassLock = checkbox(page, compassSize, "Lock its position", "compassLock")
+    compassSize = note(page, compassLock, "Hold Alt and drag the compass to move it. /nr compass reset puts it back "
+        .. "under your character.")
 
     local learning = heading(page, compassSize, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")

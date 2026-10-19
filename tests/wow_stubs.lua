@@ -176,7 +176,7 @@ function Methods.IsVisible(w)
     return true
 end
 function Methods.SetPoint(w, ...) table.insert(w._points, { ... }) end
-function Methods.ClearAllPoints(w) w._points = {} end
+function Methods.ClearAllPoints(w) w._points = {}; w._center = nil end
 function Methods.GetPoint(w, i)
     local p = w._points[i or 1]
     if p then return p[1], p[2], p[3], p[4], p[5] end
@@ -289,6 +289,28 @@ WoW.reset()
 
 UIParent = newWidget("Frame", nil, "UIParent")
 UIParent._level = 0
+UIParent._width, UIParent._height = 1920, 1080          -- the screen, in UIParent's units (#57)
+
+-- Moving a frame (#57): StartMoving marks it; StopMovingOrSizing leaves it where
+-- the test dropped it (WoW.dropAt = { x, y }, a centre in UIParent's units) or
+-- where it was. GetCenter: a frame's own centre if set, else its CENTER point on
+-- UIParent's centre, else nil.
+WoW.altDown = false
+function IsAltKeyDown() return WoW.altDown == true end
+function Methods.SetMovable(w, v) w._movable = v end
+function Methods.StartMoving(w) w._moving = true end
+function Methods.StopMovingOrSizing(w)
+    w._moving = false
+    if WoW.dropAt then w._center = { WoW.dropAt[1], WoW.dropAt[2] }; WoW.dropAt = nil end
+end
+function Methods.GetCenter(w)
+    if w == UIParent then return UIParent._width / 2, UIParent._height / 2 end
+    if w._center then return w._center[1], w._center[2] end
+    local p = w._points[#w._points]
+    if p and p[1] == "CENTER" and p[2] == UIParent then
+        return UIParent._width / 2 + (p[4] or 0), UIParent._height / 2 + (p[5] or 0)
+    end
+end
 
 -- The game's tooltip: its owner, and FrameXML's SetItemByID (#29), which shows it.
 GameTooltip = newWidget("GameTooltip", UIParent, "GameTooltip")

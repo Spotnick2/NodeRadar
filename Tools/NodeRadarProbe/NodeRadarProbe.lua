@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -3829,6 +3829,90 @@ local gatherSteps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("gather", gatherSteps)
+
+-- Moving it (#57): Alt-drag, as Apotheca.
+local function moveSaved()
+    local n = nr()
+    return n and n.db and { x = rawget(n.db, "compassX"), y = rawget(n.db, "compassY"), lock = rawget(n.db, "compassLock") }
+end
+local function moveText()
+    local n, T = nr(), c4()
+    if not (n and T) then return "not loaded" end
+    local okP, point, rel, _, px, py = pcall(T.root.GetPoint, T.root, 1)
+    return ("saved %s, %s; anchored %s %s, %s; locked %s"):format(str(n.db.compassX), str(n.db.compassY),
+        str(okP and point), str(okP and px), str(okP and py), str(n.db.compassLock))
+end
+local moveSteps = {
+    rev = 1,
+    title = "Moving the compass with Alt-drag (#57)",
+    { text = "Have NodeRadar loaded with gathering tracking on. NodeRadar's compass goes on; its place, lock, size "
+          .. "and the icons' frame come back as they were at the end.", wait = function()
+          local n, T = nr(), c4()
+          if not (n and T and T.grip and n.Compass.ResetPosition) then return false, "NodeRadar (#57) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          if NodeRadarProbeDB.restoreMove == nil then NodeRadarProbeDB.restoreMove = moveSaved() end
+          c4On(n, "medium", "auto")
+          if n.db.compassLock then n.Set("compassLock", false) end
+          return true, moveText()
+      end },
+    { text = "Ride until the compass shows under your character, then stand still.",
+      wait = c4Shown("medium", "auto"), timeout = 600 },
+    { text = "Hold the mouse on the compass's icon without Alt (its tooltip), then hold Alt.", wait = function()
+          local T = c4()
+          if not (T and yes(ask(T.grip, "IsShown"))) then return false, "no grip yet: hold Alt over the compass" end
+          return true, "the grip is up; the tooltip " .. (yes(ask(rawget(_G, "GameTooltip"), "IsShown")) and "still shown"
+              or "gone")
+      end, screenshot = "compassmove: the grip" },
+    { text = "Does \"Drag to move\" cover the compass while Alt is held, and go away when you let go of Alt?",
+      ask = true },
+    { text = "Hold Alt and drag the compass somewhere else on the screen, then let go.", wait = function()
+          local n, T = nr(), c4()
+          if not (n and T) then return false, "NodeRadar isn't loaded" end
+          if n.db.compassX == nil or T.dragging() then return false, "not moved yet" end
+          return true, moveText()
+      end, screenshot = "compassmove: moved" },
+    { text = "Type /reload (or press Reload now): it should come back where you left it.", reload = true },
+    { text = "Ride until the compass shows again.", wait = function()
+          local ok, why = c4Shown("medium", "auto")()
+          if not ok then return false, why end
+          return true, moveText()
+      end, screenshot = "compassmove: after the reload", timeout = 600 },
+    { text = "Is it where you left it?", ask = true },
+    { text = "Hold Alt and drag it past the right edge of the screen, then let go.", wait = function()
+          local n = nr()
+          local w = n and ask(UIParent, "GetWidth")
+          if not (n and w and n.db.compassX) then return false, "not dropped yet" end
+          if n.db.compassX < w / 2 - 120 then return false, "not near the right edge yet: " .. str(n.db.compassX) end
+          return true, moveText() .. "; the screen " .. str(w) .. " wide"
+      end, screenshot = "compassmove: at the edge" },
+    { text = "Did it come back fully on the screen?", ask = true },
+    { text = "Hold Alt, start dragging it, and let go of Alt before the mouse button. Did it stop following the "
+          .. "mouse when Alt went up?", ask = true },
+    { text = "Type /nr compass lock, then hold Alt over the compass: nothing should appear.", wait = function()
+          local n, T = nr(), c4()
+          if not (n and T and n.db.compassLock) then return false, "not locked yet" end
+          if not yes(IsAltKeyDown()) then return false, "locked: now hold Alt over it" end
+          if yes(ask(T.grip, "IsShown")) then return false, "the grip is up though locked" end
+          return true, "locked, Alt held: no grip"
+      end },
+    { text = "Type /nr compass reset: back under your character.", wait = function()
+          local n = nr()
+          if not n or n.db.compassX ~= nil then return false, "not reset yet" end
+          return true, moveText()
+      end, screenshot = "compassmove: reset" },
+    { text = "Putting the compass's place, lock and settings back.", auto = true, run = function()
+          local n, saved = nr(), NodeRadarProbeDB.restoreMove
+          if n and saved then
+              n.db.compassX, n.db.compassY = saved.x, saved.y
+              n.Set("compassLock", saved.lock)
+              n.Compass._test.place()
+          end
+          NodeRadarProbeDB.restoreMove = nil
+          return c4Back() .. "; " .. moveText()
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("compassmove", moveSteps)
 end)()
 
 --------------------------------------------------------------------------------
