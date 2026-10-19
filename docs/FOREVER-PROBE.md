@@ -541,3 +541,14 @@ white outlined triangle turning with the bearing, a fixed capsule), no LibGlass.
 | **Smart off, then on** | each click logged once: `SMART false (was true)`, `SMART true (was false)`; on, the box ticked and the list re-applied (yes). Round 1's "no" was two clicks |
 | **A node's own tooltip** | Silverleaf (needs 1) at Herbalism 38: the name gold, then "Herbalism" in **yellow (1.00, 1.00, 0.00)**: 37 past its requirement, in the classic yellow band (+25 to +50). The tooltip colours by difficulty, as Classic; the grey line (+100) is still unseen |
 | Icons and dots side by side after a layer change (the owner's screenshot, outside the procedure) | two dots about 23 map units apart by the player, under the 25-unit square a node is measured by: probably the known crowding limit (README), not the layer. `/fp nr icons` (new) dumps each blip with its nearest record, each record and each failed measure, for the next time. Its first runs (#219, the dots gone by then): every blip matched within 1.1 to 1.9 units, no failed measure; a Silverleaf that spawned between two dumps was measured by the second (1.9 units off its blip). The same load logged `RegisterEvent MINIMAP_PING` refused as unknown, never before (#217, #218 clean; the client unchanged since 10-16): unexplained, the probe's ping log only |
+
+### Dots left unmeasured: `/fp nr icons`, 1.60.1.70450 (the owner, 2026-10-19, Durotar) (#28, #47)
+
+The owner saw dots beside icons, some by the player's arrow, and a dot closer than the compass's
+target. Two dumps:
+
+| What | Measured |
+|---|---|
+| Run #219 (no reasons yet) | a Silverleaf blip at (-18.5, -8.0), 6 grid cells (matched nodes: 8 to 16), no record within 34.7 units, its measure failed 5 s before; another, 75 units out, failed too: not by the player's arrow, so not the arrow |
+| **Run #220, re-measured with reasons** | two Silverleaf blips at (-25.5, -71.0) and (-29.0, -36.0), 35 apart on y: **"crowded: its name again past the top"** and **"... past the bottom"**. `edge` read one point 24 out: that lands inside the neighbour's 25-unit square (24 + 12.5 > 35), though a 10-unit gap lies between them |
+| The fix | `edge` steps out by 4 to the first point that doesn't read the name, then halves (docs/PLAN.md, "Measuring a blip"; Codex to consensus): squares 30 and 35 apart measured offline on their exact centres. To check in game: such pairs get icons, and the compass points at them |

@@ -242,11 +242,23 @@ extra reads, no per-frame update, the sweep exactly as today.
 A new function beside `Scan.Sweep`, with the same guarantee: the soft cursor on inside a `pcall`,
 then `putBack` and the soft cursor off on every path; a secret read fails it (`API.Fail`). For each
 blip asked for, from its centroid `c` (inside the square: 5.5 < 12.5):
-1. `c` itself must read the name; then on each axis and each side, the point 24 units out must
-   **not** (a same-name neighbour within about 36 units fails the blip: "crowded");
-2. six halvings between `c` and that point find the edge to 0.4 units: 4 edges, 29 reads in all;
+1. `c` itself must read the name; then on each axis and each side, **stepping out by 4 units**
+   (`Scan.STRIDE`) finds the first point that doesn't read it, up to 24 (`Scan.FAR`); reading it all
+   the way to 24 is "crowded" (one merged with another);
+2. four halvings between the last point that read it and that one find the edge to 0.25 units
+   (its midpoint within 0.125): opposite edges sum to 25, so their steps sum to 7 or 8, and an
+   isolated node costs 31 to 33 reads (29 before); a refused 40-unit shape up to 41 (Codex).
+
+   **Until #47's dumps** step 1 read only the point 24 out, and a same-name neighbour within about
+   36 units (24 + its half square) failed the blip: two Silverleafs 35 apart, with a 10-unit gap
+   between their squares, each read "crowded: its name again past" the side facing the other
+   (docs/FOREVER-PROBE.md). They stayed dots, and the compass, which only knows records, never
+   pointed at them. Stepping out stops in the gap. A gap narrower than a step **may** be stepped
+   over, by where the centroid falls (Codex: squares at 0 and 26, a centroid at 1 steps into the
+   gap at 13 and measures; one at 0 steps over it): then the walk reads on through the neighbour's
+   25 units, past 24 ("crowded"). Measured right or refused, never measured off-centre;
 3. both widths must be within 2 units of **one node's square**, `Scan.NODE = 25` (measured; the
-   bracket's 0.4 and the sampled 24-26 inside it); else "not one node". Two same-name nodes merged
+   bracket's 0.25 and the sampled 24-26 inside it); else "not one node". Two same-name nodes merged
    into one cluster measure as their union, wider on at least one axis (Codex: two nodes at
    (-7, -7) and (7, 7) pass a 10-40 range as a 39 x 39 "square" between them); a union narrower
    than 27 is two dots within 2 units, where one icon between them is still on both.
@@ -332,9 +344,11 @@ reconciles.
 
 ### Cost
 
-Steady riding: no extra reads (records matched, nothing measured), but a crowded blip: up to 5
-reads (the centre and a far point or four) every 5 s. A new node: 29 reads once (0.4 ms, 72 KB of
-garbage). Entering a dense area: at most 4 a sweep, 116 reads on top of the grid's 196.
+Steady riding: no extra reads (records matched, nothing measured), but a crowded blip: up to 37
+reads every 5 s (#47's walk; 5 before it). A new node: 31 to 33 reads once (29 before the walk; about
+0.4 ms, 72 KB of garbage), and one more per `Scan.Centre` call to put the mouseover back. A shape
+refused as "not one node": up to 41. Entering a dense area: at most 4 a sweep, about 132 reads on
+top of the grid's 196 (Codex's counts, #47).
 Per frame: three API calls and one `SetPoint` per shown icon, no allocation. Round 2 measures it
 against today on the same route: reads per second, garbage per second, the worst sweep.
 
@@ -342,7 +356,9 @@ against today on the same route: reads per second, garbage per second, the worst
 
 The stubs' blips get centres the stub knows exactly, `UnitPosition`, and a player who moves. Offline:
 - `Scan.Centre`: a square measured to 0.4 units from any centroid offset up to 5.5; a same-name
-  neighbour (crowded); a quest area's non-square or too-big box; a secret read (fails, soft cursor
+  neighbour (crowded); **two same-name nodes 35 and 30 apart on each axis both measured** (#47's
+  dumps); 26 apart (a gap under a step): measured from a centroid 1 off (it steps into the gap),
+  refused from one on the centre (it steps over it), never off-centre; a quest area's non-square or too-big box; a secret read (fails, soft cursor
   off); the far point beside a different name (still measured).
 - Records: match one to one with two of a name side by side; a new blip measured once, then
   matched without reads (reads counted); misses hide then drop; the rim band; a gather drops the
@@ -818,7 +834,7 @@ setting does only its own part (Codex, #29):
   bound and drawn at once. `compass` off: the ring hidden, the records kept while icons are on.
   `compass` on: nothing to do until the next sweep.
 
-With the compass on and icons off, a new node still costs its 29 reads once, and nothing changes
+With the compass on and icons off, a new node still costs its 31 to 33 reads once, and nothing changes
 on the minimap.
 
 ### The target
