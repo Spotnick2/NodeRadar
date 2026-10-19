@@ -456,3 +456,21 @@ glass pill under it.
 The screenshots: all three read well over the ground; on C the triangle sits on the glass right
 beside the icon. Next: a disc just around the icon, the arrow outside it, with and without Glass
 MiniMap's ring art.
+
+### The compass's look, second round: `compasslook2`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+Glass discs just around the node's icon, the arrow orbiting outside, the distance pill under it; the
+disc takes the mouse for the item's tooltip.
+
+| Look | Owner |
+|---|---|
+| D: 44 units, the icon 30, Glass MiniMap's ring art | "i like it but the arrow is on the pill" (pointing behind, the arrow orbits down onto the pill: the screenshots); "a bit weird with the white around the outer of the ring" (that art's light edge at this size) |
+| E: the same, the plain glass rim | yes |
+| F: 36 units, the icon 24 | "the size should be an option"; "F seems to have rough edges" (the small disc textures below ~40 units) |
+| The best | "D or E seemed fine" |
+| The item's tooltip on hover (`GameTooltip:SetItemByID`, FrameXML's accessor) | the item's (yes) |
+| A click on the disc | **didn't reach the world**: the disc takes the mouse for the tooltip (the owner clicked on it, not beside it). `Frame:SetMouseClickEnabled(false)` with `SetPropagateMouseClicks(true)` (both in the dump) should keep the hover and pass clicks through: to measure |
+| Riding with D | readable (yes) |
+
+So: E's rim, the disc just around the icon, the arrow outside it with the pill clear of its orbit, a
+size option (not under ~44 units), the tooltip on hover with clicks passing through.
