@@ -293,8 +293,8 @@ UIParent._width, UIParent._height = 1920, 1080          -- the screen, in UIPare
 
 -- Moving a frame (#57): StartMoving marks it; StopMovingOrSizing leaves it where
 -- the test dropped it (WoW.dropAt = { x, y }, a centre in UIParent's units) or
--- where it was. GetCenter: a frame's own centre if set, else its CENTER point on
--- UIParent's centre, else nil.
+-- where it was. GetCenter: a frame's own centre if set, else its CENTER anchor's
+-- frame's centre plus the offsets (UIParent's is the screen's middle), else nil.
 WoW.altDown = false
 function IsAltKeyDown() return WoW.altDown == true end
 function Methods.SetMovable(w, v) w._movable = v end
@@ -307,8 +307,9 @@ function Methods.GetCenter(w)
     if w == UIParent then return UIParent._width / 2, UIParent._height / 2 end
     if w._center then return w._center[1], w._center[2] end
     local p = w._points[#w._points]
-    if p and p[1] == "CENTER" and p[2] == UIParent then
-        return UIParent._width / 2 + (p[4] or 0), UIParent._height / 2 + (p[5] or 0)
+    if p and p[1] == "CENTER" and type(p[2]) == "table" and (p[3] == nil or p[3] == "CENTER") then
+        local cx, cy = Methods.GetCenter(p[2])
+        if cx then return cx + (p[4] or 0), cy + (p[5] or 0) end
     end
 end
 
@@ -458,7 +459,8 @@ function IsInInstance()
     if WoW.instanced == "throw" then error("IsInInstance failed") end
     return WoW.instanced, WoW.instanced == true and "party" or "none"
 end
-C_CVar = { GetCVar = function(name) return WoW.cvars[name] end }
+C_CVar = { GetCVar = function(name) return WoW.cvars[name] end,
+           SetCVar = function(name, value) WoW.cvars[name] = value; return true end }
 
 -- The user waypoint and the super-track (#29): WoW.waypoint ({ map, x, y } or
 -- nil), WoW.superTracked ("waypoint", "quest" or nil); the navigation frame
