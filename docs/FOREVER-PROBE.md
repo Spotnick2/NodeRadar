@@ -552,3 +552,13 @@ target. Two dumps:
 | Run #219 (no reasons yet) | a Silverleaf blip at (-18.5, -8.0), 6 grid cells (matched nodes: 8 to 16), no record within 34.7 units, its measure failed 5 s before; another, 75 units out, failed too: not by the player's arrow, so not the arrow |
 | **Run #220, re-measured with reasons** | two Silverleaf blips at (-25.5, -71.0) and (-29.0, -36.0), 35 apart on y: **"crowded: its name again past the top"** and **"... past the bottom"**. `edge` read one point 24 out: that lands inside the neighbour's 25-unit square (24 + 12.5 > 35), though a 10-unit gap lies between them |
 | The fix | `edge` steps out by 4 to the first point that doesn't read the name, then halves (docs/PLAN.md, "Measuring a blip"; Codex to consensus): squares 30 and 35 apart measured offline on their exact centres. To check in game: such pairs get icons, and the compass points at them |
+
+### The compass after a gather: `gather`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#29)
+
+The owner's video (2 fps) before the fix: the ring showed the next node as the gather landed, hid half
+a second later, came back about 3 s on, as the loot window closed (the herb's dot measured anew at
+the player's feet, the nearest, within 15 yards). With its dot left out while it lingers:
+
+| What | Measured |
+|---|---|
+| The ring every 0.25 s for 6 s after a gather | **0 of 24 samples hidden**: on the next node (an Earthroot) throughout, the loot window open from 0.50 s to the end; the owner: it stayed (yes). Offline before the fix, the same procedure read 19 of 21 hidden |
