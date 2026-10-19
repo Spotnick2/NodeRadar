@@ -604,13 +604,18 @@ consider a 'smart' mode that autochecks new one you can gather as you level".
   orange, yellow from +25, green from +50, **grey from +100** (no skill-up). Not measured on Forever:
   Wowhead's Forever tooltips give only "Requires Mining (1)". The look round asks for a node's
   colour where it can (below).
-- `C_Item.GetItemNameByID`, `C_Item.GetItemIconByID` and `GET_ITEM_INFO_RECEIVED` are in the 70450
-  dump; the icons already use `GetItemIconByID`. `SKILL_LINES_CHANGED` is logged by the probe.
+- `C_Item.GetItemNameByID`, `C_Item.GetItemIconByID`, `C_Item.RequestLoadItemDataByID` and
+  `ITEM_DATA_LOAD_RESULT` are in the 70450 dump (the client's own `Item.lua` pairs the last two for an
+  uncached item); the icons already use `GetItemIconByID`. `SKILL_LINES_CHANGED` is logged by the
+  probe.
 
 ### An item's state at a skill
 
 For an item of a kind (its nodes in `NODE_INFO[GetLocale()]`, the kind from `LIBRARY`), with the
-player's skill in that kind's line (`API.Skill(Alert.SKILL_LINES[kind])`):
+player's **base rank** in that kind's line (`API.Skill(line, true)`: the rank without the
+modifier). Gear and buffs move the modifier: taking off a +5 tool must not read as a skill going down
+and reset the list (Codex). #26's `Alert.Gatherable` keeps the effective skill (rank + modifier):
+that is what lets a node be gathered.
 - **gatherable** when the skill is at least its **lowest** node's requirement (some node of it can
   be gathered);
 - **grey** when the skill is at least its **highest** node's requirement + `Track.GREY` (100): every
@@ -639,11 +644,21 @@ Cultivation (#26's way in for herbs) doesn't count: these are about the skill.
 
 The checkboxes are the one truth (what's checked is what's tracked); smart only edits them when the
 skill crosses a line, so the player's own clicks stand in between.
-- Checked at each sweep and at `SKILL_LINES_CHANGED` (`Track.Follow()`), per kind with a skill:
+- Checked at `SKILL_LINES_CHANGED` and at the start of each sweep, **before** `Icons.Update` (`NR.Step`:
+  `Track.Follow` → `Icons.Update` → `Compass.Reconcile` → `Alert.Update` → `Learn.Consider`), so a
+  sweep that crosses a line measures, targets, dims and alerts by the new list (Codex). Per kind with a
+  base rank:
   - no `last` for the kind (smart just turned on, a first login, or the skill went down: unlearned
     and learned again): **Skill-ups only** applied for that kind (below), `last` set;
   - the skill went up since `last`: each item that **became gatherable** in `(last, now]` is checked,
-    each that **became grey** in `(last, now]` is unchecked; `last` set. Nothing else is touched.
+    then each that **became grey** in `(last, now]` is unchecked (both in one rise: unchecked);
+    `last` set. Nothing else is touched.
+  - The base rank going down means the profession was unlearned and learned again (the modifier is
+    out of it): start over.
+- **Its first run unchecks both the grey items and those not gatherable yet** (Skill-ups only):
+  smart checks the latter as the skill reaches them. So with smart on, turning off "Only nodes I can
+  gather" (#26) doesn't bring back nodes above the skill; the smart checkbox's note and the
+  changelog say so (Codex). For an existing player, the first login after the upgrade does this.
 - Turning smart on clears `last`, so it starts from Skill-ups only; turning it off leaves the list as
   it is.
 - An item checked by smart that the player unchecks stays unchecked until its next line (grey, or
@@ -675,7 +690,8 @@ Where it applies, everything NodeRadar does for a node:
   one is measured: no `Scan.Centre` reads spent on it.
 - **A change applies at once** (`NR.Track.Set(item, on)`, a preset, smart, `NR.Set("ignoredIcon")`):
   `Icons.Refilter()` releases the records of skipped names when they shouldn't be kept, and re-binds
-  the rest (`Icons.Show`, so a dim follows); `Compass.Refresh()` chooses again.
+  the rest (`Icons.Show`, so a dim follows); `Compass.Refresh()` chooses again. A preset or a `Follow`
+  pass changes all its items first, then refilters and refreshes the page once.
 
 `Track.lua` (after `Alert.lua` in the TOC) holds the per-character table, the item list per kind
 (built once per session from `NODE_INFO`/`LIBRARY` for the locale, sorted by the lowest
@@ -696,8 +712,9 @@ requirement, then item ID), the states, the presets, `Follow` and `Set`.
     can gather it, uncheck it when it turns grey)";
   - the four preset buttons;
   - one row per item of the kind: a checkbox (checked = tracked), the item's icon, the item's name
-    (`GetItemNameByID`; until the client has it, the first node's name, and the page re-reads on
-    `GET_ITEM_INFO_RECEIVED` while shown), and under it each node with its own skill, lowest first
+    (`GetItemNameByID`; until the client has it, the first node's name: the page asks for each missing
+    one, `RequestLoadItemDataByID`, keeps the asked IDs, and re-reads its rows on `ITEM_DATA_LOAD_RESULT`
+    for one of them while shown: Codex), and under it each node with its own skill, lowest first
     ("Small Thorium Vein 245, Ooze Covered Thorium Vein 245, Rich Thorium Vein 275, ..."), each
     number in its gathering colour at the current skill (orange, yellow, green, grey; red-grey when
     it can't be gathered yet);
@@ -716,11 +733,12 @@ requirement, then item ID), the states, the presets, `Follow` and `Set`.
 ### Tests
 
 - The states: gatherable at the lowest node's requirement, grey at the highest + 100 (99 not), per
-  item with nodes at two requirements; no skill: none.
+  item with nodes at two requirements; no skill: none; from the base rank, a modifier not counting.
 - Smart: first run applies Skill-ups only per kind; a rise crossing a requirement checks that item
   and nothing else; a rise crossing grey unchecks it; a player's uncheck stands until its next line;
-  a skill going down starts over; smart off touches nothing; a kind without a skill untouched;
-  `SKILL_LINES_CHANGED` and the sweep both run it.
+  a base rank going down starts over, a modifier going down changes nothing (the player's clicks
+  stand); one rise crossing both lines unchecks; smart off touches nothing; a kind without a skill
+  untouched; `SKILL_LINES_CHANGED` and the sweep both run it, the sweep before the icons.
 - The presets: each, per kind only; without a skill, the two skill presets change nothing.
 - The rule: a skipped item silences every node of it (sound, sonar, chat, ping) and only those; a name
   with no `NODE_INFO` is never skipped; tracked again, nodes already in view don't alert.
@@ -734,15 +752,17 @@ requirement, then item ID), the states, the presets, `Follow` and `Set`.
 - The pages: registered after the main page, Herbs then Ores, under it (the stub records the order),
   a missing API recorded by `API.Fail`; built on the first show, not before; one row per item,
   sorted, every node with its skill and colour; a checkbox click skips and tracks; each button; the
-  smart checkbox; re-read on show (a slash change shows); the item name filled when the event comes.
+  smart checkbox; re-read on show (a slash change shows); a missing item name asked for once and
+  filled when its `ITEM_DATA_LOAD_RESULT` comes, another item's event ignored.
 
 ### Look round (`/fp steps nr track`)
 
 The sub-pages under NodeRadar with a +/−, both rendering on the first visit; the rows (icons, names,
 skills in colour) and scrolling; smart on: what it chose at the current skill; a node near you
 unchecked: no alert, the compass skips it, its icon dimmed, then Blizzard's dot with the other choice;
-tracked again; each preset; and, where the client colours a node's skill in its tooltip, that colour
-for a check of the +25/+50 lines.
+tracked again; each preset; item names on a cold cache (a fresh client start); and, where the client
+colours a node's skill in its tooltip, that colour for a check of the +25/+50 lines and, on a
+character whose skill is 100 past a node near it, the grey line (Codex).
 
 ## The compass, experimental (#29)
 
