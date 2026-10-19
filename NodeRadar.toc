@@ -8,7 +8,15 @@
 ## X-Wago-ID: mNwwoLNo
 ## SavedVariables: NodeRadarDB
 ## SavedVariablesPerCharacter: NodeRadarCharDB
+## IconTexture: Interface\Icons\INV_Misc_Flower_02
+## AddonCompartmentFunc: NodeRadar_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: NodeRadar_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: NodeRadar_OnAddonCompartmentLeave
 
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Compat.lua
 Data\Nodes.lua
 Scan.lua
@@ -19,4 +27,5 @@ Icons.lua
 Compass.lua
 Options.lua
 TrackOptions.lua
+Minimap.lua
 NodeRadar.lua

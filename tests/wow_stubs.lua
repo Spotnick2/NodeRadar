@@ -550,6 +550,83 @@ end
 
 -- The Settings framework (Blizzard_Settings): canvas categories, recorded.
 WoW.categories = {}
+-- The minimap button's libraries (#46): the vendored Libs\ aren't loaded in
+-- tests (GuildSpy's recipe); LibStub answers LibDataBroker-1.1 and LibDBIcon-1.0
+-- with recording fakes, anything else with nil. A test can still set its own
+-- LibStub (the LibGlass fakes). WoW.noLibs: as if the libraries were missing.
+function WoW.newLDB()
+    local lib = { objects = {} }
+    function lib:NewDataObject(name, obj)
+        if self.objects[name] then return nil end            -- the name taken: nil, as the real one
+        self.objects[name] = obj
+        return obj
+    end
+    return lib
+end
+function WoW.newLDBI()
+    local lib = { registered = {}, buttons = {} }
+    function lib:Register(name, obj, db)
+        local b = newWidget("Button", Minimap, "LibDBIcon10_" .. name)
+        b._scripts.OnClick = function(self, mouse) obj.OnClick(self, mouse) end
+        b.dataObject, b.db = obj, db
+        if db.hide then b._shown = false end
+        self.registered[name], self.buttons[name] = db, b
+    end
+    -- As the real one (minor 56): Show/Hide only show or hide the button, never the saved table.
+    function lib:Show(name) self.buttons[name]:Show() end
+    function lib:Hide(name) self.buttons[name]:Hide() end
+    function lib:GetMinimapButton(name) return self.buttons[name] end
+    return lib
+end
+function LibStub(major)
+    if WoW.noLibs then return nil end
+    if major == "LibDataBroker-1.1" then WoW.ldb = WoW.ldb or WoW.newLDB(); return WoW.ldb end
+    if major == "LibDBIcon-1.0" then WoW.ldbi = WoW.ldbi or WoW.newLDBI(); return WoW.ldbi end
+end
+
+-- Blizzard_Menu's context menus (#46): CreateContextMenu runs the generator on
+-- a recording description; WoW.menu = { owner, root }. Each element: kind,
+-- text, its callbacks, enabled, response, children (a submenu).
+MenuResponse = { Open = 1, Refresh = 2, Close = 3, CloseAll = 4 }
+local function newDesc(kind, text)
+    local d = { kind = kind, text = text, children = {}, enabled = true }
+    function d:CreateTitle(t) local e = newDesc("title", t); table.insert(self.children, e); return e end
+    function d:CreateDivider() local e = newDesc("divider"); table.insert(self.children, e); return e end
+    function d:CreateButton(t, callback, data)
+        local e = newDesc("button", t)
+        e.callback, e.data = callback, data
+        table.insert(self.children, e)
+        return e
+    end
+    function d:CreateCheckbox(t, isSelected, setSelected, data)
+        local e = newDesc("checkbox", t)
+        e.isSelected, e.setSelected, e.data = isSelected, setSelected, data
+        table.insert(self.children, e)
+        return e
+    end
+    function d:SetEnabled(v) self.enabled = v end
+    function d:SetResponse(r) self.response = r end
+    return d
+end
+MenuUtil = {
+    CreateContextMenu = function(owner, generator, ...)
+        local root = newDesc("root")
+        generator(owner, root, ...)
+        WoW.menu = { owner = owner, root = root }
+        return root
+    end,
+}
+-- The element whose text matches `pattern` (plain), searched through submenus.
+function WoW.menuItem(pattern, from)
+    from = from or (WoW.menu and WoW.menu.root)
+    if not from then return nil end
+    for _, e in ipairs(from.children) do
+        if e.text and e.text:find(pattern, 1, true) then return e end
+        local inner = WoW.menuItem(pattern, e)
+        if inner then return inner end
+    end
+end
+
 Settings = {
     RegisterCanvasLayoutCategory = function(frame, name)
         local c = { frame = frame, name = name, id = #WoW.categories + 1 }

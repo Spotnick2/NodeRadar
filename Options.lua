@@ -226,6 +226,9 @@ local function build()
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
     size = radios(page, size, "A node you skip (Herbs and Ores pages)", "ignoredIcon",
         { { "dim", "Its icon, dimmed" }, { "dot", "Blizzard's dot" } }, "")
+    -- #46: the minimap button (left-click: quick settings and the snooze; right-click: this page).
+    size = checkbox(page, size, "A NodeRadar button on the minimap (left-click: quick settings; right-click: "
+        .. "this page)", "minimapButton")
 
     -- #29: experimental, off by default, under its own heading.
     local compassHead = heading(page, size, "The compass (experimental)")
@@ -238,6 +241,10 @@ local function build()
     local compassSize = radios(page, compassWhy, "Compass size", "compassSize",
         { { "small", "Small" }, { "medium", "Medium" }, { "large", "Large" } }, "")
     -- #57: Alt-drag moves it, as Apotheca.
+    -- #46: snoozing its node, from the minimap button's menu or the key binding.
+    compassSize = radios(page, compassSize, "The key binding snoozes its node for (Key Bindings > NodeRadar)",
+        "snoozeFor", { { "15", "15 minutes" }, { "30", "30 minutes" }, { "60", "1 hour" },
+        { "session", "This session" } }, "")
     local compassLock = checkbox(page, compassSize, "Lock its position", "compassLock")
     compassSize = note(page, compassLock, "Hold Alt and drag the compass to move it. /nr compass reset puts it back "
         .. "under your character.")

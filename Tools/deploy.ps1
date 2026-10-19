@@ -40,7 +40,11 @@ function Deploy-Addon {
     # Our own textures and sound ship too (Media\*.tga, *.ogg: Tools\make_media.py's).
     $media = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot "Media") -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -in ".tga", ".ogg" } | ForEach-Object { "Media\" + $_.Name })
-    $files = @("NodeRadar.toc", "LICENSE") + $lua + $media
+    # The key binding (found by its name, not in the TOC) and the libraries' licences, as the package has
+    # them (#46).
+    $extra = @("Bindings.xml", "Libs\LibStub\LICENSE.txt", "Libs\CallbackHandler-1.0\LICENSE.txt",
+        "Libs\LibDBIcon-1.0\LICENSE.txt")
+    $files = @("NodeRadar.toc", "LICENSE") + $extra + $lua + $media
     foreach ($f in $files) {
         $src = Join-Path $RepoRoot $f
         $to = Join-Path $dest $f

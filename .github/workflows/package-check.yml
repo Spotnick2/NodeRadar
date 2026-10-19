@@ -96,7 +96,8 @@ jobs:
           args: -d
 
       # The zip is what players install, so assert its SHAPE: the TOC, every
-      # Lua file it loads, LICENSE and our Media/*.tga and *.ogg (the sonar). NOTHING else
+      # Lua file it loads (Libs\ included), Bindings.xml, LICENSE and the
+      # libraries' licences, and our Media/*.tga and *.ogg (the sonar). NOTHING else
       # (no probe, no tests, no generator).
       - name: The package is exactly the addon
         run: |
@@ -105,6 +106,11 @@ jobs:
           {
             echo NodeRadar/NodeRadar.toc
             echo NodeRadar/LICENSE
+            echo NodeRadar/Bindings.xml
+            # The vendored libraries' licences (#46): their Lua comes from the TOC below.
+            echo NodeRadar/Libs/LibStub/LICENSE.txt
+            echo NodeRadar/Libs/CallbackHandler-1.0/LICENSE.txt
+            echo NodeRadar/Libs/LibDBIcon-1.0/LICENSE.txt
             tr -d '\r' < NodeRadar.toc | grep -v '^#' | grep '\.lua$' | tr '\\' '/' | sed 's|^|NodeRadar/|'
             ls Media/*.tga Media/*.ogg | sed 's|^|NodeRadar/|'
           } | sort > expected.txt

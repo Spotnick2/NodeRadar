@@ -1,0 +1,7 @@
+<Bindings>
+	<!-- #46: Key Bindings > NodeRadar (its own section: a binding with no category lands in "Other").
+	     The name is the BINDING_NAME_ global in Minimap.lua. Found by its name, not listed in the TOC. -->
+	<Binding name="NODERADAR_SNOOZE" category="NodeRadar">
+		NodeRadar.Minimap.SnoozeKey()
+	</Binding>
+</Bindings>

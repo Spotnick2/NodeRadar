@@ -458,7 +458,8 @@ function Icons.Show()
     local any = false
     for _, r in ipairs(records) do
         if r.misses == 0 then
-            r.dim = not NR.Alert.Wanted(r.name)         -- beyond the skill, or skipped (#47)
+            -- Beyond the skill, skipped (#47), or snoozed (#46).
+            r.dim = not NR.Alert.Wanted(r.name) or (NR.Compass ~= nil and NR.Compass.Snoozed(r))
             if not r.frame then r.frame = acquire() end
             any = true
         end

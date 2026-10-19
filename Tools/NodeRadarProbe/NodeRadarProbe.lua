@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -4372,6 +4372,125 @@ local markerSteps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("marker", markerSteps)
+end)()
+
+;(function()
+--------------------------------------------------------------------------------
+-- Snoozing the compass's node, the minimap button and its menu (#46):
+-- /fp steps nr snooze
+--------------------------------------------------------------------------------
+
+local function snOn(n)
+    if NodeRadarProbeDB.restoreSnooze == nil then
+        NodeRadarProbeDB.restoreSnooze = { compass = rawget(n.db, "compass"), icons = rawget(n.db, "icons"),
+                                           button = rawget(n.db, "minimapButton"), snoozeFor = rawget(n.db, "snoozeFor") }
+    end
+    if n.db.compass ~= true then n.Set("compass", true) end
+    if n.db.icons ~= true then n.Set("icons", true) end
+    if n.db.minimapButton ~= true then n.Set("minimapButton", true) end
+end
+
+local function snText(n)
+    local record, name, yards = n.Compass.Target()
+    local dimmed = 0
+    for _, r in ipairs(iconRecords()) do if r.dim then dimmed = dimmed + 1 end end
+    return ("the compass on %s%s; %d snoozed; %d icons dimmed"):format(str(name), yards and (", " .. yards .. " yd") or "",
+        n.Compass.SnoozeCount(), dimmed)
+end
+
+local before      -- the compass's node when the snooze step began
+local steps = {
+    rev = 1,
+    title = "Snoozing the compass's node; the minimap button and its menu (#46)",
+    { text = "Have NodeRadar loaded with gathering tracking on. Its compass, icons and minimap button go on; they "
+          .. "come back as they were at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Minimap and n.Compass.Snooze) then return false, "NodeRadar (#46) isn't loaded" end
+          if #tracking(true) == 0 then return false, "no gathering tracking on" end
+          snOn(n)
+          if not n.Minimap.Available() then return false, "no minimap button: the libraries didn't load?" end
+          return true, "the button registered; " .. snText(n)
+      end },
+    { text = "Find NodeRadar's button around the minimap (a flower), drag it along the ring if you like, and hold "
+          .. "the mouse on it for its tooltip.", wait = function()
+          local tip = rawget(_G, "GameTooltip")
+          local first = ask(rawget(_G, "GameTooltipTextLeft1"), "GetText")
+          if yes(ask(tip, "IsShown")) and first == "NodeRadar" then return true, "its tooltip is up" end
+          return false, "no NodeRadar tooltip yet"
+      end, screenshot = "snooze: the button's tooltip" },
+    { text = "Is the button there, and does its tooltip say what the compass points at and what the clicks do?",
+      ask = true },
+    { text = "Ride until the compass points at a node with another one in view, then stand still.", wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          local record = n.Compass.Target()
+          local count = 0
+          for _, r in ipairs(iconRecords()) do if r.misses == 0 then count = count + 1 end end
+          if not record then return false, "the compass has no node yet" end
+          if count < 2 then return false, "only one node in view" end
+          before = record
+          return true, snText(n)
+      end, timeout = 900 },
+    { text = "Left-click NodeRadar's button: a menu. Choose \"Snooze ...\" > 15 minutes.", wait = function()
+          local n = nr()
+          if not (n and before) then return false, "no node noted" end
+          if n.Compass.SnoozeCount() < 1 then return false, "nothing snoozed yet" end
+          local now = n.Compass.Target()
+          if now == before then return false, "the compass is still on the snoozed node" end
+          return true, snText(n)
+      end, screenshot = "snooze: snoozed" },
+    { text = "Did the compass move on to another node, and is the snoozed node's icon dimmed on the minimap?",
+      ask = true },
+    { text = "Open the menu again and choose \"Clear snoozes\".", wait = function()
+          local n = nr()
+          if not n or n.Compass.SnoozeCount() > 0 then return false, "still snoozed" end
+          return true, snText(n)
+      end },
+    { text = "In Esc > Options > Key Bindings, find NodeRadar's \"Snooze the compass's node\", bind a key, close "
+          .. "the window and press it.", wait = function()
+          local n = nr()
+          if not n or n.Compass.SnoozeCount() < 1 then return false, "nothing snoozed yet" end
+          return true, snText(n)
+      end, timeout = 900 },
+    { text = "Did the key snooze it (a line in chat saying for how long)? (Note box: anything.)", ask = true },
+    { text = "In the button's menu, untick \"The compass (experimental)\", open the menu again, then tick it back. "
+          .. "Did the menu say \"The compass is off\" in between?", ask = true },
+    { text = "Right-click the button.", wait = function()
+          local n = nr()
+          local p = n and n.Options and n.Options._test and n.Options._test.panel
+          if not yes(ask(p, "IsVisible")) then return false, "NodeRadar's Options page isn't open" end
+          return true, "the Options page is open"
+      end, screenshot = "snooze: right-click" },
+    { text = "Optional: close Options, open the AddOns compartment (the button listing addons by the minimap) and "
+          .. "click NodeRadar there. Did its menu open?", ask = true },
+    { text = "Optional: with Glass MiniMap Bar loaded, did it collect NodeRadar's button? (Skip without it.)",
+      ask = true },
+    { text = "Snooze the compass's node once more (the menu or the key), then press Next.", wait = function()
+          local n = nr()
+          if not n or n.Compass.SnoozeCount() < 1 then return false, "nothing snoozed" end
+          return true, snText(n)
+      end },
+    { text = "Type /reload (or press Reload now): the snooze should be gone after it.", reload = true },
+    { text = "After the reload.", wait = function()
+          local n = nr()
+          if not (n and n.Compass) then return false, "NodeRadar isn't loaded" end
+          return true, snText(n)
+      end },
+    { text = "Putting the compass, icons, button and the key's length back.", auto = true, run = function()
+          local n, saved = nr(), NodeRadarProbeDB.restoreSnooze
+          if not (n and saved) then return "nothing to put back" end
+          n.Compass.ClearSnoozes()
+          n.db.snoozeFor = saved.snoozeFor
+          n.Set("minimapButton", saved.button)
+          n.Set("icons", saved.icons)
+          n.Set("compass", saved.compass)
+          NodeRadarProbeDB.restoreSnooze = nil
+          return ("put back: compass %s, icons %s, button %s"):format(str(saved.compass), str(saved.icons),
+              str(saved.button))
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("snooze", steps)
 end)()
 
 --------------------------------------------------------------------------------

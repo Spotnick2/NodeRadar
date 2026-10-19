@@ -35,10 +35,12 @@ for line in listed:lines() do
 end
 listed:close()
 eq(found, sounds, "...the listing saw them all")
-for _, f in ipairs(tocFiles()) do
+for _, f in ipairs(tocFiles(nil, true)) do
     check(io.open(f, "r") ~= nil, "TOC file exists: " .. f)
 end
-eq(tocFiles()[1], "Compat.lua", "Compat loads first")
+eq(tocFiles(nil, true)[1], "Libs/LibStub/LibStub.lua", "the libraries load first, LibStub before them (#46)")
+eq(tocFiles(nil, true)[4], "Libs/LibDBIcon-1.0/LibDBIcon-1.0.lua", "...LibDBIcon after LibDataBroker")
+eq(tocFiles()[1], "Compat.lua", "Compat loads first of ours")
 eq(tocFiles()[#tocFiles()], "NodeRadar.lua", "the bootstrap loads last")
 
 -- Two places that must agree, never derived from each other (porting guide section 0).
