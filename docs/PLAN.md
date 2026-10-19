@@ -667,6 +667,61 @@ icons' frame setting** (#41), and a **size option**.
   set when the target, the style or the size changes, not per frame.
 - The green ring of the first rounds (`Media\SonarRing.tga`) goes.
 
+### The ring, refined (a critique the owner shared, 2026-10-19)
+
+GPT's critique of the shipped look, with a mockup: the bezel dominates the small widget, the
+direction marker is too small, the distance label feels detached. The refinement keeps the footprint
+(44/52/60), the target, the bearing, the hysteresis, the hide rules, the tooltip and the settings;
+only the drawing changes.
+
+- **Our own textures, no LibGlass for the compass.** The look is layers NodeRadar ships
+  (`Tools/make_media.py`, plain Python, 32-bit TGA with RGB and 8-bit alpha, power-of-two sides,
+  committed), so **the compass uses our own art for every effective style** (the style is still
+  `Icons.Style()`'s: auto checks Glass MiniMap, glass checks LibGlass, else bronze), and the compass's
+  half of the shared glass latch goes (`Icons.GlassFailed`, the
+  compass's `buildGlass`). The style still follows the icons' frame (`Icons.Style()`):
+  **glass → a pearl rim, bronze → a muted bronze rim, plain → no rim** (the lens and the icon only).
+  The owner may replace any texture with painted art at the same size and layout (the specs are in
+  `Tools/make_media.py`'s header).
+- **The layers**, bottom to top, all centred on the disc:
+  1. `CompassShadow`: a soft black disc a little larger than the rim, nudged down 2 units: separates
+     the widget from the terrain.
+  2. `CompassLens`: a dark translucent disc (near black, about 0.62 alpha at the centre to 0.75 at
+     the edge) with a faint inner boundary at the icon's edge: readable over bright ground and dark
+     interiors (there's no live blur).
+  3. The item icon, masked round, **about 0.58 of the diameter** (was 0.69: more breathing room),
+     upright.
+  4. `CompassRim`: a thin ring (about 1/16 of the diameter), greyscale, bright along the top and
+     darker along the bottom (the glass reads from that variation, not from an even outline), tinted
+     pearl or bronze by vertex colour.
+  5. `CompassArc`: a 25° highlight on the rim, centred at the top of the texture, turned with the
+     arrow (`SetRotation(a)`, the texture's centre the disc's): the bearing's accent, not a gauge.
+  6. `CompassArrow`: a solid white triangle with a fine dark outline, flat base toward the centre, no
+     stem; 16 units at medium (was 14), turned by `SetRotation(a)`. White in every style. **Its art,
+     64 px:** the apex 24 px above the centre (0.375 × the arrow), the base 20 px below (0.3125), 44 px
+     wide (0.69), the 3 px outline inside those bounds. So its centre on an orbit of half the disc + 1
+     + 0.3125 × the arrow puts the base 1 unit outside the rim, and its farthest point (the apex) is
+     the orbit + 0.375 × the arrow: 38 units at medium (the base corners reach less, 27.6).
+- **The capsule:** `CompassPill`, a dark translucent capsule with a thin subdued outline, **fixed
+  width** (56 × 18 units at medium: no width change as the number changes), crisp white text
+  (`GameFontHighlightSmall`), its top 3 units below the arrow's farthest reach (41 under the centre
+  at medium, from the art's 38: closer than 47).
+- The earlier subsection's LibGlass disc and glass pill for the compass are superseded by this one.
+- **Tests** (replacing the compass's glass cases): with the icons off, the compass calls no
+  LibGlass `Disc`, `Apply`, `Mask` or `Font` and makes no icon frame; an icon's glass failure still
+  turns a pearl rim bronze at once (the icons turned on between sweeps too); each style's layers
+  (plain without a rim); the icon 0.58 of the diameter; the capsule 56 × 18 whatever the text; the arc
+  and the arrow share the angle, the arc the disc's centre, the icon unturned; the orbit and the
+  capsule from the art's numbers; a style switched at the same distance fills the capsule.
+- **Look round** (`compass5`): bright ground and a dark interior; a full rotation with the
+  diagonals and the wrap; a herb and an ore if the character mines; every effective style at every
+  size, with and without Glass MiniMap; the rim and arc in register, the outline, the capsule's
+  clearance and its text at the largest distance, small-size edges; the hover, clicks, camera drag,
+  combat, Edit Mode and a ride kept.
+- **Motion:** only the arrow and the arc move; the icon and the text stay put. No smoothing (there is
+  none today), no pulse, no shine.
+- **Hover** shows the tooltip and changes nothing drawn.
+
 ### Shown, hidden
 
 - **Shown** while there's a target and the position and facing read, a radar sweep ran within the
