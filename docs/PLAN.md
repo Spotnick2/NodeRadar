@@ -458,11 +458,30 @@ four blips a sweep and the 5 s retry kept):
   (cheap, exact), and its result is accepted only if it leaves no unexplained cells; else peeling
   goes on from what it left (Codex's lopsided diagonal: the single measure finds the upper node,
   peeling the lower).
-- **Cost:** about 25 reads a node peeled (an outward walk, a read, two walks across), so a pair about
-  50, once; a blip is retried every 5 s at most while cells stay unexplained.
+- **Progress:** a candidate counts only if, placed (or matched to the record within `MATCH` it
+  dedupes to, at that record's position), it explains a cell that wasn't. One that doesn't is a
+  failed direction. A pass tries the four directions in order, restarting the order after each
+  node that made progress, and ends when four in a row fail or `PEEL` nodes are found.
+- **Not forever** (Codex): a blip whose pass ended with cells still unexplained is **suspended**,
+  remembered by its name, cell count, the rounded extent of its cells and the records explaining
+  any of them: while that stays the same it isn't measured again (its provisional icons stay).
+  Any change (cells, extent, a record added or dropped, the view's radius), a clear, or the blip
+  unseen for `FORGET` re-arms it. So a shape peeling can't explain costs its reads once, not every
+  5 s.
+- **Cost, bounded:** a node found costs about 25 reads (an outward walk, a read, two walks across),
+  a pair about 50; a failed direction about as much. A sweep stops measuring at
+  `Icons.MEASURE_READS = 200` reads (the blip being peeled finishes its current direction, the
+  rest wait for the next sweep), on top of the grid's.
+- **Whole** (Codex): a peel is refused when its outward walk would reach, or its square would
+  extend past, the round map less 2 units (`dist <= half - 2` for the square's corners): near the
+  rim the edge read may be the map's, not the node's. The single measure keeps its centroid +
+  `INSIDE` rule. What's refused gets provisional icons, under the rim exception.
 - **What it can't tell** (stated, Codex): a node whose square lies wholly inside the union of others'
-  (three in a row, 12 apart) leaves no cell unexplained and gets no icon; a same-name area that
-  isn't a node, shaped like squares, would be peeled as nodes.
+  (three in a row, 12 apart) leaves no cell unexplained and gets no icon; **a compact triple can
+  leave its middle node unpeelable** at some phases of the sweep's grid (every walk across from its
+  exposed edges crosses an outer node, which still reads: (1, 1), (14, 14), (27, 27)), so the
+  middle gets a provisional icon, not an exact one; a same-name area that isn't a node, shaped like
+  squares, would be peeled as nodes. Pairs, the owner's case, are exact at every phase.
 
 **2. Provisional icons for cells still unexplained** after the sweep's measuring, whatever matched or
 covered the rest of the blip (Codex): the unexplained cells, grouped (8-neighbour, at the sweep's
@@ -486,10 +505,16 @@ Blizzard's dots, as the README already says.
 
 **Tests** (25-unit squares, `WoW.BLIP_HALF = 12.5`; `test_scan`'s separations use 17): pairs merged
 on x, on y and on the diagonal, measured from a standing start into two exact records; Codex's
-lopsided diagonal ((-19, -16) and (-6, 11)): both; a pair with one record already: the other
-peeled, no duplicate; the boundary column ((-10, -5) and (16, -5)): explained, no retry past RETRY,
-no stray provisional; a compact triple ((0, 0), (13, 13), (26, 26)): three; three in a row 12
-apart: the middle one not found (the stated limit); a lone unmeasured blip: one provisional, a
+lopsided diagonal ((-19, -16) and (-6, 11)): both; **pairs at several phases of the grid** (the
+same pair shifted by 1, 3 and 5 units): always both exact; a pair with one record already: the
+other peeled, no duplicate; the boundary column ((-10, -5) and (16, -5)): explained, no retry past
+RETRY, no stray provisional; a compact triple ((0, 0), (13, 13), (26, 26)) and shifted
+((1, 1), (14, 14), (27, 27)): the outer two exact, the middle exact or provisional, never a bare
+dot; three in a row 12 apart: the middle one not found (the stated limit); **suspension**: a
+shape left unexplained isn't measured again while unchanged (no reads over sweeps past RETRY),
+re-armed when a record is dropped or the shape changes; **the read ceiling** (a sweep with many
+merged blips stops at 200 measuring reads); **a merged blip reaching the rim**: its inner node
+peeled, the clipped one refused (provisional, under the rim exception); a lone unmeasured blip: one provisional, a
 wide one: two, a matched partial blip: provisional for its unexplained cells; provisional frames
 reused (the frame count plateaus over sweeps), gone when measured, none for filtered blips, not
 in `Icons.Records()`, cleared by `Icons.Clear` and the learner, hidden with the icons off and the
