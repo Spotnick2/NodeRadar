@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Two herbs of one name close together keep their icons** (#28): from some spots the minimap
+  reading saw them as one, so their icons turned back into dots, then into icons again as you
+  moved. They now stay icons.
+
 - **Move the compass** (#57): hold Alt over it and drag it where you like, as with Apotheca's bar.
   Without Alt, clicks still go through it to the world. Lock it in Options or with
   `/nr compass lock`; `/nr compass reset` puts it back under your character.

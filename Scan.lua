@@ -181,8 +181,10 @@ local function blip(name, members, g)
         sx, sy = sx + c[1], sy + c[2]
         h = fold(h, c.height)
     end
+    -- points: the sweep's own cells (map coordinates from the bottom left), for the
+    -- icons to see which records a merged blip still covers.
     return { name = name, x = sx / #members - g.w / 2, y = sy / #members - g.h / 2, cells = #members,
-             height = (h == "above" or h == "below") and h or nil }
+             height = (h == "above" or h == "below") and h or nil, points = members }
 end
 
 -- Where the sweep was taken, for a blip's map coordinates (#27): the player's

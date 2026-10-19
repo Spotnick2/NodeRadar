@@ -541,6 +541,28 @@ function Icons.Update(result, now)
         end
     end
 
+    -- Covered (the owner's two Silverleafs): two of a name a few units apart can
+    -- come out of a sweep as one blip, its centroid between them, near neither
+    -- record. A record left unmatched stays while a blip of its name has a cell
+    -- in its square; that blip isn't measured. Only the filtered blips count.
+    local reach = NR.Scan.NODE / 2
+    local function covers(b, r)
+        for _, c in ipairs(b.points or {}) do
+            if math.abs(c[1] - g.w / 2 - r.x) <= reach and math.abs(c[2] - g.h / 2 - r.y) <= reach then return true end
+        end
+        return false
+    end
+    for _, r in ipairs(records) do
+        if not matched[r] then
+            for _, b in ipairs(blips) do
+                if b.name == r.name and covers(b, r) then
+                    matched[r], b.covers = true, true
+                    break
+                end
+            end
+        end
+    end
+
     -- Missed: hidden at once, dropped at the second; faded out past the rim, dropped.
     local kept = {}
     for _, r in ipairs(records) do
@@ -558,7 +580,7 @@ function Icons.Update(result, now)
     -- first; then those tried RETRY s ago or more, longest ago first.
     local fresh, again = {}, {}
     for _, b in ipairs(blips) do
-        if not b.record and dist(b.x, b.y) + Icons.INSIDE <= half then
+        if not b.record and not b.covers and dist(b.x, b.y) + Icons.INSIDE <= half then
             local t = tryOf(b, pn, pw, k)
             if t then
                 t.seen = now

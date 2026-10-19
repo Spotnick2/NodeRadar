@@ -614,3 +614,22 @@ must be 1, and Blizzard's distance text shows unless hidden.
 | The AddOns compartment | hidden by Glass MiniMap: not tried |
 | `/reload` | the snooze gone after it (0 snoozed) |
 | Esc closing Options | opens the game menu: Blizzard's (`SettingsPanelMixin:TransitionBackOpeningPanel` toggles the game menu after any close, unless Edit Mode is up), whoever opened it |
+
+### Icons that turned back into dots: `/fp nr icons`, 1.60.1.70450 (the owner, 2026-10-19, Razormane Grounds) (#28)
+
+Two Silverleafs about 32 units apart: icons, then two dots after a fight, icons again, dots again
+after the player climbed a rock (the owner wondered about the height arrows). The dump with the dots
+showing:
+
+| What | Measured |
+|---|---|
+| The sweep | **one** Silverleaf blip at (-11.5, -38.5), **21 cells** (two nodes' worth: one is about 8 to 16), no record near it |
+| Measured on the spot | "crowded: its name again past the right": the walk from a centroid between the two reads into the second |
+| An Earthroot in the same sweep | its height arrow ("below") and its record within 1.6 units: the arrows aren't the cause |
+
+So the pair's squares, a few units apart, came out of the sweep as one blip from some spots, its
+centroid between them: both records missed (8 units from the centroid) and dropped, and the
+merged blip couldn't be measured; moving changed the grid's alignment and split them again. Fixed
+by covering (docs/PLAN.md, "Then covered"): a record stays while a blip of its name has a cell in
+its square, and a covering blip isn't measured. To check in game: the same spot, moving around and
+fighting, the two icons stay.
