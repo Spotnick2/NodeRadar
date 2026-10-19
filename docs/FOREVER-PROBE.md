@@ -321,3 +321,26 @@ NodeRadar's icons on (`Icons.lua` as committed), Glass MiniMap on, then the stoc
 So the icons sit on their nodes standing, zooming, running and turning, cost nothing noticeable, and
 leave Blizzard's above and below arrows visible; the 25-unit square holds on the stock map, which is
 also 198 units here, so whether it scales with a map's size is still unknown.
+
+### Glass discs around the icons: `glass`, 1.60.1.70450 (owner's run, 2026-10-18, Durotar) (#41)
+
+LibGlass-1.0 minor 11 as Glass MiniMap loaded it. Each look is a disc built as Glass MiniMap's `Ring.AddDisc`
+builds one (`disc_small`, the icon inset 18% and masked round), a child of NodeRadar's icon frame.
+
+| Look | Owner |
+|---|---|
+| A: 18 units, clean (Glass MiniMap's), the icon 12 | yes |
+| B: 22 units, clean, the icon 14 | yes |
+| C: 15 units, clean, the icon 9 | yes; note: "i think we can have an optional size" |
+| D: 18 units, pearl | yes |
+| E: 18 units, clean, no shadow | yes |
+| The best | note: "honestly at this size, it doesn't change much, I'd probably take the minimap setup by default" |
+| Running with A | the discs stayed on their nodes (yes) |
+
+The screenshots: every look builds and follows its icon; the glass reads as a thin ring round the
+icon, and at these sizes the presets and the shadow are hard to tell apart. Blizzard's above and
+below arrows still show at the disc's edge. Two observations, not explained yet:
+- In the running screenshot the two Silverleaf showed as Blizzard's dots, not icons, 0.7 s after
+  the step listed both as icons. The two were about 33 units apart, near the "crowded" distance (36).
+- In the plain screenshot, two nodes that had just come into view were still dots: they hadn't been
+  measured yet, which is expected.
