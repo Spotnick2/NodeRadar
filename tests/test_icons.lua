@@ -79,7 +79,7 @@ local sl = node("Silverleaf", 31, -23)
 plain = plainReads()
 local _, r = nil, nil
 reads, r = step()
-eq(reads - plain, 30, "a new node: 29 reads to measure it, 1 to put the mouseover back")
+eq(reads - plain, 33, "a new node: 32 reads to measure it (#47's walk: 31 to 33), 1 to put the mouseover back")
 eq(#records(), 1, "...one record")
 local rec = records()[1]
 check(near(rec.x, 31) and near(rec.y, -23), ("...at the node's centre: %.2f, %.2f"):format(rec.x, rec.y))
@@ -172,14 +172,18 @@ plain = plainReads()
 reads = step()
 eq(reads, plain, "...and not tried again within 5 s")
 
--- Four crowded nearer the centre and an isolated fifth (Codex, #28), at the
--- 5 s idle interval: the fifth is measured at the second sweep.
+-- Four refused nearer the centre and an isolated fifth (Codex, #28), at the
+-- 5 s idle interval: the fifth is measured at the second sweep. The four are
+-- too wide to be one node (40-unit areas): 35 apart, #47's walk measures them.
 reset()
 NR.db.interval = 5
-for _, x in ipairs({ -52.5, -17.5, 17.5, 52.5 }) do node("Wilted Peacebloom", x, 0) end
+for _, x in ipairs({ -67.5, -22.5, 22.5, 67.5 }) do
+    local n = node("Wilted Peacebloom", x, 0)
+    n.half = 20
+end
 local fifth = node("Wilted Peacebloom", 0, 70)
 step()
-eq(#records(), 0, "first sweep: the four nearest tried, all crowded")
+eq(#records(), 0, "first sweep: the four nearest tried, all refused")
 WoW.now = WoW.now + 4                                      -- the next sweep, 5 s later
 step()
 eq(#records(), 1, "second sweep: the fifth measured")
@@ -219,7 +223,7 @@ WoW.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-1", 2366)
 eq(#records(), 0, "gathered: its record dropped")
 plain = plainReads()
 reads = step()
-eq(reads - plain, 30, "...and the next node there measured, not matched")
+eq(reads - plain, 33, "...and the next node there measured, not matched")
 
 -- Skill: a node the player can't gather is dimmed (#26's rule); no item: the
 -- tracking spell's icon.
@@ -274,7 +278,7 @@ check(made(), "a record before the instance changes")
 WoW.pos[3] = 2
 plain = plainReads()
 reads = step()
-eq(reads - plain, 30, "a new instance: cleared and measured anew")
+eq(reads - plain, 34, "a new instance: cleared and measured anew (33 + 1)")
 WoW.pos[3] = 1
 check(made(), "a record before the position goes secret")
 WoW.posSecret = true
@@ -323,6 +327,28 @@ check(m.why and m.why:find("^not one node: 3%d%.%d wide %(%d+%.%d left, %d+%.%d 
 WoW.blips = { { "Silverleaf", 0, 0 }, { "Silverleaf", Scan.FAR, 0 } }
 m = centre("Silverleaf", 0, 0)
 eq(m.why, "crowded: its name again past the right", "another of its name at the far point: crowded, the side said")
+-- Two of a name with a gap between their squares (#47's dumps: 35 apart): each measured.
+local half = WoW.BLIP_HALF
+WoW.BLIP_HALF = 12.5                                       -- the measured 25-unit square
+for _, apart in ipairs({ 35, 30 }) do
+    for _, axis in ipairs({ "x", "y" }) do
+        local ox, oy = axis == "x" and apart or 0, axis == "y" and apart or 0
+        WoW.blips = { { "Silverleaf", 0, 0 }, { "Silverleaf", ox, oy } }
+        local a1 = centre("Silverleaf", 2, -3)                 -- centroids off their centres
+        local a2 = centre("Silverleaf", ox - 3, oy + 2)
+        check(near(a1.cx, 0) and near(a1.cy, 0) and near(a2.cx, ox) and near(a2.cy, oy),
+            ("%d apart on %s: both measured on their centres (%s; %s)"):format(apart, axis, tostring(a1.why),
+                tostring(a2.why)))
+    end
+end
+-- A gap under a step (26 apart): measured from a centroid that steps into it,
+-- refused from one that steps over it; never off-centre (Codex, #47).
+WoW.blips = { { "Silverleaf", 0, 0 }, { "Silverleaf", 26, 0 } }
+m = centre("Silverleaf", 1, 0)
+check(near(m.cx, 0) and near(m.cy, 0), "26 apart, a centroid 1 off: steps into the gap, measured")
+m = centre("Silverleaf", 0, 0)
+eq(m.why, "crowded: its name again past the right", "26 apart, a centroid on the centre: steps over it, refused")
+WoW.BLIP_HALF = half
 WoW.blips = { { "Silverleaf", 4, -3 }, { "Carry Your Weight", 10, 0, half = 40 } }
 m = centre("Silverleaf", 0, 0)
 check(near(m.cx, 4) and near(m.cy, -3), "another name over it: still measured")

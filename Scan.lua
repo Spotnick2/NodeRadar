@@ -23,9 +23,12 @@ Scan.STEP = 14
 Scan.NODE = 25
 Scan.NODE_SLACK = 2
 -- From a blip's centroid (at most 5.5 off its node's centre: one or two samples
--- of the grid per axis), a point this far out is past the node's edge.
+-- of the grid per axis), its node's edge is 7 to 18 out: the walk steps out by
+-- STRIDE to the first point past it (#47: a same-name neighbour's square beyond
+-- a gap no longer fails it), at most FAR, then halves between.
 Scan.FAR = 24
-Scan.HALVINGS = 6      -- 24 / 64: an edge to 0.4 units
+Scan.STRIDE = 4
+Scan.HALVINGS = 4      -- 4 / 16: an edge to 0.25 units
 
 -- The map's rect in its own units and its effective scale; nil and why when
 -- any part is missing or secret.
@@ -289,11 +292,19 @@ local function reads(g, x, y, name)
     return false
 end
 
--- How far from the blip, along (dx, dy), its name stops; nil when the far
--- point reads it too (another of its name there).
+-- How far from the blip, along (dx, dy), its name stops: stepping out to the
+-- first point that doesn't read it (a gap before a neighbour of its name
+-- counts), then halving between the last that did and that one; nil when it
+-- reads all the way to FAR (one merged with another of its name). Until #47 a
+-- single point FAR out had to read nothing: a same-name square within about
+-- 36 units failed it (two Silverleafs 35 apart, a 10-unit gap between them).
 local function edge(g, b, dx, dy)
-    if reads(g, b.x + dx * Scan.FAR, b.y + dy * Scan.FAR, b.name) then return nil end
-    local lo, hi = 0, Scan.FAR
+    local lo, hi = 0, nil
+    for d = Scan.STRIDE, Scan.FAR, Scan.STRIDE do
+        if not reads(g, b.x + dx * d, b.y + dy * d, b.name) then hi = d; break end
+        lo = d
+    end
+    if not hi then return nil end
     for _ = 1, Scan.HALVINGS do
         local mid = (lo + hi) / 2
         if reads(g, b.x + dx * mid, b.y + dy * mid, b.name) then lo = mid else hi = mid end
