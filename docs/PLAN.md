@@ -547,9 +547,9 @@ compass's rim, the colour of the minimap's own herb and ore tracking dots.
 - **The colour** (`Icons.YELLOW`, one constant both use): measured from the dots in game, from the
   look round's screenshot of a dot with the icons off (several pixels of the yellow interior of more than one dot, at native resolution, away from the
   highlight, the outline and the antialiased edge: an estimate, JPEG mixing a small feature's colour,
-  so the round's side-by-side of the dots and the yellow icons is what accepts it; Codex). Until then a
-  provisional `{ 1, 0.82, 0 }`, the client's gold text colour; the measured value replaces it in
-  the round's fix-up commit, and docs/FOREVER-PROBE.md records it.
+  so the round's side-by-side of the dots and the yellow icons is what accepts it; Codex). A provisional
+  `{ 1, 0.82, 0 }` (the client's gold text colour) until the round; measured there,
+  `{ 0.92, 0.75, 0.11 }` (docs/FOREVER-PROBE.md, "A yellow frame").
 - **The icons' look: our own ring.** `Media/IconRing.tga` (`Tools/make_media.py`, 64 × 64): a white
   band from radius 24.5 to 31.5 px with a 1.5 px dark edge on both sides inside those bounds, tinted by vertex colour (the
   white takes the yellow, the dark edges stay dark, so it holds over a bright map). A third host per

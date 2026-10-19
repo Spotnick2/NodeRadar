@@ -31,7 +31,7 @@ Icons.FALLBACK = { herbs = 2383, ore = 2580 }   -- Find Herbs, Find Minerals: th
 -- its frame following the minimap: glass with Glass MiniMap, bronze otherwise.
 Icons.SIZES = { small = 10, medium = 12, large = 14 }
 Icons.STYLES = { auto = true, plain = true, glass = true, bronze = true, yellow = true }
-Icons.YELLOW = { 1, 0.82, 0 }   -- the tracking dots' (#50): provisional, the client's gold text, until measured
+Icons.YELLOW = { 0.92, 0.75, 0.11 }   -- the tracking dots' lit yellow (#50, measured: docs/FOREVER-PROBE.md)
 Icons.GLASS_MINOR = 6  -- LibGlass-1.0's clean preset (r6); Disc is r2
 Icons.ARROW = 8        -- map units: our height arrow (Blizzard's is hidden by a ring, #41)
 -- Half of what each look draws, at an icon of `s`: the rim fades and drops by it.

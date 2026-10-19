@@ -507,3 +507,14 @@ white outlined triangle turning with the bearing, a fixed capsule), no LibGlass.
 | Clicks and a camera drag on the icon | reached the world (yes; "You need to be closer to interact" twice in the log, the right-clicks on the world) |
 | Edit Mode in and out, combat | no error, nothing odd (no) |
 | Riding | readable at a glance (yes) |
+
+### A yellow frame: `yellow`, 1.60.1.70450 (owner's run, 2026-10-19, Durotar) (#50)
+
+| What | Measured |
+|---|---|
+| **Blizzard's tracking dots' colour** | two Silverleaf dots, the icons off, a 4K JPEG at native resolution: the yellow pixels' median (173 of them) RGB (222, 178, 40), the brighter half's (234, 190, 28). Each dot is a lit yellow disc with a darker ring and a yellow rim. Taken as `{ 0.92, 0.75, 0.11 }`, the lit yellow |
+| Our ring at the provisional `{ 1, 0.82, 0 }` | rendered (249, 211, 3) in the same spot: a touch brighter and greener than the dots; the owner found it a match at every size (yes). The measured value went in after the run (closer to the dots, a little more orange) |
+| Yellow at small, medium, large | read back (`yellow 10`, `12`, `14`); each on its node, the ring around the icon, the dark edges holding on the orange map (the screenshots) |
+| The height arrow on yellow | Silverleaf above: our arrow above the ring, clear of it |
+| The compass's rim yellow | `yellow medium`; liked (yes): yellow on top, darker below, as pearl and bronze |
+| **The narrower arrow** (30 px base) | at 0.52 rad (ahead-left) and -2.48 (behind-right) it points clearly along the slant; the owner: yes at the slants. Ahead-right and behind-left were passed by hand (their screenshots show the arrow straight ahead and straight behind, read right) |
