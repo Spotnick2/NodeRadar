@@ -661,3 +661,15 @@ Round 1's step 2 passed on a unit's tooltip (Master Gadrin's coloured "Press F6"
 ask was skipped; the probe now counts only a whole coloured line ending in the skill's number
 (rev 2). The red a player does meet, a node above the skill, is covered offline only
 (`test_tooltip`): none was in view.
+
+### Indoors and out: `/fp steps nr cave`, 1.60.1.70450 (the owner, 2026-10-20, the Razor Hill inn, Herbalism) (#63)
+
+| What | Measured |
+|---|---|
+| The swap | **4 of 4** (in, out, in, out) fire `MINIMAP_UPDATE_ZOOM` with **no `Minimap:SetZoom` call**; `IsIndoors()` turns first (seen by a per-frame poll in the same frame 3 times, 0.1 s before the event once), `GetZoom()` at the event |
+| Each mode's zoom | kept apart: in at 0 (as left indoors), out at 0; after zooming to 5 inside, the next visit came in at 5 and went out at 0 |
+| NodeRadar | each swap's event called `Alert.Reset` (`NodeRadar.lua:206`): the next update a **silent baseline**, every time. The tester's missed pings on the way out (cause (a) in the plan); no node was in view at a swap to see one missed (the owner: too far from nodes) |
+| The player's zoom | **31** events, each after a `SetZoom` call (wheel and buttons, a call a level); a `SetZoom(5)` at 5 fired **no** event |
+| The view radius | indoors 150, 120, 90, 60, 40, 25 at zoom 0 to 5; outdoors 233.3, 200, 166.7, 133.3, 100, 66.7 (as #27) |
+| The rest | no held step, no stale gap (updates every 2 s standing, 0.6 s moving); two Silverleaf fires outdoors, a rise with no drop |
+| Rows | only Silverleaf, outdoors, its height arrow inline, `leftColor` ffd200 (48 second reads): **grey not measured**, no node in or near the inn |

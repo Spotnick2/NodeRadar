@@ -6,6 +6,9 @@
   it reads "Requires Herbalism (15)" under the name, coloured by difficulty as in the world: red
   while it's beyond your skill, then orange, yellow, green and grey. On by default; `/nr tooltip`
   or Options turns it off.
+- **Nodes in view when you come out of a cave, a mine or a tunnel now alert** (#63). The minimap's
+  switch indoors or out restarted NodeRadar's count without a sound, so whatever was in view on
+  the way out stayed silent. Only your own zoom does that now.
 
 ## v1.3.0
 

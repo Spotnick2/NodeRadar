@@ -184,6 +184,18 @@ case("Goldthorn", function() WoW.fire("ZONE_CHANGED_NEW_AREA") end, function()
     check(herbsOn(), "...restored")
 end)
 
+case("Sungrass", function()
+    WoW.indoors = true
+    Minimap._zoom = 5                                      -- the swap: the client's event, no SetZoom call
+    WoW.fire("MINIMAP_UPDATE_ZOOM")
+end, function()
+    eq(Learn.Kind("Sungrass"), nil, "a swap indoors voids it (the view changed)")
+    check(herbsOn(), "...restored")
+    WoW.indoors = false
+    Minimap._zoom = 0
+    WoW.fire("MINIMAP_UPDATE_ZOOM")
+end)
+
 case("Khadgar's Whisker", function()
     WoW.fire("LOADING_SCREEN_ENABLED")
     WoW.advance(2)

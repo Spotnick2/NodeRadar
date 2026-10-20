@@ -173,6 +173,18 @@ API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WO
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
 local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
+
+-- The player's zoom (or an addon's) comes through Minimap:SetZoom and resets
+-- the alert: zooming out shows many nodes at once. The swap indoors or out
+-- fires MINIMAP_UPDATE_ZOOM with no call, so it keeps the history and a node
+-- seen on the way out alerts (#63, docs/FOREVER-PROBE.md "Indoors and out").
+-- A call to the zoom already set fires nothing and resets nothing.
+local zoom = API.Num(Minimap:GetZoom())
+hooksecurefunc(Minimap, "SetZoom", function()
+    local z = API.Num(Minimap:GetZoom())
+    if not z or z ~= zoom then Alert.Reset() end
+    zoom = z
+end)
 events:SetScript("OnEvent", function(_, event, ...)
     local now = GetTime()
     if event == "ADDON_LOADED" then
@@ -203,7 +215,8 @@ events:SetScript("OnEvent", function(_, event, ...)
         Icons.Clear()
         Learn.Void("the player died")
     elseif event == "MINIMAP_UPDATE_ZOOM" then
-        Alert.Reset()
+        zoom = API.Num(Minimap:GetZoom())          -- a swap indoors or out: the history kept (#63)
+        if not zoom then Alert.Reset() end
         Learn.Void("the zoom changed")
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         Alert.Reset()

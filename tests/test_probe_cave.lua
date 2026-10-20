@@ -112,7 +112,7 @@ WoW.indoors = false
 poll()
 eq(result(7).status, nil, "out, no updates yet: waits")
 rawset(_G, "debugstack", function() return STACK end)
-zoom(0)                                                    -- the swap's zoom, if the client sends one
+zoom(1)                                                    -- a zoom on the way out: a reset
 WoW.blips = { { "Silverleaf", 20, 0, kind = "herbs" }, { "|cff808080Silverleaf|r", -30, 10, kind = "herbs" } }
 waitFor(7)
 eq(result(7).status, "done", "five updates outdoors: " .. detail(7))
@@ -150,7 +150,7 @@ end
 local open = WoW.blips
 WoW.blips = { open[1], open[2], open[3] }                  -- the Peacebloom out of view
 poll(); poll()
-zoom(0)                                                    -- a reset: the mirror forgets the drop
+zoom(0)                                                    -- a reset (from 1): the mirror forgets the drop
 poll(); poll()
 WoW.advance(5)
 WoW.blips = open
@@ -174,7 +174,7 @@ check(later("update %(after a new area: counts from zero%): [^/]*rises [^/]*Silv
     "a new area after a pause: counted from zero, as Alert does")
 check(not later("a baseline: stale"), "...not a stale baseline")
 WoW.fire("ZONE_CHANGED_NEW_AREA")
-zoom(0)                                                    -- a reset after it: a baseline after all
+zoom(1)                                                    -- a reset after it: a baseline after all
 local seen = #db.cave.events
 poll(); poll()
 local after

@@ -1535,17 +1535,24 @@ with a zoom in and out; walk out, 5 updates after; "Did NodeRadar ping the nodes
 visit (in and straight out), 5 updates after, the same question; from outside, a node in the cave
 hovered if one shows (screenshot); "Did any node's name look grey?"; the summary.
 
-**Then, if (a) is what happens:** a swap between indoors and outdoors isn't the player's zoom, so
-it keeps the history: no reset, and a node that rises on the way out alerts unless the blink holds
-it (a name that dropped within 20 s). The player's own zoom keeps its silent baseline, and the zoom
-still voids a learner's experiment. How to tell them apart is chosen from the round, not before:
-the event's own `IsIndoors()` against the last update's can misread when a sweep lands between the
-swap and the event (Codex), so the likelier rule decides at the next update instead, from the
-indoor state then against the last update's. Whatever the rule, these stay: a node seen before
-going in and back after more than 20 s alerts again; a rise inside the cooldown is lost (d); a
-different node of a name that blinked is held (c). If (b): why the sweeps stop, then the same rule.
-If grey is real: what a grey node gets (a mark on its icon, the compass passing it by, or nothing)
-is the owner's choice.
+**Measured** (docs/FOREVER-PROBE.md, "Indoors and out"): (a). The swap fires `MINIMAP_UPDATE_ZOOM`
+with no `Minimap:SetZoom` call, 4 of 4; the player's zooms all came through `SetZoom` (31 of 31),
+and a `SetZoom` to the zoom already set fires no event. `IsIndoors()` turns before the event (once
+0.1 s before it), so comparing it at the event or the next update can misread (Codex); the call
+doesn't.
+
+**The fix:** the player's zoom is told by its call. A secure hook on `Minimap:SetZoom` (our only
+hook on the minimap; it changes nothing) resets the alert when the zoom it leaves differs from the
+one before (`GetZoom()` remembered at each call and each event; a call to the same zoom resets
+nothing, as it fires no event). `MINIMAP_UPDATE_ZOOM` no longer resets the alert: a swap keeps the
+history, so a node that rises on the way out alerts unless the blink holds it (a name that dropped
+within 20 s). The event still voids a learner's experiment (the view changed, whoever changed it).
+These stay: a node seen before going in and back after more than 20 s alerts again; a rise inside
+the cooldown is lost (d); a different node of a name that blinked is held (c). An unknown zoom
+(`GetZoom()` not a number) resets, as now. Accepted (Codex): a merged pair of one name can split
+into two blips when the view shrinks on the way in (nodes farther apart on the map), a rise that
+alerts although both were in view; telling nodes apart isn't worth it for this. Grey: unmeasured (no node in a cave yet); if real, what
+a grey node gets is the owner's choice.
 
 ## A public API (#4), after #3
 
