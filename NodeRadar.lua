@@ -436,6 +436,7 @@ SlashCmdList.NODERADAR = function(msg)
         for k in pairs(DEFAULTS) do db[k] = nil end
         Compass.ResetPosition()                    -- compassX, compassY: nil defaults, outside DEFAULTS (Codex)
         NR.Minimap.Apply()                         -- the button shown again, in LibDBIcon's table too (Codex, PR #65)
+        NR.Marker.Toggle()                         -- off by default: ours cleared, the CVar put back (Codex, PR #74)
         API.Say("settings reset (learned names kept)")
     else
         help()

@@ -285,7 +285,7 @@ eq(shown(), true, "shown")
 WoW.fire("NAVIGATION_FRAME_DESTROYED")
 eq(M.nav(), nil, "the frame destroyed: dropped")
 eq(shown(), false, "...the stars hidden")
-eq(M.driver._scripts.OnUpdate, nil, "...nothing per frame")
+eq(M.stars[1].anim._playing, false, "...their animations stopped")
 WoW.fire("NAVIGATION_FRAME_CREATED")
 settle(e)
 eq(shown(), true, "...created again: shown")
@@ -340,6 +340,67 @@ check(onNode(e), "on again")
 NR.Set("enabled", false)
 eq(WoW.waypoint, nil, "NodeRadar off: ours cleared")
 NR.Set("enabled", true)
+
+--------------------------------------------------------------------------------
+-- Teardown that can't happen at once, and targets gone (Codex, PR #74)
+--------------------------------------------------------------------------------
+
+local function ready(label)
+    step(1)
+    check(onNode(e), label)
+end
+local function frameTicks(s) for _ = 1, math.floor(s / 0.1 + 0.5) do WoW.now = WoW.now + 0.1; WoW.tick(0.1) end end
+-- The marker off with the world map open: held, then done once it closes, no sweep needed.
+ready("on")
+WoW.worldMapShown = true
+NR.Set("marker", false)
+check(onNode(e), "off with the map open: the clear held")
+frameTicks(1)
+check(onNode(e), "...still while it's open")
+WoW.worldMapShown = false
+frameTicks(0.6)
+eq(WoW.waypoint, nil, "...the map closed: cleared (the retry, no sweep)")
+eq(M.driver._scripts.OnUpdate, nil, "...then nothing runs")
+-- The radar off with the map open: the same, though no sweep runs at all.
+NR.Set("marker", true)
+ready("on again")
+WoW.worldMapShown = true
+NR.Set("enabled", false)
+check(onNode(e), "the radar off with the map open: held")
+WoW.worldMapShown = false
+frameTicks(0.6)
+eq(WoW.waypoint, nil, "...closed: cleared")
+NR.Set("enabled", true)
+-- Gathering tracking turned off: the compass's target gone, ours cleared at once.
+ready("on again")
+WoW.tracking[1].active = false
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+eq(WoW.waypoint, nil, "tracking off: the target gone, ours cleared")
+WoW.tracking[1].active = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+step(1); step(1)
+check(onNode(e), "...tracking back: ours again")
+-- No sweep for longer than the idle interval and a grace (the Gamepad UI holds
+-- the radar): the target is stale, ours cleared and the stars hidden.
+settle(e)
+eq(shown(), true, "shown")
+WoW.gamepadUI = true
+frameTicks(NR.db.interval + Marker.GRACE + 1)
+eq(WoW.waypoint, nil, "no sweep for a while: stale, ours cleared")
+eq(shown(), false, "...no stars")
+WoW.gamepadUI = false
+step(1); step(1)
+check(onNode(e), "...sweeps again: ours again")
+-- /nr reset with ours set and a CVar to put back.
+NR.Set("marker", false)
+WoW.cvars.showInGameNavigation = "0"
+NR.Set("marker", true)
+eq(NR.db.markerCVar, "0", "a restore pending")
+ready("on")
+SlashCmdList.NODERADAR("reset")
+eq(NR.db.marker, false, "/nr reset: the marker off (the default)")
+eq(WoW.waypoint, nil, "...ours cleared")
+eq(WoW.cvars.showInGameNavigation, "0", "...the CVar put back")
 
 -- Every widget method called exists on Forever (the dump), the animation's among them.
 checkMethods({ "AnimationGroup:SetLooping", "Alpha:SetFromAlpha", "Alpha:SetToAlpha", "Scale:SetScaleFrom",

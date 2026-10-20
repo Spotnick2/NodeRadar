@@ -26,8 +26,10 @@ Marker.TEAL = { 0.55, 1, 0.9 }    -- the glow
 Marker.WHITE = { 0.9, 1, 1 }      -- the stars: white, a cyan tinge
 Marker.NEAR_SCALE, Marker.FAR_SCALE = 1.3, 0.7   -- the scale near and far (60 / yards between them)
 Marker.HIDDEN_EVERY = 0.1  -- seconds between checks while armed but hidden (behind, settling)
+Marker.RETRY = 0.5     -- seconds between tries while ours is installed but not wanted (the map open, combat)
+Marker.GRACE = 2       -- seconds past the idle interval without a sweep before the target is stale
 
-local want       -- { map, x, y, record }: the target's point at the last sweep
+local want       -- { map, x, y, record, north, west, at }: the target's point at the last sweep
 local swept      -- a sweep has given the target since login
 local ours       -- { map, x, y }: the waypoint we set and read back
 local writing    -- inside our own waypoint or super-track calls
@@ -39,6 +41,13 @@ local reconciling
 function Marker.On()
     local db = NR.db
     return db and db.marker and db.enabled and true or false
+end
+
+-- The last sweep's target, while sweeps confirm it: none for longer than the
+-- idle interval and a grace (the radar held: tracking off, the gamepad, a
+-- learner's experiment), and it's no longer the target (Codex, PR #74).
+local function fresh()
+    return want ~= nil and GetTime() - want.at <= NR.db.interval + Marker.GRACE
 end
 
 --------------------------------------------------------------------------------
@@ -235,6 +244,7 @@ end
 
 local since = 0
 local function onUpdate(_, elapsed)
+    if not fresh() then Marker.Reconcile(); return end    -- stale: dropped, ours cleared
     if not root:IsShown() then
         since = since + elapsed
         if since < Marker.HIDDEN_EVERY then return end
@@ -249,8 +259,19 @@ local function onUpdate(_, elapsed)
     end
 end
 
+-- While ours is installed but not the target's (a clear held by combat or the
+-- map, the frame not made yet): tried again, sweeps or none, until it's done.
+local retried = 0
+local function onRetry(_, elapsed)
+    retried = retried + elapsed
+    if retried < Marker.RETRY then return end
+    retried = 0
+    Marker.Reconcile()
+end
+
 -- Armed (our waypoint on the target, the frame there): checked every frame
--- while shown, ten times a second while hidden; disarmed, nothing runs.
+-- while shown, ten times a second while hidden; ours otherwise, the retry;
+-- nothing of ours, nothing runs.
 local driver = CreateFrame("Frame")
 local function arm()
     local armed = Marker.On() and ours and want and nav and same(ours, want.map, want.x, want.y)
@@ -260,7 +281,7 @@ local function arm()
         root:SetPoint("CENTER", nav, "CENTER")
         driver:SetScript("OnUpdate", onUpdate)
     else
-        driver:SetScript("OnUpdate", nil)
+        driver:SetScript("OnUpdate", ours and onRetry or nil)
         hideStars()
     end
 end
@@ -272,6 +293,7 @@ end
 function Marker.Reconcile()
     if reconciling or not NR.db or not NR.charDb then return end
     reconciling = true
+    if want and not fresh() then want = nil end
     if ours and not isOurs() then forget() end         -- replaced (theirs now) or gone
     if not busy() then
         local on = Marker.On()
@@ -298,6 +320,7 @@ function Marker.Update(result)
     local where = result and result.where
     if r and want and want.record == r and where and where.map == want.map
         and math.abs(r.north - want.north) < Marker.KEEP and math.abs(r.west - want.west) < Marker.KEEP then
+        want.at = GetTime()
         Marker.Reconcile()
         return
     end
@@ -307,7 +330,7 @@ function Marker.Update(result)
         local x = where.x + (pw - r.west) / where.w
         local y = where.y - (r.north - pn) / where.h
         if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
-            want = { map = where.map, x = x, y = y, record = r, north = r.north, west = r.west }
+            want = { map = where.map, x = x, y = y, record = r, north = r.north, west = r.west, at = GetTime() }
         end
     end
     Marker.Reconcile()
@@ -336,7 +359,14 @@ local function cvarBack()
     cvarExpect = nil
 end
 
--- The setting or NodeRadar turned on or off (NR.Set).
+-- The compass's target gone (its records cleared: tracking off, a loading
+-- screen, death, Compass.Reset): no point now, ours cleared (Codex, PR #74).
+function Marker.TargetGone()
+    want = nil
+    Marker.Reconcile()
+end
+
+-- The setting or NodeRadar turned on or off (NR.Set, /nr reset).
 function Marker.Toggle()
     if Marker.On() then cvarOn() else cvarBack(); want = nil end
     Marker.Reconcile()

@@ -135,8 +135,9 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   events, combat's end, the frame's life and the toggles. It **steps aside**: never the player's
   waypoint (ours is only a point read back right after our own set, `NodeRadarCharDB.marker`), never
   while anything else is super-tracked, a half-cleared state left alone; nothing written in combat or
-  with the world map open; a clear checked again as it happens, the super-track first. Cleared at
-  logout; at login only the saved point is adopted. `showInGameNavigation` held at 1 while on
+  with the world map open; a clear checked again as it happens, the super-track first, retried
+  every 0.5 s while it's held; the point dropped with the compass's target and stale without a sweep
+  for the idle interval and 2 s. Cleared at logout; at login only the saved point is adopted. `showInGameNavigation` held at 1 while on
   (`NodeRadarDB.markerCVar` to put back; someone else's change cancels that). The stars wait 0.3 s
   after a new waypoint and need the navigation's distance within 10 yards of ours; hidden within 15
   yards, on a taxi, clamped at the screen's edge. docs/PLAN.md has every rule. Not yet in game.

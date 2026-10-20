@@ -1592,7 +1592,11 @@ off screen: the compass covers direction).
   cleanup path of its own: `NR.Step`'s early returns and a disabled radar must not strand our
   waypoint). Each run reads everything again: combat, the map, the target, ownership. A target that
   stays the same is picked up when the slot frees (the player removes their pin, a quest stops
-  being super-tracked).
+  being super-tracked). While ours is installed but not wanted (a clear held by combat or the map,
+  the marker or the radar off meanwhile), a retry runs every 0.5 s until it's done, sweeps or none;
+  the compass's target cleared (`Compass.Reset`: tracking off, a loading screen) drops the point at
+  once, and a point no sweep has confirmed for the idle interval and 2 s is stale; `/nr reset` tears
+  down as turning it off does (Codex, PR #74).
 - **The map point:** kept while the target is the same record, moved less than a yard (the world
   round: computed again from a moving player, it differed by a hair and the waypoint was set anew
   every sweep, the stars blinking). Otherwise computed at the sweep from a paired sample, the sweep's `where` (the zone map,

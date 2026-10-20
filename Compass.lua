@@ -499,6 +499,7 @@ end
 function Compass.Reset()
     target = nil
     hide()
+    if NR.Marker then NR.Marker.TargetGone() end   -- the marker's point goes with it (#61)
 end
 
 Compass._test = {
