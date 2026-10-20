@@ -24,6 +24,8 @@ local DEFAULTS = {
     compass  = false,   -- experimental (#29): a ring under the character toward the nearest node
     compassSize = "medium", -- its disc: small, medium or large (Compass.SIZES)
     compassLock = false, -- its position locked (#57; else Alt-drag moves it); compassX, compassY: where, nil home
+    snoozeFor = "session", -- the key binding's snooze (#46): "15", "30", "60" minutes or "session"
+    minimapButton = true, -- NodeRadar's minimap button (#46); NodeRadarDB.minimap is LibDBIcon's table
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -60,6 +62,7 @@ local function initDB()
     -- default can change in a later version.
     setmetatable(db, { __index = DEFAULTS })
     if type(db.learned) ~= "table" then db.learned = {} end
+    if type(db.minimap) ~= "table" then db.minimap = {} end    -- LibDBIcon's, made once, never replaced (#46)
     NR.db = db
     Learn.CleanNames()
     if type(NodeRadarCharDB) ~= "table" then NodeRadarCharDB = {} end
@@ -138,6 +141,7 @@ function NR.Set(key, value)
     -- The compass follows the icons' frame (#29), with the icons on or off.
     if key == "iconStyle" or key == "compassSize" then Compass.Restyle() end
     if key == "compassLock" then Compass.UpdateGrip() end
+    if key == "minimapButton" then NR.Minimap.Apply() end
 end
 
 function NR.VersionText()
@@ -177,6 +181,7 @@ events:SetScript("OnEvent", function(_, event, ...)
     if not NR.db then return end
     if event == "PLAYER_LOGIN" then
         NR.Options.Register()
+        NR.Minimap.Register()                      -- the button (#46): no libraries, no button
     elseif event == "PLAYER_ENTERING_WORLD" then
         Icons.Clear()
         Learn.loading = false
@@ -284,6 +289,8 @@ local function help()
         .. "/nr compasssize small | medium | large. Hold Alt and drag it to move it; /nr compass lock | unlock | reset")
     API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
+    API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
+        .. "length, set here too); /nr snooze clear. A reload clears them")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -314,6 +321,12 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "compasssize" and Compass.SIZES[rest:lower()] then
         NR.Set("compassSize", rest:lower())
         API.Say("compass size: " .. rest:lower())
+    elseif cmd == "snooze" and rest:lower() == "clear" then
+        Compass.ClearSnoozes()
+        API.Say("snoozes cleared")
+    elseif cmd == "snooze" and (rest == "" or Compass.SNOOZES[rest:lower()]) then
+        if rest ~= "" then db.snoozeFor = rest:lower() end
+        NR.Minimap.SnoozeKey()
     elseif cmd == "compass" and rest:lower() == "reset" then
         Compass.ResetPosition()
         API.Say("the compass is back in its place, under your character")
@@ -391,6 +404,7 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "reset" then
         for k in pairs(DEFAULTS) do db[k] = nil end
         Compass.ResetPosition()                    -- compassX, compassY: nil defaults, outside DEFAULTS (Codex)
+        NR.Minimap.Apply()                         -- the button shown again, in LibDBIcon's table too (Codex, PR #65)
         API.Say("settings reset (learned names kept)")
     else
         help()

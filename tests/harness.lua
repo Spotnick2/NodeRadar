@@ -23,12 +23,17 @@ TOC = "NodeRadar.toc"
 TEST_LIBRARY = { enUS = { ["Silverleaf"] = "herbs", ["Stunted Silverleaf"] = "herbs", ["Wilted Peacebloom"] = "herbs" } }
 PROBE_TOC = "Tools/NodeRadarProbe/NodeRadarProbe.toc"
 
--- Lua files listed in a TOC, in load order.
-function tocFiles(toc)
+-- Lua files listed in a TOC, in load order. The vendored libraries (Libs\,
+-- #46) are left out unless `all`: behaviour tests never load them, the stubs
+-- answer LibDataBroker and LibDBIcon with fakes (GuildSpy's recipe, Codex);
+-- run.ps1's luac -p checks every file.
+function tocFiles(toc, all)
     local files = {}
     for line in io.lines(toc or TOC) do
         line = line:gsub("\r", "")
-        if line ~= "" and not line:match("^#") and line:match("%.lua$") then files[#files + 1] = line:gsub("\\", "/") end
+        if line ~= "" and not line:match("^#") and line:match("%.lua$") and (all or not line:match("^Libs\\")) then
+            files[#files + 1] = line:gsub("\\", "/")
+        end
     end
     return files
 end

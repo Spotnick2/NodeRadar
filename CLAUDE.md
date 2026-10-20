@@ -39,7 +39,8 @@ live game, WoWInterface (#37).
   and a taint minefield (porting guide, "Edit Mode systems"). Our frames are unnamed children of
   `Minimap`, except the compass's ring (#29), an unnamed child of `UIParent` whose disc takes mouse
   motion only (its tooltip; clicks go through): the rule is about never touching the minimap, and
-  the ring isn't on it.
+  the ring isn't on it. And NodeRadar's minimap button (#46): LibDBIcon's, a **named** child of
+  `Minimap` (`LibDBIcon10_NodeRadar`) as every LibDBIcon addon's is, placed by the library.
 - Never reassign a Blizzard global or method; `hooksecurefunc` and our own frames only.
 - The sweep drives the minimap's mouseover and the soft cursor: the soft cursor is turned off after
   every sweep, on every path, and no sweep runs with the Gamepad UI on (`InputUtil.IsGamepadUIEnabled()`,
@@ -49,8 +50,10 @@ live game, WoWInterface (#37).
 
 ## Layout
 
-TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Track.lua` → `Icons.lua` → `Compass.lua` → `Options.lua` → `TrackOptions.lua` → `NodeRadar.lua`. One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
+committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
+`Track.lua` → `Icons.lua` → `Compass.lua` → `Options.lua` → `TrackOptions.lua` → `Minimap.lua` →
+`NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
   failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
@@ -112,6 +115,14 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `TrackOptions.lua` (#47): the Herbs and Ores sub-pages (`Settings.RegisterCanvasLayoutSubcategory`
   right after the main page, from `Options.Register`), one builder; item names asked for with
   `RequestLoadItemDataByID` and filled on `ITEM_DATA_LOAD_RESULT`.
+- `Minimap.lua` (#46): NodeRadar's minimap button (GuildSpy's recipe: a LibDataBroker launcher shown
+  by LibDBIcon, `NodeRadarDB.minimap` its table, `minimapButton`), its context menu
+  (`MenuUtil.CreateContextMenu`: the radar, icons and compass toggles, which close it; the snooze
+  of the node it showed when it opened; clearing), the right-click to Options, the AddOns
+  compartment (`NodeRadar_OnAddonCompartment*`), the key binding (`BINDING_NAME_NODERADAR_SNOOZE`,
+  `snoozeFor`). Snoozes themselves are the compass's (`Compass.Snooze`, `Snoozed`: in memory, by name,
+  instance and spot within 8 yards; a reload clears them). Tests never load `Libs\`: the stubs fake
+  LibDataBroker, LibDBIcon and `MenuUtil`.
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`.
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;

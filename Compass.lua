@@ -40,6 +40,10 @@ Compass.PILL_TOP = Compass.REACH + 3                             -- the capsule 
 Compass.PILL = { 56, 18 }                                        -- fixed: no width change with the number
 Compass.FOOT = Compass.PILL_TOP + Compass.PILL[2]                -- the footprint's reach below the centre (59)
 Compass.HOME = { 0, -160 }                                       -- the default place: under the character
+-- Snoozing (#46): a node put aside for a while, by its spot. Durations in
+-- seconds; "session" until a reload or a logout (they're never saved).
+Compass.SNOOZE_NEAR = 8                                          -- world yards: the same node, measured again
+Compass.SNOOZES = { ["15"] = 900, ["30"] = 1800, ["60"] = 3600, session = math.huge }
 Compass.TINTS = { glass = { 0.97, 0.97, 1 }, bronze = { 0.80, 0.62, 0.38 },    -- the rim: pearl, bronze,
                   yellow = NR.Icons.YELLOW }                                    -- the dots' yellow (#50)
 
@@ -352,12 +356,84 @@ end
 -- Chosen from the records as they are now: the nearest gatherable (#26's
 -- filter as the alert uses it, read fresh), unless the current one is still
 -- kept, still gatherable and within HYSTERESIS yards of it (Codex, #29).
+--------------------------------------------------------------------------------
+-- Snoozing (#46): { name, north, west, instance, untilT }, in memory only
+--------------------------------------------------------------------------------
+
+local snoozes = {}
+
+local function instanceNow()
+    local ok, _, _, _, inst = pcall(UnitPosition, "player")
+    return ok and API.Num(inst) or nil
+end
+
+-- Whether a record is snoozed: a live snooze of its name, in this instance,
+-- within SNOOZE_NEAR yards of its spot (the node measured again is a new
+-- record). Expired ones are dropped as they're met.
+function Compass.Snoozed(r)
+    if not (r and #snoozes > 0) then return false end
+    local now, inst, live, hit = GetTime(), instanceNow(), {}, false
+    for _, s in ipairs(snoozes) do
+        if now < s.untilT then
+            live[#live + 1] = s
+            if s.name == r.name and s.instance == inst then
+                local dn, dw = s.north - r.north, s.west - r.west
+                if math.sqrt(dn * dn + dw * dw) <= Compass.SNOOZE_NEAR then hit = true end
+            end
+        end
+    end
+    snoozes = live
+    return hit
+end
+
+function Compass.SnoozeCount()
+    local now, n = GetTime(), 0
+    for _, s in ipairs(snoozes) do if now < s.untilT then n = n + 1 end end
+    return n
+end
+
+-- After a snooze or a clear: the compass chooses again (not a sweep: its
+-- freshness kept) and the icons re-dim at once (Codex: Icons.draw reads a
+-- cached dim).
+local function snoozesChanged()
+    Compass.Refresh()
+    NR.Icons.Show()
+end
+
+-- A record put aside for a duration (a key of SNOOZES), by default the
+-- compass's target. Returns the record snoozed, or nil.
+function Compass.Snooze(duration, record)
+    local secs = Compass.SNOOZES[tostring(duration)]
+    local r = record or target
+    if not (secs and r) then return nil end
+    snoozes[#snoozes + 1] = { name = r.name, north = r.north, west = r.west, instance = instanceNow(),
+                              untilT = GetTime() + secs }
+    snoozesChanged()
+    return r
+end
+
+function Compass.ClearSnoozes()
+    snoozes = {}
+    snoozesChanged()
+end
+
+-- The compass's node now, its item's name and distance, for the menu and
+-- the button's tooltip: record, label, yards; or nil.
+function Compass.Target()
+    if not (Compass.On() and target) then return nil end
+    local pn, pw = here()
+    local info = NR.Learn.Info(target.name)
+    local name = info and NR.Track.ItemName({ item = info.item }) or target.name
+    return target, name, pn and math.floor(yards(target, pn, pw) + 0.5) or nil
+end
+
 local function choose()
     local pn, pw = here()
     if not pn then target = nil; return end
     local best, bestD, kept
     for _, r in ipairs(NR.Icons.Records()) do
-        if NR.Alert.Wanted(r.name) then             -- the incumbent too: a skipped one goes (#47)
+        -- The incumbent too: a skipped (#47) or snoozed (#46) one goes, outright.
+        if NR.Alert.Wanted(r.name) and not Compass.Snoozed(r) then
             local d = yards(r, pn, pw)
             if not bestD or d < bestD then best, bestD = r, d end
             if r == target then kept = d end
