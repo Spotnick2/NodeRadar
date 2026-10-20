@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.3.0, after v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.4.0, after v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -32,10 +32,10 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   compass with Alt-drag (#57); merged pairs keeping their icons (#66), peeled into two from a
   standing start, with provisional icons for what's left unexplained (#67). Checked in game on
   70450 (#67's merged pair offline only).
-- Unreleased: the skill a node needs in the minimap's tooltip (#62). Checked in game on 70450 (a
-  node above the skill, red, not yet seen there). Nodes alerting on the way out of a cave or a
-  tunnel (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call
-  does (measured on 70450; the fix offline only, no node was in view at a swap).
+- v1.4.0: the skill a node needs in the minimap's tooltip (#62), checked in game on 70450 (a node
+  above the skill, red, not yet seen there); nodes alerting on the way out of a cave or a tunnel
+  (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call does
+  (measured on 70450; the fix offline only, no node was in view at a swap).
 
 Next: the public API for minimap skins (#4); the experimental ideas #61 (a marker in the world),
 #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
