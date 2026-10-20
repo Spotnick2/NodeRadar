@@ -1593,7 +1593,9 @@ off screen: the compass covers direction).
   waypoint). Each run reads everything again: combat, the map, the target, ownership. A target that
   stays the same is picked up when the slot frees (the player removes their pin, a quest stops
   being super-tracked).
-- **The map point:** computed at the sweep from a paired sample, the sweep's `where` (the zone map,
+- **The map point:** kept while the target is the same record, moved less than a yard (the world
+  round: computed again from a moving player, it differed by a hair and the waypoint was set anew
+  every sweep, the stars blinking). Otherwise computed at the sweep from a paired sample, the sweep's `where` (the zone map,
   the player's spot on it, its size in yards) and the player's world position read in the same frame
   (`Icons.Update`'s), with the record's offset in yards, as `Scan.MapPosition` does for a blip (#27,
   measured within reach): `x = where.x + (pw - r.west) / where.w`, `y = where.y - (r.north - pn) /
@@ -1654,9 +1656,12 @@ off screen: the compass covers direction).
 `CENTER` on the navigation frame, no mouse. A soft teal glow and 3 or 4 four-pointed stars (white
 cores, a cyan-green tinge), each popping in at a random spot within the glow, flaring and fading in
 about half a second, staggered so one is always lit; their spots drawn again each loop. Art from
-`Tools/make_media.py` (`Media/MarkerStar.tga`, `Media/MarkerGlow.tga`), engine animation groups
+`Tools/make_media.py` (`Media/MarkerStar.tga`; the glow is `SonarGlow`), engine animation groups
 (scale and alpha), no per-frame Lua for the twinkle. Scaled by the distance (`C_Navigation.GetDistance`)
-between a floor (still seen at 200 yards) and a cap. A per-frame `OnUpdate` only while shown: the
+between a floor (still seen at 200 yards) and a cap. The world round (70450): 22-unit stars were a
+speck at 140 yards; now 40, the glow 90, the scale 60 / yards between 0.7 and 1.3, the stars white
+with a cyan tinge over a teal glow. Blizzard also draws a small gold diamond on the spot, above its
+distance. A per-frame `OnUpdate` only while shown: the
 distance, the clamp, the valid position.
 
 **Cost:** nothing while off or with no waypoint of ours on the target; armed but hidden (behind,

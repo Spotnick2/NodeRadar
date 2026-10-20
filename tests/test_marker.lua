@@ -104,6 +104,16 @@ local real = C_Map.SetUserWaypoint
 C_Map.SetUserWaypoint = function(...) calls = calls + 1; return real(...) end
 step(1); step(1)
 eq(calls, 0, "the same node: no waypoint call again")
+-- Riding with the same target: its point computed again from a moving player
+-- differs by a hair; kept, not set anew every sweep (the world round, 70450).
+for _ = 1, 4 do
+    WoW.pos[2] = WoW.pos[2] - 1.3                          -- east, a little each sweep
+    WoW.mapPos.x = WoW.mapPos.x + 1.3 / WoW.mapSize[1] + 1e-5   -- the map's reading a hair off the yards
+    step(0.6)
+end
+eq(calls, 0, "riding toward the same node: no waypoint call")
+WoW.pos[2], WoW.mapPos.x = 0, 0.5
+step(1)
 
 -- The navigation stale, clamped, near, on a taxi: hidden; back when it's right.
 WoW.navDistance = yards(a) + 50

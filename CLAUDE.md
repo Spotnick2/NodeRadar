@@ -33,12 +33,13 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   standing start, with provisional icons for what's left unexplained (#67). Checked in game on
   70450 (#67's merged pair offline only).
 - v1.4.0: the skill a node needs in the minimap's tooltip (#62), checked in game on 70450 (a node
-  above the skill, red, not yet seen there); nodes alerting on the way out of a cave or a tunnel
+  above the skill, red, seen in game too on 2026-10-20); nodes alerting on the way out of a cave or a tunnel
   (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call does
   (measured on 70450; the fix offline only, no node was in view at a swap).
 
-- Unreleased: the marker in the world (#61), experimental, offline only (the round waits for the
-  live client after November 4).
+- Unreleased: the marker in the world (#61), experimental; its first round on the beta (70450,
+  2026-10-20): stepping aside, the reload and logout clears, no taint; the stars too small then, and
+  a waypoint churn found and fixed. The rest waits for the live client after November 4.
 
 Next: the public API for minimap skins (#4); #61's round in game; #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).

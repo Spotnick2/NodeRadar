@@ -18,10 +18,13 @@ Marker.SETTLE = 0.3    -- seconds hidden after a new waypoint (Blizzard's SuperT
 Marker.AGREE = 10      -- yards: the navigation's distance must agree with ours this well
 Marker.NEAR = 15       -- yards: hidden this close, as the compass (Lueur's glow takes over)
 Marker.CVAR = "showInGameNavigation"
-Marker.STAR = 22       -- a star's size at scale 1
-Marker.SPREAD = 16     -- how far from the spot a star can light
+Marker.STAR = 40       -- a star's size at scale 1 (22 was a speck: the world round, 70450)
+Marker.SPREAD = 24     -- how far from the spot a star can light
+Marker.GLOW = 90
 Marker.STARS = 4
-Marker.TEAL = { 0.55, 1, 0.9 }
+Marker.TEAL = { 0.55, 1, 0.9 }    -- the glow
+Marker.WHITE = { 0.9, 1, 1 }      -- the stars: white, a cyan tinge
+Marker.NEAR_SCALE, Marker.FAR_SCALE = 1.3, 0.7   -- the scale near and far (60 / yards between them)
 Marker.HIDDEN_EVERY = 0.1  -- seconds between checks while armed but hidden (behind, settling)
 
 local want       -- { map, x, y, record }: the target's point at the last sweep
@@ -146,7 +149,7 @@ root:SetFrameStrata("BACKGROUND")
 root:Hide()
 local glow, stars = nil, {}
 
-local function part(file, size, layer)
+local function part(file, size, layer, tint)
     local f = CreateFrame("Frame", nil, root)
     f:SetSize(size, size)
     f:SetPoint("CENTER", root, "CENTER")
@@ -155,7 +158,7 @@ local function part(file, size, layer)
     t:SetTexture(MEDIA .. file)
     t:SetBlendMode("ADD")
     t:SetAllPoints(f)
-    t:SetVertexColor(Marker.TEAL[1], Marker.TEAL[2], Marker.TEAL[3])
+    t:SetVertexColor(tint[1], tint[2], tint[3])
     f.tex = t
     return f
 end
@@ -180,13 +183,13 @@ end
 
 local function build()
     if glow then return end
-    glow = part("SonarGlow", 56, "ARTWORK")
+    glow = part("SonarGlow", Marker.GLOW, "ARTWORK", Marker.TEAL)
     local g = glow:CreateAnimationGroup()
-    anim(g, "Alpha", 0.35, 0.6, 1.2, 1)
+    anim(g, "Alpha", 0.5, 0.85, 1.2, 1)
     g:SetLooping("BOUNCE")
     glow.anim = g
     for i = 1, Marker.STARS do
-        local s = part("MarkerStar", Marker.STAR, "OVERLAY")
+        local s = part("MarkerStar", Marker.STAR, "OVERLAY", Marker.WHITE)
         s:SetAlpha(0)                                  -- seen only while its animation runs
         local ag = s:CreateAnimationGroup()
         s.wait = anim(ag, "Alpha", 0, 0, 0.01, 1, 0)
@@ -239,7 +242,7 @@ local function onUpdate(_, elapsed)
     since = 0
     local d = showable()
     if not d then hideStars(); return end
-    root:SetScale(math.max(0.5, math.min(1.2, 40 / d)))
+    root:SetScale(math.max(Marker.FAR_SCALE, math.min(Marker.NEAR_SCALE, 60 / d)))
     if not root:IsShown() then
         root:Show()
         play(true)
@@ -284,17 +287,28 @@ end
 
 -- After each radar sweep: the target's point from this sweep's map and the
 -- player's position in the same frame (as Scan.MapPosition does for a blip).
+-- The same record, not moved: its point is kept, since one computed again
+-- from a moving player differs by a hair and would set the waypoint anew every
+-- sweep (the world round, 70450).
+Marker.KEEP = 1        -- yards: a record moved less than this keeps its point
 function Marker.Update(result)
     if not Marker.On() then return end
     swept = true
     local r = NR.Compass.Chosen()
     local where = result and result.where
+    if r and want and want.record == r and where and where.map == want.map
+        and math.abs(r.north - want.north) < Marker.KEEP and math.abs(r.west - want.west) < Marker.KEEP then
+        Marker.Reconcile()
+        return
+    end
     local pn, pw = here()
     want = nil
     if r and where and pn and where.w and where.h and where.w > 0 and where.h > 0 then
         local x = where.x + (pw - r.west) / where.w
         local y = where.y - (r.north - pn) / where.h
-        if x >= 0 and x <= 1 and y >= 0 and y <= 1 then want = { map = where.map, x = x, y = y, record = r } end
+        if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
+            want = { map = where.map, x = x, y = y, record = r, north = r.north, west = r.west }
+        end
     end
     Marker.Reconcile()
 end
