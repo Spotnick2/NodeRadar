@@ -477,6 +477,8 @@ C_Map = {
     GetMapWorldSize = function(map) return WoW.mapSize[1], WoW.mapSize[2] end,
 }
 function GetPlayerFacing() return WoW.facing end
+-- The world map (FrameXML's, not in the dump): WoW.worldMapShown.
+WorldMapFrame = { IsShown = function() return WoW.worldMapShown == true end }
 function UnitOnTaxi(unit) return unit == "player" and WoW.onTaxi == true end
 function IsIndoors() return WoW.indoors == true end
 WoW.instanced = false
@@ -484,12 +486,19 @@ function IsInInstance()
     if WoW.instanced == "throw" then error("IsInInstance failed") end
     return WoW.instanced, WoW.instanced == true and "party" or "none"
 end
+-- A set fires CVAR_UPDATE (name, value) at once; its timing in the client isn't measured.
 C_CVar = { GetCVar = function(name) return WoW.cvars[name] end,
-           SetCVar = function(name, value) WoW.cvars[name] = value; return true end }
+           SetCVar = function(name, value)
+               WoW.cvars[name] = value
+               WoW.fire("CVAR_UPDATE", name, value)
+               return true
+           end }
 
 -- The user waypoint and the super-track (#29): WoW.waypoint ({ map, x, y } or
 -- nil), WoW.superTracked ("waypoint", "quest" or nil); the navigation frame
--- exists while the waypoint is super-tracked; WoW.navClamped, WoW.navDistance.
+-- exists while the waypoint is super-tracked (NAVIGATION_FRAME_CREATED when it
+-- starts, _DESTROYED when it stops, as SuperTrackedFrame expects); WoW.navClamped,
+-- WoW.navDistance.
 -- Setting or clearing fires USER_WAYPOINT_UPDATED / SUPER_TRACKING_CHANGED at
 -- once (the first is SynchronousEvent; the second's timing isn't documented).
 WoW.waypoint, WoW.superTracked, WoW.navClamped, WoW.navDistance = nil, nil, false, 50
@@ -499,6 +508,15 @@ UiMapPoint = {
     end,
 }
 C_Map.HasUserWaypoint = function() return WoW.waypoint ~= nil end
+-- A world position (north, west, as UnitPosition) on the player's zone map, as
+-- the player's own spot and the map's size in yards place it.
+C_Map.GetMapPosFromWorldPos = function(continent, pos, map)
+    local x = WoW.mapPos.x + (WoW.pos[2] - pos.y) / WoW.mapSize[1]
+    local y = WoW.mapPos.y - (pos.x - WoW.pos[1]) / WoW.mapSize[2]
+    return map or WoW.map, { x = x, y = y }
+end
+-- FrameXML's (not in the dump).
+function CreateVector2D(x, y) return { x = x, y = y } end
 C_Map.CanSetUserWaypointOnMap = function(map) return map == WoW.map end
 C_Map.GetUserWaypoint = function()
     local w = WoW.waypoint
@@ -515,14 +533,31 @@ C_Map.ClearUserWaypoint = function()
     WoW.waypoint = nil
     WoW.fire("USER_WAYPOINT_UPDATED")
 end
+function WoW.SetSuperTracked(what)
+    local was = WoW.superTracked == "waypoint"
+    WoW.superTracked = what
+    local now = what == "waypoint"
+    if now and not was then
+        WoW.navFrame = WoW.navFrame or CreateFrame("Frame")
+        WoW.fire("NAVIGATION_FRAME_CREATED")
+    elseif was and not now then
+        WoW.fire("NAVIGATION_FRAME_DESTROYED")
+    end
+    WoW.fire("SUPER_TRACKING_CHANGED")
+end
 C_SuperTrack = {
     SetSuperTrackedUserWaypoint = function(on)
-        if on and WoW.waypoint then WoW.superTracked = "waypoint"
-        elseif not on and WoW.superTracked == "waypoint" then WoW.superTracked = nil end
-        WoW.fire("SUPER_TRACKING_CHANGED")
+        if on and WoW.waypoint then WoW.SetSuperTracked("waypoint")
+        elseif not on and WoW.superTracked == "waypoint" then WoW.SetSuperTracked(nil)
+        else WoW.fire("SUPER_TRACKING_CHANGED") end
     end,
     IsSuperTrackingAnything = function() return WoW.superTracked ~= nil end,
     IsSuperTrackingUserWaypoint = function() return WoW.superTracked == "waypoint" end,
+    IsSuperTrackingQuest = function() return WoW.superTracked == "quest" end,
+    IsSuperTrackingCorpse = function() return WoW.superTracked == "corpse" end,
+    IsSuperTrackingContent = function() return false end,
+    IsSuperTrackingMapPin = function() return false end,
+    GetSuperTrackedVignette = function() return nil end,
     GetSuperTrackedQuestID = function() return WoW.superTracked == "quest" and 783 or nil end,
 }
 -- Items (#28): WoW.itemCached[id] says which are cached; GetItemIconByID

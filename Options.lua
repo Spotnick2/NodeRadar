@@ -252,7 +252,15 @@ local function build()
     compassSize = note(page, compassLock, "Hold Alt and drag the compass to move it. /nr compass reset puts it back "
         .. "under your character.")
 
-    local learning = heading(page, compassSize, "Learning")
+    -- #61: experimental, off by default, its own heading.
+    local markerHead = heading(page, compassSize, "The marker in the world (experimental)")
+    local marker = checkbox(page, markerHead, "Mark the compass's node in the world with twinkling stars", "marker")
+    local markerWhy = note(page, marker, "Experimental, off by default. Puts your map waypoint on the node and "
+        .. "tracks it, so the stars and Blizzard's distance show on its spot through the scenery. It steps aside "
+        .. "while you have a waypoint of your own or track a quest, and while it shows, a quest you accept isn't "
+        .. "tracked by itself. The spot is at your height: on a slope, a little above or below the node.")
+
+    local learning = heading(page, markerWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
     local why = note(page, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
         .. "it's off by default; NodeRadar also learns every node you gather.")

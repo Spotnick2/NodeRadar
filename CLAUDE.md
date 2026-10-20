@@ -37,8 +37,10 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call does
   (measured on 70450; the fix offline only, no node was in view at a swap).
 
-Next: the public API for minimap skins (#4); the experimental ideas #61 (a marker in the world),
-#63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+- Unreleased: the marker in the world (#61), experimental, offline only (the round waits for the
+  live client after November 4).
+
+Next: the public API for minimap skins (#4); #61's round in game; #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
@@ -60,7 +62,7 @@ live game, WoWInterface (#37).
 
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Track.lua` → `Icons.lua` → `Compass.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
+`Track.lua` → `Icons.lua` → `Compass.lua` → `Marker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
 `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -119,9 +121,24 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   through), `compassSize`; Alt-drag moves it (#57, as Apotheca: a grip over its footprint while Alt is
   held over it, from live input; `compassX, compassY` clamped on screen, `compassLock`); chosen again every sweep with a 5-yard hysteresis and after a gather,
   among the wanted records not snoozed (#46);
-  hidden within 15 yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);
-  `Icons.On` alone draws icons. `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` →
-  `Learn.Consider`, then a learner experiment just started clears the records.
+  hidden within 15 yards (the glow is Lueur's). Records are kept while icons, the compass or the marker
+  is on (`Icons.Keeping`); the target is chosen while the compass or the marker is (`Compass.Choosing`,
+  `Compass.Chosen`), the ring shown only with the compass. `Icons.On` alone draws icons. `NR.Step`:
+  `Icons.Update` → `Compass.Reconcile` → `Marker.Update` → `Alert.Update` → `Learn.Consider`, then a
+  learner experiment just started clears the records.
+- `Marker.lua` (#61, `marker`, experimental, off by default): twinkling stars in the world on the
+  compass's target (FFXIV's gathering sparkle: `Media/MarkerStar.tga` from `Tools/make_media.py` and
+  `SonarGlow`, tinted teal, engine animation groups), on the navigation frame (`C_Navigation.GetFrame()`)
+  of a user waypoint we set on the node and super-track. One reconciler (`Marker.Reconcile`: what
+  should be against what is, read again each run) from the sweeps, the waypoint and super-track
+  events, combat's end, the frame's life and the toggles. It **steps aside**: never the player's
+  waypoint (ours is only a point read back right after our own set, `NodeRadarCharDB.marker`), never
+  while anything else is super-tracked, a half-cleared state left alone; nothing written in combat or
+  with the world map open; a clear checked again as it happens, the super-track first. Cleared at
+  logout; at login only the saved point is adopted. `showInGameNavigation` held at 1 while on
+  (`NodeRadarDB.markerCVar` to put back; someone else's change cancels that). The stars wait 0.3 s
+  after a new waypoint and need the navigation's distance within 10 yards of ours; hidden within 15
+  yards, on a taxi, clamped at the screen's edge. docs/PLAN.md has every rule. Not yet in game.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

@@ -1587,8 +1587,8 @@ off screen: the compass covers direction).
 **The waypoint, ours** (`Marker.lua`): one reconciler, not queued commands (Codex).
 - **Desired state:** the target's map point, or none. `Marker.Reconcile()` compares it with what's
   installed and writes only when they differ and the gates pass. It runs after each successful
-  sweep, on `USER_WAYPOINT_UPDATED`, `SUPER_TRACKING_CHANGED`, `PLAYER_REGEN_ENABLED`, the world
-  map's hide, `NAVIGATION_FRAME_CREATED`, and when the setting or NodeRadar is turned on or off (a
+  sweep (so within the idle interval of the world map closing), on `USER_WAYPOINT_UPDATED`,
+  `SUPER_TRACKING_CHANGED`, `PLAYER_REGEN_ENABLED`, `NAVIGATION_FRAME_CREATED`, and when the setting or NodeRadar is turned on or off (a
   cleanup path of its own: `NR.Step`'s early returns and a disabled radar must not strand our
   waypoint). Each run reads everything again: combat, the map, the target, ownership. A target that
   stays the same is picked up when the slot frees (the player removes their pin, a quest stops
@@ -1620,15 +1620,16 @@ off screen: the compass covers direction).
   half-cleared state. We don't repair it; the marker stays blocked until it clears.
 - **Never in combat or with the world map open:** the map's waypoint provider rebuilds its pin
   frame on `USER_WAYPOINT_UPDATED` while shown (`WaypointLocationDataProvider`, taint). The
-  reconciler just doesn't write; its next run after `PLAYER_REGEN_ENABLED` or the map's hide does.
+  reconciler just doesn't write; its next run after `PLAYER_REGEN_ENABLED` or the next sweep does.
   The stars hide while the installed waypoint isn't the target's. A precaution, not proof: the
   probe tries set, super-track and clear, then opens and uses the map.
 - **Across a reload or a logout:** our waypoint is cleared at `PLAYER_LOGOUT` (out of combat; the
   marker sets it again after a reload), and `NodeRadarCharDB.marker` records whether that clear
-  happened. At login, a waypoint is never assumed ours, except one exactly equal to a saved point
-  whose clear didn't happen (a crash, a disconnect): adopted with the marker on, cleared with it off.
-  A matching point isn't proof of authorship; an exact float match on a node's computed spot is
-  accepted as ours. Whether a clear at logout sticks is probed.
+  happened. At login, a waypoint is never assumed ours, except one equal to a saved point (within
+  1e-6, as saved: SavedVariables may round) whose clear didn't happen (a crash, a disconnect):
+  adopted with the marker on, cleared with it off. A matching point isn't proof of authorship; a
+  match that close on a node's computed spot is accepted as ours. Whether a clear at logout sticks
+  is probed.
 - **What we can't help:** the client super-tracks a newly accepted quest only while nothing is
   super-tracked (`QuestUtil.AllowAutoSuperTrackQuest`, FrameXML 70450), so while the marker shows,
   a quest accepted isn't auto super-tracked (if Forever does that at all: unmeasured). Said in the
@@ -1658,8 +1659,9 @@ about half a second, staggered so one is always lit; their spots drawn again eac
 between a floor (still seen at 200 yards) and a cap. A per-frame `OnUpdate` only while shown: the
 distance, the clamp, the valid position.
 
-**Cost:** nothing while off; hidden, the stars stop their animations and drop their `OnUpdate`
-(sweeps and events show them again); a waypoint call only when the desired point changes.
+**Cost:** nothing while off or with no waypoint of ours on the target; armed but hidden (behind,
+settling, near), the animations stopped and a check ten times a second (the camera turning can
+show them again); a waypoint call only when the desired point changes.
 
 **Tests:** the waypoint calls through the stubs (set, read back, super-track, clear order); a
 contested set (another addon's point inside our call); stepping aside for the player's waypoint and
