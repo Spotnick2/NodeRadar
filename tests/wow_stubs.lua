@@ -696,6 +696,8 @@ function Methods.GetRect(w)
     if r then return r[1], r[2], r[3], r[4] end
 end
 function Methods.GetZoom(w) return w._zoom or 0 end
+-- The zoom set; the client's MINIMAP_UPDATE_ZOOM is the test's to fire.
+function Methods.SetZoom(w, z) w._zoom = z end
 -- WoW.mouseOver: another frame under the cursor (#28's icons).
 function Methods.IsMouseOver(w) return (w == Minimap and WoW.cursorOnMap == true) or (w == WoW.mouseOver) end
 function Methods.UpdateMouseoverAtPoint(w, x, y)

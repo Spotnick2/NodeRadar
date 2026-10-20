@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -4447,6 +4447,435 @@ local tooltipSteps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("tooltip", tooltipSteps)
+
+-- Caves (#63, docs/PLAN.md "Caves"): is a node's name grey in a cave, and what
+-- does NodeRadar's alert do on the way out? Wrappers of NodeRadar's own
+-- functions that only observe (put back at the end; a reload drops them):
+-- every indoors/outdoors change (polled each frame), MINIMAP_UPDATE_ZOOM and
+-- Minimap:SetZoom calls, NodeRadar's steps, sweeps, resets, alert updates and
+-- fires. Alert's history is private, so a mirror of it follows the same rules
+-- (Codex); and the node rows the sweep reads, raw, with their own line's
+-- leftColor read again at the sweep's point (a bounded second read; the
+-- mouseover never moved).
+;(function()
+local cave = {}
+local AROUND = 15                         -- seconds after a change whose updates are logged in full
+local COLOUR_READS = 6                    -- second reads per sweep, at most
+local MAX_EVENTS, MAX_ROWS = 1500, 60
+
+local function db()
+    local c = NodeRadarProbeDB.cave
+    if type(c) ~= "table" then
+        c = { events = {}, rows = {}, nrows = 0, read = 0, seq = 0 }
+        NodeRadarProbeDB.cave = c
+    end
+    return c
+end
+local function indoors()
+    local ok, v = pcall(IsIndoors)
+    return ok and yes(v)
+end
+local function view()
+    local okZ, zoom = pcall(Minimap.GetZoom, Minimap)
+    local okR, radius = pcall(C_Minimap.GetViewRadius)
+    return ("zoom %s, radius %s"):format(str(okZ and zoom), str(okR and radius))
+end
+-- A line, numbered (several share a GetTime()). A `brief` one (every update's
+-- state) is saved only: not on the console, not in a step's detail.
+local function note(text, brief)
+    local d = db()
+    d.seq = d.seq + 1
+    if #d.events < MAX_EVENTS then
+        d.events[#d.events + 1] = ("#%d %.1f %s%s"):format(d.seq, GetTime(), brief and "= " or "", text)
+    end
+    if not brief then say("cave: " .. text) end
+end
+local function near() return cave.changedAt and GetTime() - cave.changedAt <= AROUND end
+-- Where NodeRadar called from: the first frame that isn't the probe's, its
+-- first path (each line names its file twice: the call site, then the
+-- function's definition; porting guide, "Who wrote a chat line").
+function cave.where(stack)
+    if type(stack) ~= "string" then return "?" end
+    for line in stack:gmatch("[^\n]+") do
+        local path, at = line:match("^%[([^%]]-%.lua)%]:(%d+)")
+        if not path then path, at = line:match('^%[string "@?([^"]-%.lua)"%]:(%d+)') end
+        if not path then path, at = line:match("^([^:%[]-%.lua):(%d+)") end
+        if path and not path:find("NodeRadarProbe", 1, true) then
+            return (path:match("([^/\\]+)$") or path) .. ":" .. at
+        end
+    end
+    return "?"
+end
+local function caller()
+    local f = rawget(_G, "debugstack")
+    if type(f) ~= "function" then return "?" end
+    local ok, s = pcall(f, 2, 8, 0)
+    return ok and cave.where(s) or "?"
+end
+local function list(t)
+    table.sort(t)
+    return #t > 0 and table.concat(t, ", ") or "none"
+end
+local function counts(result)
+    local out = {}
+    for name, blips in pairs(result and result.byName or {}) do
+        if cave.n.Learn.Kind(name) then out[name] = #blips end
+    end
+    return out
+end
+
+-- After each of NodeRadar's alert updates. The mirror (`cave.hist`) does what
+-- Alert's history does: nil after a reset or a stale gap (the update is a
+-- silent baseline), empty after a new area, a drop forgotten after a gather.
+-- What came before the probe is unknown: drops for BLINK seconds, the cooldown
+-- until a fire is seen or it has passed.
+local function observe(result, now, fired)
+    local n, A = cave.n, cave.n.Alert
+    local gap = cave.lastAt and now - cave.lastAt
+    local causes = {}
+    for _, p in ipairs(cave.pending) do causes[#causes + 1] = p end
+    -- Stale as Alert reads it: from its history's own time, which a new area sets.
+    if cave.hist and now - cave.hist.at > A.STALE + (num(n.db.interval) or 0) then
+        causes[#causes + 1] = "stale"
+        cave.hist = nil
+    end
+    if cave.hist == nil then cave.newArea = nil end         -- a reset or staleness undid it (Codex)
+    local c = counts(result)
+    local shown, rises = {}, {}
+    for name, k in pairs(c) do shown[#shown + 1] = name .. " " .. k end
+    local h = cave.hist
+    if h == nil then
+        if #causes == 0 then causes[#causes + 1] = cave.lastAt and "?" or "the probe's first" end
+        for name, k in pairs(c) do
+            if cave.lastCounts and k > (cave.lastCounts[name] or 0) then rises[#rises + 1] = name .. " (not counted)" end
+        end
+        cave.hist = { counts = c, drops = {}, at = now }
+    else
+        for name, k in pairs(c) do
+            if k > (h.counts[name] or 0) then
+                local drop = h.drops[name]
+                local held = drop and now - drop <= A.BLINK
+                local unsure = not drop and now - cave.since <= A.BLINK
+                rises[#rises + 1] = ("%s (drop %s%s, %s)"):format(name,
+                    drop and ("%.0f s ago"):format(now - drop) or "none", held and ": a blink" or unsure and
+                    ", before the probe unknown" or "", A.Wanted(name) and "wanted" or "not wanted")
+            end
+        end
+        for name, k in pairs(h.counts) do
+            if (c[name] or 0) < k then
+                local g = cave.gathered[name]
+                if g and now - g <= A.GATHERED then
+                    cave.gathered[name], h.drops[name] = nil, nil
+                else
+                    h.drops[name] = now
+                end
+            end
+        end
+        h.counts, h.at = c, now
+    end
+    local cooldown = num(n.db.cooldown) or 0
+    local fire = cave.fireAt and ("%.1f s ago"):format(now - cave.fireAt)
+        or (now - cave.since < cooldown and "unknown (before the probe)" or "none seen")
+    if cave.changedAt and not cave.was then cave.out = cave.out + 1 end
+    note(("update: indoors %s, %s"):format(tostring(indoors()), view()), true)
+    if near() or #causes > 0 or #rises > 0 or type(fired) == "table" or cave.newArea then
+        note(("update%s%s: gap %s s; %s; rises %s; last fire %s; alerted %s; indoors %s, %s"):format(
+            #causes > 0 and (" (a baseline: " .. table.concat(causes, " + ") .. ")") or "",
+            cave.newArea and " (after a new area: counts from zero)" or "", gap and ("%.1f"):format(gap) or "-", list(shown), list(rises), fire,
+            type(fired) == "table" and table.concat(fired, ", ") or "nothing", tostring(indoors()), view()))
+    end
+    cave.lastAt, cave.lastCounts, cave.pending, cave.newArea = now, c, {}, nil
+end
+
+-- The colour of the line a raw row came from, read again at this point: its
+-- own line's leftColor, matched by the raw row; several that differ, both.
+local function rowColour(raw)
+    local fn = C_TooltipInfo and C_TooltipInfo.GetMinimapMouseover
+    local ok, data = pcall(fn)
+    if not ok or secret(data) or type(data) ~= "table" or secret(data.lines) or type(data.lines) ~= "table" then
+        return "unreadable"
+    end
+    local found, seen = {}, {}
+    for _, line in ipairs(data.lines) do
+        local t = type(line) == "table" and line.leftText
+        if type(t) == "string" and not secret(t) then
+            for row in t:gmatch("[^\n]+") do
+                if row == raw then
+                    local c = colour(line.leftColor)
+                    if not seen[c] then seen[c] = true; found[#found + 1] = c end
+                end
+            end
+        end
+    end
+    if #found == 0 then return "no match" end
+    return #found == 1 and found[1] or ("ambiguous " .. table.concat(found, "/"))
+end
+
+-- A node row the sweep (or a hover) reads: counted by its raw form, its
+-- line's colour (a few second reads a sweep) and indoors.
+local function watch(raw, plain)
+    if type(raw) ~= "string" or secret(raw) or not cave.n.Learn.Kind(plain) then return end
+    local d = db()
+    local c = "unread"
+    if cave.budget > 0 then
+        cave.budget = cave.budget - 1
+        d.read = d.read + 1
+        c = rowColour(raw)
+    end
+    local key = ("%s | %s | %s"):format(raw:gsub("|", "||"), c, indoors() and "indoors" or "outdoors")
+    local r = d.rows[key]
+    if r then r.count = r.count + 1; return end
+    if d.nrows >= MAX_ROWS then return end
+    d.nrows = d.nrows + 1
+    d.rows[key] = { count = 1 }
+    if c ~= "unread" and (raw:gsub("|T.-|t", ""):find("|", 1, true) or c ~= "ffd200") then
+        note("a node row coloured: " .. key)
+    end
+end
+
+-- A step that didn't reach the alert: what held it, or why its sweep failed.
+local function gates()
+    local n = cave.n
+    local ok, shown = pcall(Minimap.IsVisible, Minimap)
+    return ("enabled %s, learner busy %s, loading %s, gamepad %s, minimap shown %s, tracking on %s; sweep %s"):format(
+        str(n.db.enabled), str(n.Learn.Busy()), str(n.Learn.loading), str(n.API.Gamepad()), str(ok and shown),
+        str(n.Learn.AnyOn()), cave.sweepWhy and ("failed: " .. str(cave.sweepWhy)) or "not run")
+end
+
+local function install()
+    local n = nr()
+    if not n or cave.n then return n end
+    local now = GetTime()
+    cave.n, cave.was, cave.out, cave.pending, cave.gathered = n, indoors(), 0, {}, {}
+    cave.budget, cave.since, cave.changedAt = 0, now, now
+    cave.orig = { reset = n.Alert.Reset, newArea = n.Alert.NewArea, update = n.Alert.Update, fire = n.Alert.Fire,
+        gathered = n.Alert.Gathered, plain = n.Scan.Plain, sweep = n.Scan.Sweep, step = n.Step }
+    local o = cave.orig
+    n.Alert.Reset = function(...)
+        cave.pending[#cave.pending + 1] = "a reset at " .. caller()
+        cave.hist = nil
+        return o.reset(...)
+    end
+    n.Alert.NewArea = function(at, ...)
+        cave.newArea, cave.pending = true, {}
+        cave.hist = { counts = {}, drops = {}, at = num(at) or GetTime() }
+        return o.newArea(at, ...)
+    end
+    n.Alert.Gathered = function(name, when, ...)
+        if type(name) == "string" and not secret(name) then cave.gathered[name] = num(when) or GetTime() end
+        note("gathered " .. str(name))
+        return o.gathered(name, when, ...)
+    end
+    n.Alert.Fire = function(names, ...)
+        cave.fireAt = GetTime()
+        note(("FIRE %s (sound %s, chat %s)"):format(type(names) == "table" and table.concat(names, ", ") or str(names),
+            str(n.db.sound), str(n.db.chat)))
+        return o.fire(names, ...)
+    end
+    n.Alert.Update = function(result, at, ...)
+        local fired = o.update(result, at, ...)
+        local ok, err = pcall(observe, result, at, fired)
+        if not ok then say("cave observe: ERROR " .. str(err)) end
+        return fired
+    end
+    n.Scan.Plain = function(s)
+        local plain = o.plain(s)
+        local ok, err = pcall(watch, s, plain)
+        if not ok and not cave.watchFailed then cave.watchFailed = true; say("cave watch: ERROR " .. str(err)) end
+        return plain
+    end
+    n.Scan.Sweep = function(...)
+        local result, why = o.sweep(...)
+        if not result then cave.sweepWhy = why or "nil" end
+        return result, why
+    end
+    n.Step = function(at, ...)
+        cave.budget, cave.sweepWhy = COLOUR_READS, nil
+        local result = o.step(at, ...)
+        cave.budget = 0
+        if not result then
+            local g = gates()
+            if g ~= cave.lastGates then note("a step without an update: " .. g) end
+            cave.lastGates = g
+        else
+            cave.lastGates = nil
+        end
+        return result
+    end
+    -- The player's or another addon's zoom (Glass MiniMap's reset on moving);
+    -- a hook can't be removed, so it reports only while the round watches.
+    if not cave.hooked then
+        cave.hooked = true
+        pcall(hooksecurefunc, Minimap, "SetZoom", function(_, z)
+            if cave.n then note(("Minimap:SetZoom(%s); indoors %s, %s"):format(str(z), tostring(indoors()), view())) end
+        end)
+    end
+    cave.frame = cave.frame or CreateFrame("Frame")
+    cave.frame:SetScript("OnUpdate", function()
+        local inside = indoors()
+        if inside == cave.was then return end
+        cave.was, cave.changedAt, cave.out, cave.resumed = inside, GetTime(), 0, nil
+        note(("now %s; %s"):format(inside and "INDOORS" or "outdoors", view()))
+    end)
+    cave.frame:SetScript("OnEvent", function(_, event)
+        cave.zooms = (cave.zooms or 0) + 1
+        note(("%s: IsIndoors %s (last polled %s); %s"):format(event, tostring(indoors()), tostring(cave.was), view()))
+    end)
+    Probe:RegisterEvents(cave.frame, { "MINIMAP_UPDATE_ZOOM" })
+    -- Started (or resumed after a reload) mid-visit: timed from now, and said.
+    cave.resumed = #db().events > 0 or nil
+    note(("watching%s: indoors %s; %s; NodeRadar enabled %s, interval %s, cooldown %s, sound %s"):format(
+        cave.resumed and " again (after a reload: this visit's start unknown, timed from now)" or "",
+        tostring(cave.was), view(), str(n.db.enabled), str(n.db.interval), str(n.db.cooldown), str(n.db.sound)))
+    return n
+end
+
+local function uninstall()
+    local n, o = cave.n, cave.orig
+    if not n then return end
+    n.Alert.Reset, n.Alert.NewArea, n.Alert.Update, n.Alert.Fire = o.reset, o.newArea, o.update, o.fire
+    n.Alert.Gathered, n.Scan.Plain, n.Scan.Sweep, n.Step = o.gathered, o.plain, o.sweep, o.step
+    cave.frame:SetScript("OnUpdate", nil)
+    cave.frame:SetScript("OnEvent", nil)
+    cave.frame:UnregisterAllEvents()
+    cave = { frame = cave.frame, hooked = cave.hooked, where = cave.where }
+end
+
+-- The lines logged since a step began, the brief ones left out.
+local function since(mark)
+    local events, out = db().events, {}
+    for i = mark + 1, #events do
+        if not events[i]:find("^#%d+ [%d.]+ = ") then out[#out + 1] = events[i] end
+    end
+    local text = #out > 0 and table.concat(out, " / ") or "(none)"
+    return #text > 2000 and text:sub(1, 2000) .. " ..." or text
+end
+
+-- The minimap's tooltip on a node: its name, the row raw, the font string's
+-- colour and the data's leftColor. Only with the cursor on the minimap (a
+-- node's world tooltip reads the same name: round 1 of #62).
+local function hovered()
+    if not yes(ask(Minimap, "IsMouseOver")) then return nil end
+    for i = 1, 8 do
+        local fs = rawget(_G, "GameTooltipTextLeft" .. i)
+        local text = ask(fs, "GetText")
+        if type(text) == "string" and not secret(text) then
+            for row in text:gmatch("[^\n]+") do
+                local plain = cave.orig.plain(row)
+                if cave.n.Learn.Kind(plain) then
+                    local ok, r, g, b = pcall(fs.GetTextColor, fs)
+                    local shown = ok and num(r) and num(g) and num(b) and ("%.2f %.2f %.2f"):format(r, g, b) or "?"
+                    return ("%s: row %s, text colour %s, leftColor %s, indoors %s"):format(plain, row:gsub("|", "||"),
+                        shown, rowColour(row), tostring(indoors()))
+                end
+            end
+        end
+    end
+end
+
+-- Step makers: each installs again after a reload, and marks where it began.
+local function begin()
+    local before = #db().events                    -- a reinstall's own line included
+    if not install() then return false end
+    if not cave.mark then cave.mark, cave.zooms = before, 0 end
+    return true
+end
+local function finish()
+    local text = since(cave.mark)
+    cave.mark = nil
+    return true, (cave.resumed and "(resumed after a reload: inconclusive) " or "") .. text
+end
+local function hoverStep(text, label, inside)
+    return { text = text, wait = function()
+        if not begin() then return false, "NodeRadar isn't loaded" end
+        if indoors() ~= inside then return false, inside and "not indoors yet" or "not outdoors yet" end
+        local h = hovered()
+        if not h then return false, "no node under the cursor on the minimap yet" end
+        note("hover: " .. h)
+        cave.mark = nil
+        return true, h
+    end, screenshot = label, timeout = 900 }
+end
+local function zoomStep(text, inside)
+    return { text = text, wait = function()
+        if not begin() then return false, "NodeRadar isn't loaded" end
+        if indoors() ~= inside then return false, inside and "not indoors" or "not outdoors" end
+        if (cave.zooms or 0) < 2 then return false, ("%d zoom events so far"):format(cave.zooms or 0) end
+        return finish()
+    end, timeout = 900 }
+end
+-- Out of the cave, 5 updates outdoors; `short` also wants a visit first (its
+-- length said).
+local function exitStep(text, short)
+    return { text = text, wait = function()
+        if not begin() then return false, "NodeRadar isn't loaded" end
+        if short then
+            if indoors() and not cave.inAt then cave.inAt = GetTime() end
+            if not cave.inAt then return false, "not in yet" end
+            if not indoors() then cave.stay = cave.stay or (GetTime() - cave.inAt) end
+        end
+        if indoors() then return false, "still indoors" end
+        if cave.out < 5 then return false, ("outdoors: %d updates"):format(cave.out) end
+        local stay = cave.stay
+        cave.inAt, cave.stay = nil, nil
+        local ok, detail = finish()
+        return ok, (stay and ("the visit %.0f s; "):format(stay) or "") .. detail
+    end, timeout = 900 }
+end
+
+local steps = {
+    rev = 3,
+    title = "Caves: a node's name grey, and the alert on the way out (#63)",
+    { text = "Have NodeRadar on with gathering tracking on. The probe watches NodeRadar's alert from now until "
+          .. "the summary (it changes nothing).", wait = function()
+          NodeRadarProbeDB.cave = nil
+          if not install() then return false, "NodeRadar isn't loaded" end
+          return true, db().events[#db().events]
+      end },
+    hoverStep("Outdoors near a cave's mouth (Skull Rock by Orgrimmar, Dustwind Cave north of Razor Hill, Thunder "
+        .. "Ridge), hover a node's dot on the minimap and hold still.", "cave: a node in the open", false),
+    zoomStep("Still outdoors: zoom the minimap in once, then out once (its + and -, or the wheel).", false),
+    { text = "Walk into the cave until the minimap changes (it zooms in indoors).", wait = function()
+          if not begin() then return false, "NodeRadar isn't loaded" end
+          if not indoors() then return false, "outdoors" end
+          return finish()
+      end, timeout = 900 },
+    hoverStep("Inside: hover a node's dot if one shows on the minimap (a herb or an ore), and hold still. Skip "
+        .. "without one.", "cave: a node inside", true),
+    { text = "Stay inside (walk about) for 30 seconds, and zoom the minimap in once and out once meanwhile.",
+      wait = function()
+          if not begin() then return false, "NodeRadar isn't loaded" end
+          if not indoors() then return false, "not indoors" end
+          local inside = GetTime() - cave.changedAt
+          if inside < 30 or (cave.zooms or 0) < 2 then
+              return false, ("inside %.0f s, %d zoom events"):format(inside, cave.zooms or 0)
+          end
+          return finish()
+      end, timeout = 900 },
+    exitStep("Walk out of the cave, then keep walking or riding outside until this step completes (5 of "
+        .. "NodeRadar's updates outdoors).", false),
+    { text = "When you came out, did NodeRadar ping (its sound, the rings) for nodes on the minimap outside? (Note: "
+          .. "which nodes showed, and whether you'd seen them before going in.)", ask = true },
+    exitStep("Now a short visit: back into the cave and straight out (under 10 seconds inside), then on outside "
+        .. "until this step completes.", true),
+    { text = "Did NodeRadar ping this time when you came out? (Note: which nodes showed.)", ask = true },
+    hoverStep("Optional: from outside, hover a node's dot that is inside the cave, if one shows. Skip without "
+        .. "one.", "cave: a cave node from outside", false),
+    { text = "Did any node's name look grey in the minimap's tooltip, inside or outside? (Another pass in and out "
+          .. "first? Go now: everything is logged until the next step.)", ask = true },
+    { text = "The summary; NodeRadar put back as it was.", auto = true, run = function()
+          local d = db()
+          local rows = {}
+          for key, r in pairs(d.rows) do rows[#rows + 1] = ("%s x%d"):format(key, r.count) end
+          uninstall()
+          return ("%d kinds of node row (%d second reads): %s; %d lines logged"):format(#rows, d.read, list(rows),
+              d.seq)
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("cave", steps)
+NS._caveTest = { cave = function() return cave end, uninstall = uninstall }
+end)()
 
 -- Does the minimap's tooltip list a name twice where two dots of it overlap
 -- (#67)? Every point of a grid over the whole map, `step` units apart (4 by
