@@ -4404,11 +4404,11 @@ local tooltipSteps = {
       end, screenshot = "tooltip: a herb", timeout = 600 },
     { text = "Under the herb's name in that tooltip, is there a line like \"Requires Herbalism (15)\", coloured "
           .. "(red if above your skill, orange, yellow, green or grey as it gets easier)?", ask = true },
-    { text = "Optional: hover an ore's dot (you have no Mining, so its line should be red). Skip without one in "
-          .. "view.", wait = function()
-          local line = ourLine()
-          if not (line and not line:find("Herbalism", 1, true)) then
-              return false, "no ore line yet: " .. tipText()
+    { text = "Optional: hover an ore's dot (a miner only: without Mining no ore shows), or a herb above "
+          .. "your skill (its line red). Skip without one in view.", wait = function()
+          local line = ourLine("|cffff2020") or ourLine("Mining")
+          if not line then
+              return false, "no ore or red line yet: " .. tipText()
           end
           return true, tipText()
       end, screenshot = "tooltip: an ore", timeout = 600 },
