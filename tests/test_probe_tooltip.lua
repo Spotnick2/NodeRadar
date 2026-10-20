@@ -60,6 +60,8 @@ eq(result(2).status, "done", "a herb: " .. detail(2))
 check(detail(2):find("Silverleaf") and detail(2):find("Herbalism 1"), "...its line read back")
 settle()
 S.Answer(true)                                             -- 3
+poll()
+eq(result(4).status, nil, "a herb within the skill isn't the ore step's")
 hover({ { "Copper Vein", 0, 0 } })
 poll()
 eq(result(4).status, "done", "an ore: " .. detail(4))

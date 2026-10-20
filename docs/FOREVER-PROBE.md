@@ -655,8 +655,9 @@ is covered offline only (`test_nodots`: pairs on x, y and the diagonal at four g
 | The skill lines | Herbalism (182): name "Herbalism", rank 42, modifier 0, plain; Mining (186): **nil** (no profession: "absent", red) |
 | Holding on an Earthroot, 10 s | the tooltip `Earthroot` (its height arrow inline), then `\|cffffff00Requires Herbalism (15)\|r`: **yellow** at 42 (27 above, the yellow band); 5 sweeps under the cursor, the line missing in **0 of 11** reads; the owner: it stayed on the herb with its line (yes) |
 | Clicks, zoom | a ping and zooming in and out: no Lua error, nothing blocked (no); `NodeRadar.failures.tooltip` nil |
-| An ore | none near on the minimap: not seen. The ore screenshot caught the client's own **world** tooltip for a Copper Vein, "Requires Mining" in red with no number (anchored at the default spot, not the cursor): not ours |
+| An ore | **never on the minimap without Mining** (the owner: no Find Minerals, no ore dot), so the "absent" red line can't show there; it's a fallback. The ore screenshot caught the client's own **world** tooltip for a Copper Vein, "Requires Mining" in red with no number (anchored at the default spot, not the cursor): not ours |
 
 Round 1's step 2 passed on a unit's tooltip (Master Gadrin's coloured "Press F6" line) and its
 ask was skipped; the probe now counts only a whole coloured line ending in the skill's number
-(rev 2). The red line for a missing profession is covered offline only (`test_tooltip`).
+(rev 2). The red a player does meet, a node above the skill, is covered offline only
+(`test_tooltip`): none was in view.
