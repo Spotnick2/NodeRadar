@@ -373,15 +373,59 @@ function Marker.Toggle()
 end
 
 --------------------------------------------------------------------------------
+-- Blizzard's own marker (a small gold diamond, its distance under it: the world
+-- round, 70450), while ours is on the spot: the diamond hidden (the stars mark
+-- it), its distance kept, unless the compass shows the distance already, then
+-- the whole marker hidden (Codex's choice, the owner's leave, 2026-10-20). Only
+-- while our waypoint is the one tracked and on screen: behind, its edge arrow
+-- stays; anything the player tracks, theirs is untouched. A post-hook on its
+-- UpdateAlpha (its OnUpdate calls it every frame): the frame's alpha set to 0
+-- after Blizzard's own, so it fades back in by itself; the diamond's (Icon,
+-- whose alpha Blizzard never sets) put back once when we stop.
+--------------------------------------------------------------------------------
+
+local function covered()
+    return driver:GetScript("OnUpdate") == onUpdate and not yes(C_Navigation.WasClampedToScreen)
+end
+Marker.Covered = covered
+
+local hooked
+local function hookBlizzard()
+    local f = rawget(_G, "SuperTrackedFrame")
+    if hooked or type(f) ~= "table" or type(f.UpdateAlpha) ~= "function" then return end
+    hooked = true
+    local iconHidden
+    hooksecurefunc(f, "UpdateAlpha", function(self)
+        local c = covered()
+        if c and NR.Compass.On() then self:SetAlpha(0) end
+        local icon = self.Icon
+        if type(icon) ~= "table" then return end
+        if c then
+            icon:SetAlpha(0)
+            iconHidden = true
+        elseif iconHidden then
+            icon:SetAlpha(1)
+            iconHidden = nil
+        end
+    end)
+end
+
+--------------------------------------------------------------------------------
 -- Events
 --------------------------------------------------------------------------------
 
 local events = CreateFrame("Frame")
 API.RegisterEvents(events, { "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_ENABLED", "USER_WAYPOINT_UPDATED",
-    "SUPER_TRACKING_CHANGED", "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED", "CVAR_UPDATE" })
+    "SUPER_TRACKING_CHANGED", "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED", "CVAR_UPDATE",
+    "ADDON_LOADED" })
 events:SetScript("OnEvent", function(_, event, ...)
+    if event == "ADDON_LOADED" then
+        if ... == "Blizzard_QuestNavigation" then hookBlizzard() end
+        return
+    end
     if not (NR.db and NR.charDb) then return end
     if event == "PLAYER_LOGIN" then
+        hookBlizzard()
         -- A waypoint left from before is ours only if it's the saved one
         -- (within MATCH, as saved), its clear at logout never done (a crash,
         -- a disconnect).
@@ -421,7 +465,7 @@ events:SetScript("OnEvent", function(_, event, ...)
 end)
 
 Marker._test = {
-    root = root, stars = stars, driver = driver,
+    root = root, stars = stars, driver = driver, hooked = function() return hooked end,
     ours = function() return ours end,
     want = function() return want end,
     nav = function() return nav end,

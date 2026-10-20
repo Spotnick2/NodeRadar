@@ -3,7 +3,8 @@
 ## Unreleased
 
 - **Experimental: a marker in the world** (#61): the compass's node marked out on its spot with
-  twinkling stars, seen through the scenery, with Blizzard's distance under them. It puts your map
+  twinkling stars, seen through the scenery, with Blizzard's distance under them (or the
+  compass's, when it's on). It puts your map
   waypoint on the node and tracks it, and steps aside whenever you have a waypoint of your own or
   track a quest. Off by default: `/nr marker`, or Options.
 
