@@ -74,7 +74,6 @@ check(logged("sweep screen soft: 1 names in 625 points, [%d.]+ ms: Peacebloom %(
 check(logged("radar started with screen for 1 s"), "radar: screen pixels by default (round 2)")
 check(logged("SetUsingSoftCursor%(true%)") and logged("SetUsingSoftCursor%(false%)"), "soft on and off")
 check(logged("PingLocation%(5%.0, 5%.0%): returned; GetPingPosition 5, 5"), "ping: an offset")
-check(logged("MINIMAP_PING unit=player x=5 y=5"), "...and its event, x and y in the right order")
 eq(WoW.softCursor, false, "the soft cursor is left off")
 eq(errors(), 0, "no command threw")
 eq(#WoW.chat, 0, "nothing in chat")

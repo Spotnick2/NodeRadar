@@ -106,8 +106,11 @@ fp("nr icons")
 check(logged("icons: on true, keeping true"), "the dump's head")
 check(logged("  blip Silverleaf at %+20.0 %+6.0 %(1 cells, from the centre 20.9%): nearest record none; wanted true, "
     .. "skipped false"), "...each blip, its nearest record, wanted, skipped")
-check(logged("  failed measure Silverleaf: tried %d s ago"), "...each failed measure (the stub's map doesn't measure it)")
-check(logged("    measured now: "), "...an unmatched blip measured again on the spot, and why")
+check(logged("  unexplained Silverleaf: tried %d s ago %(next after 5 s%)"),
+    "...each failed measure (the stub's 17-unit squares aren't a node's) and its wait")
+check(logged("    1 of 1 cells unexplained; measured now: ok, found none, 1 left %(.+%)"),
+    "...an unexplained blip measured again on the spot as the radar does, and why")
+check(logged("  provisional Silverleaf at %+20%.0 %+6%.0: dim false, shown true"), "...each provisional icon (#67)")
 NR.Set("icons", false)
 
 eq(errors(), 0, "no step threw")

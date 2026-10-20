@@ -64,7 +64,9 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
   is a 2.5 KB table to collect (#11): keep them few. Each result carries `where` (`Scan.Where`: the
   player's zone map, position and size, the view radius; nil in an instance or rotating), and
   `Scan.MapPosition(result, blip)` gives a blip's `uiMapID, x, y` (#27, measured within reach).
-  `Scan.Centre(blips)` measures a node's exact centre (its 25-unit square's edges, 29 reads, #28),
+  `Scan.Centre(blips, budget, match)` measures nodes: a lone blip's centre from its centroid (its
+  25-unit square's edges, 29 reads, #28), then a merged one peeled a node at a time from its
+  outermost unexplained cell (#67: about 30 reads a node, `Scan.Explains` / `Scan.Unexplained`),
   with the sweep's soft-cursor guarantee.
 - `Learn.lua`: `Learn.Kind(name)`; learning from gathering casts and from the toggle experiment
   (every guard in PLAN.md: the experiment is voided by movement, zone, loading, death, the gamepad,
@@ -85,7 +87,10 @@ TOC load order: `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua`
 - `Icons.lua` (#28, `icons`, off by default): records of measured nodes in world yards
   (`UnitPosition`: north, west), matched to each radar sweep's blips by name within 8 units,
   drawn every frame as unnamed mouse-through children of `Minimap`; `NR.Step` reconciles them
-  before the alert and the learner. Off, nothing runs. docs/PLAN.md has every rule.
+  before the alert and the learner. A blip's cells no record explains are measured (four blips,
+  200 reads a sweep at most; a shape left unexplained retried at 5 s doubling to 60), and what
+  stays unexplained gets provisional icons, rebuilt each sweep, never records (#67). Off, nothing
+  runs. docs/PLAN.md has every rule.
   The look (#41, `iconStyle`, `iconSize`): plain, a glass disc (LibGlass borrowed from Glass
   MiniMap, nothing embedded; any failure latches to bronze) or a bronze ring (Blizzard's
   `MiniMap-TrackingBorder` as LibDBIcon lays it out) or a yellow ring (#50, our `Media/IconRing.tga`

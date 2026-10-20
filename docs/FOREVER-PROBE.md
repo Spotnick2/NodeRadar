@@ -619,3 +619,16 @@ merged blip couldn't be measured; moving changed the grid's alignment and split 
 by covering (docs/PLAN.md, "Then covered"): a record stays while a blip of its name has a cell in
 its square, and a covering blip isn't measured. To check in game: the same spot, moving around and
 fighting, the two icons stay.
+
+### Never a yellow dot: `/fp steps nr nodots`, 1.60.1.70450 (the owner, 2026-10-19, Durotar) (#67)
+
+| What | Measured |
+|---|---|
+| Overlap counts (`/fp nr twice`, the whole map at step 4, 2,401 reads) | every name read **at most once** at a point ("Silverleaf at most x1", "Peacebloom at most x1"); whether two dots overlapped in view then isn't known |
+| At the spot chosen, before the reload | 4 records (3 Peacebloom, 1 Earthroot), each within 0.4 to 1.6 units of its blip, 0 provisional, 0 unexplained. The nearest pair of a name was 42 units apart (two blips): **no merged pair was in view** |
+| Right after the reload, standing still | the same 4 records at once, 0 provisional; the owner: each shows an icon, no yellow dot (yes) |
+| Riding three minutes | 0 of 181 reads with a provisional icon (every node measured before the next read); no herb or ore dot without an icon away from the edge (the owner: no; "some nodes never blipped") |
+
+So nothing regressed for lone nodes, and nothing was left unexplained while riding. The merged
+pair itself (the owner's two Silverleafs, one 21-cell blip) is still to be seen in game: its peel
+is covered offline only (`test_nodots`: pairs on x, y and the diagonal at four grid phases).
