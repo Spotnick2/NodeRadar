@@ -49,6 +49,10 @@ turn on Find Herbs or Find Minerals.
   the compass's target; on the minimap its icon is dimmed (or Blizzard's dot, your choice). Smart,
   on by default, keeps the list to what gives skill-ups as you level: it checks a node when your
   skill reaches it and unchecks it when it turns grey. The choices are per character.
+- **The skill each node needs, in the minimap's tooltip**: hover a herb or ore on the minimap and
+  under its name reads "Requires Herbalism (15)", coloured as the node's own tooltip in the world:
+  red while it's beyond you, then orange, yellow, green and grey as it gets easier (`/nr tooltip`,
+  on by default).
 - **Optionally, each node shows its item's icon** on the minimap (Peacebloom, Copper Ore) instead
   of Blizzard's yellow dot, dimmed when your skill can't gather it yet (`/nr icons`, off by
   default). NodeRadar measures where each new node is once and keeps it in place
@@ -103,6 +107,7 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
   name, the item's, or its item ID; `/nr ignore` lists the skipped; `/nr smart`: the list follows
   your skill (on by default)
 - `/nr icons`: each node's item icon on the minimap instead of Blizzard's dot (off by default)
+- `/nr tooltip`: the skill a node needs in the minimap's tooltip, coloured (on by default)
 - `/nr iconstyle auto | plain | glass | bronze | yellow`: the icon's frame (auto: glass with Glass MiniMap,
   else bronze); `/nr iconsize small | medium | large`
 - `/nr compass`: the experimental compass toward the nearest node (off by default);

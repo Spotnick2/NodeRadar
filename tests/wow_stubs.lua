@@ -321,6 +321,31 @@ function Methods.GetOwner(t) return t._owner end
 function Methods.SetItemByID(t, id) t._item = id; t._shown = true; return true end
 -- Its lines (#47): SetText starts over, AddLine adds.
 function Methods.AddLine(t, text) t._lines = t._lines or {}; table.insert(t._lines, text) end
+-- TooltipDataProcessor (FrameXML, #62): post-calls by tooltip type.
+-- WoW.buildMinimapTooltip(tooltip) is what Minimap_OnUpdate's SetMinimapMouseover
+-- does (TooltipDataHandler.lua, 70450): read the data, clear, add its lines, run
+-- the post-calls for its type, show; nothing when there's no data.
+WoW.postCalls = {}
+TooltipDataProcessor = {
+    AllTypes = "ALL",
+    AddTooltipPostCall = function(kind, func)
+        assert(kind ~= nil and type(func) == "function", "AddTooltipPostCall takes a type and a function")
+        WoW.postCalls[kind] = WoW.postCalls[kind] or {}
+        table.insert(WoW.postCalls[kind], func)
+    end,
+}
+function WoW.buildMinimapTooltip(tooltip)
+    tooltip = tooltip or GameTooltip
+    local data = C_TooltipInfo.GetMinimapMouseover()
+    tooltip._lines = {}
+    if not data then tooltip._shown = false; return nil end
+    for _, line in ipairs(data.lines) do
+        if not issecretvalue(line.leftText) then Methods.AddLine(tooltip, line.leftText) end
+    end
+    for _, func in ipairs(WoW.postCalls[data.type] or {}) do func(tooltip, data) end
+    tooltip._shown = true
+    return data
+end
 function Methods.SetMouseMotionEnabled(w, v) w._motion = v end
 function Methods.SetMouseClickEnabled(w, v) w._click = v end
 

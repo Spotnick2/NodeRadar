@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **The skill a node needs, in the minimap's tooltip** (#62): hover a herb or ore on the minimap and
+  it reads "Requires Herbalism (15)" under the name, coloured by difficulty as in the world: red
+  while it's beyond your skill, then orange, yellow, green and grey. On by default; `/nr tooltip`
+  or Options turns it off.
+
 ## v1.3.0
 
 Released 2026-10-19.

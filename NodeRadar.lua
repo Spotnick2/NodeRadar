@@ -26,6 +26,7 @@ local DEFAULTS = {
     compassLock = false, -- its position locked (#57; else Alt-drag moves it); compassX, compassY: where, nil home
     snoozeFor = "session", -- the key binding's snooze (#46): "15", "30", "60" minutes or "session"
     minimapButton = true, -- NodeRadar's minimap button (#46); NodeRadarDB.minimap is LibDBIcon's table
+    tooltipSkill = true, -- the skill a node needs, coloured, in the minimap's tooltip (#62)
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
     ping     = false,   -- Blizzard's minimap ping, solo only
@@ -182,6 +183,7 @@ events:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         NR.Options.Register()
         NR.Minimap.Register()                      -- the button (#46): no libraries, no button
+        NR.Tooltip.Register()                      -- the skill in the minimap's tooltip (#62)
     elseif event == "PLAYER_ENTERING_WORLD" then
         Icons.Clear()
         Learn.loading = false
@@ -283,6 +285,7 @@ local function help()
     API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea | bell | notify | hud: which sound.")
     API.Say("/nr skill: alert only for nodes your skill can gather (on by default)")
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
+    API.Say("/nr tooltip: the skill a node needs in the minimap's tooltip, coloured (on by default)")
     API.Say("/nr iconstyle auto | plain | glass | bronze | yellow: the icon's frame (auto: glass with Glass MiniMap, "
         .. "else bronze). /nr iconsize small | medium | large")
     API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
@@ -312,6 +315,9 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "icons" then
         NR.Set("icons", not db.icons)
         API.Say("item icons on the minimap " .. onOff(db.icons))
+    elseif cmd == "tooltip" then
+        NR.Set("tooltipSkill", not db.tooltipSkill)
+        API.Say("the skill a node needs in the minimap's tooltip " .. onOff(db.tooltipSkill))
     elseif cmd == "iconstyle" and Icons.STYLES[rest:lower()] then
         NR.Set("iconStyle", rest:lower())
         API.Say("icon style: " .. rest:lower())

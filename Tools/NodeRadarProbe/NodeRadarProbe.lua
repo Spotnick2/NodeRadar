@@ -4351,6 +4351,101 @@ local nodotsSteps = {
 }
 Probe:Steps("nodots", nodotsSteps)
 
+-- The skill in the minimap's tooltip (#62): the line under a hovered node, its
+-- colour, the client's strings and skill lines, and the line holding while
+-- the radar sweeps under the cursor; NodeRadar's setting put back at the end.
+local function skillInfo(line)
+    local ok, info = pcall(C_SkillInfo.GetSkillLineInfoByID, line)
+    if not ok then return "threw" end
+    if info == nil then return "nil" end
+    if secret(info) or type(info) ~= "table" then return "secret or " .. type(info) end
+    return ("name %s, rank %s, modifier %s"):format(str(info.name), str(info.rank), str(info.modifier))
+end
+local function ourLine(kindWord)
+    for i = 1, 8 do
+        local text = ask(rawget(_G, "GameTooltipTextLeft" .. i), "GetText")
+        if type(text) == "string" and not secret(text) and text:find("|c", 1, true)
+            and (kindWord == nil or text:find(kindWord, 1, true)) then
+            return text
+        end
+    end
+end
+-- The game's tooltip lines, as the client shows them (our colours inline).
+local function tipText()
+    local out = {}
+    for i = 1, 8 do
+        local text = ask(rawget(_G, "GameTooltipTextLeft" .. i), "GetText")
+        if type(text) == "string" and not secret(text) and text ~= "" then out[#out + 1] = text end
+    end
+    return #out > 0 and table.concat(out, " | ") or "(empty)"
+end
+local hold = {}
+local tooltipSteps = {
+    rev = 1,
+    title = "The skill a node needs in the minimap's tooltip (#62)",
+    { text = "Have NodeRadar loaded with gathering tracking on. Its tooltip line goes on for this round; the "
+          .. "setting comes back as it was at the end.", wait = function()
+          local n = nr()
+          if not (n and n.Tooltip) then return false, "NodeRadar (#62's tooltip) isn't loaded" end
+          if NodeRadarProbeDB.tooltipWas == nil then NodeRadarProbeDB.tooltipWas = n.db.tooltipSkill and true or false end
+          n.Set("tooltipSkill", true)
+          local enum = rawget(_G, "Enum")
+          local tdt = type(enum) == "table" and enum.TooltipDataType
+          return true, ("ITEM_MIN_SKILL %s; Enum.TooltipDataType.MinimapMouseover %s; Herbalism (182): %s; "
+              .. "Mining (186): %s"):format(str(rawget(_G, "ITEM_MIN_SKILL")),
+              str(type(tdt) == "table" and tdt.MinimapMouseover), skillInfo(182), skillInfo(186))
+      end },
+    { text = "Hover a herb's dot or icon on the minimap and keep the cursor still on it.", wait = function()
+          local line = ourLine()
+          if not line then return false, "no NodeRadar line in the tooltip yet: " .. tipText() end
+          return true, tipText()
+      end, screenshot = "tooltip: a herb", timeout = 600 },
+    { text = "Under the herb's name in that tooltip, is there a line like \"Requires Herbalism (15)\", coloured "
+          .. "(red if above your skill, orange, yellow, green or grey as it gets easier)?", ask = true },
+    { text = "Optional: hover an ore's dot (you have no Mining, so its line should be red). Skip without one in "
+          .. "view.", wait = function()
+          local line = ourLine("Mining") or ourLine("(")
+          if not (line and not line:find("Herbalism", 1, true)) then
+              return false, "no ore line yet: " .. tipText()
+          end
+          return true, tipText()
+      end, screenshot = "tooltip: an ore", timeout = 600 },
+    { text = "Now hold the cursor still on a herb for about 10 seconds while the radar sweeps under it.",
+      wait = function()
+          local n = nr()
+          if not hold.t0 then
+              if not ourLine() then return false, "hover a herb first" end
+              hold = { t0 = GetTime(), samples = 0, missing = 0, sweeps = 0 }
+              hold.sweep = n.Scan.Sweep
+              n.Scan.Sweep = function(...) hold.sweeps = hold.sweeps + 1; return hold.sweep(...) end
+          end
+          hold.samples = hold.samples + 1
+          if not ourLine() then hold.missing = hold.missing + 1 end
+          if GetTime() - hold.t0 < 10 then return false, ("holding: %d s"):format(10 - (GetTime() - hold.t0)) end
+          n.Scan.Sweep = hold.sweep
+          local text = ("%d sweeps while hovering; the line missing in %d of %d reads; now %s"):format(hold.sweeps,
+              hold.missing, hold.samples, tipText())
+          hold = {}
+          return true, text
+      end, timeout = 120 },
+    { text = "Did the tooltip stay on the herb with its line while you held still (no flicker to another name)?",
+      ask = true },
+    { text = "Last: click the minimap once (a ping) and zoom it in and out, and if you're in a fight soon, hover "
+          .. "a node during it. Any Lua error or \"blocked\" message, or anything the minimap stopped doing?",
+      ask = true },
+    { text = "Putting NodeRadar's tooltip setting back.", auto = true, run = function()
+          local n = nr()
+          local was = NodeRadarProbeDB.tooltipWas
+          NodeRadarProbeDB.tooltipWas = nil
+          if n and hold.sweep then n.Scan.Sweep = hold.sweep end
+          hold = {}
+          if n and was ~= nil then n.Set("tooltipSkill", was) end
+          return "tooltipSkill " .. str(was) .. "; failures " .. str(n and n.failures.tooltip and n.failures.tooltip.err)
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("tooltip", tooltipSteps)
+
 -- Does the minimap's tooltip list a name twice where two dots of it overlap
 -- (#67)? Every point of a grid over the whole map, `step` units apart (4 by
 -- default): each name's count in one read. Logs the most each name reached,
