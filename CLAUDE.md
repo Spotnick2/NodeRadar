@@ -94,10 +94,13 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
 - `Icons.lua` (#28, `icons`, off by default): records of measured nodes in world yards
   (`UnitPosition`: north, west), matched to each radar sweep's blips by name within 8 units,
   drawn every frame as unnamed mouse-through children of `Minimap`; `NR.Step` reconciles them
-  before the alert and the learner. A blip's cells no record explains are measured (four blips,
-  200 reads a sweep at most; a shape left unexplained retried at 5 s doubling to 60), and what
-  stays unexplained gets provisional icons, rebuilt each sweep, never records (#67). Off, nothing
-  runs. docs/PLAN.md has every rule.
+  before the alert and the learner. A record left unmatched stays while a blip of its name has a
+  cell in its square (#66: two merged into one blip). A blip's cells no record explains are measured
+  (four blips, 200 reads a sweep at most; a shape left unexplained retried at 5 s doubling to 60),
+  and what stays unexplained gets provisional icons, rebuilt each sweep, never records (#67). A
+  gathered node's spot (`gone`, its dot lingering while the loot window is open) explains cells
+  too, so it's never measured back (PR #68). Dimmed: not `Alert.Wanted`, or snoozed (#46). Off,
+  nothing runs. docs/PLAN.md has every rule.
   The look (#41, `iconStyle`, `iconSize`): plain, a glass disc (LibGlass borrowed from Glass
   MiniMap, nothing embedded; any failure latches to bronze) or a bronze ring (Blizzard's
   `MiniMap-TrackingBorder` as LibDBIcon lays it out) or a yellow ring (#50, our `Media/IconRing.tga`
@@ -109,7 +112,8 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   no LibGlass), the arrow and a rim highlight orbiting toward it (`atan2(-east, north) - GetPlayerFacing()`,
   measured), the distance in a pill, the item's tooltip on hover (mouse motion only, clicks
   through), `compassSize`; Alt-drag moves it (#57, as Apotheca: a grip over its footprint while Alt is
-  held over it, from live input; `compassX, compassY` clamped on screen, `compassLock`); chosen again every sweep with a 5-yard hysteresis and after a gather;
+  held over it, from live input; `compassX, compassY` clamped on screen, `compassLock`); chosen again every sweep with a 5-yard hysteresis and after a gather,
+  among the wanted records not snoozed (#46);
   hidden within 15 yards (the glow is Lueur's). Records are kept while icons or the compass is on (`Icons.Keeping`);
   `Icons.On` alone draws icons. `NR.Step`: `Icons.Update` → `Compass.Reconcile` → `Alert.Update` →
   `Learn.Consider`, then a learner experiment just started clears the records.
@@ -143,6 +147,10 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   `lua5.1 Tools/export_nodes.lua <SavedVariables>... --write` (or `pwsh Tools/export_nodes.ps1`).
 - `Tools/NodeRadarProbe/`: the throwaway measurement addon, a ForeverProbe module
   (`..\ForeverProbe`, its `docs/GUIDE.md`): `/fp nr` for its commands, `/fp steps nr release` for the release check (#3).
+  `/fp nr icons` dumps every blip against the icons' records, what a measure finds now and why it
+  stops, the provisional icons and the backoffs (#67); `/fp nr twice [step]` reads the whole map
+  for a name listed twice at a point (none so far: no overlap counts). Each feature has its round
+  (`/fp steps nr <name>`, e.g. `nodots`, `snooze`).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
 - `tests/`: `wow_stubs.lua` (strict globals as an allowlist of APIs verified in the dump, secrets,
   event names checked against the dump or `events-70450.txt`, every widget method recorded, and a
@@ -200,7 +208,10 @@ the probe.
   `Part of #N` until the last one, which says `Closes #N`. Never commit to `main`; commit or push
   only when asked. `luac -p` clean and tests green before committing; check the PR's
   `package-check` run after pushing.
-- **The owner merges and closes PRs and launches reviews.**
+- **The owner decides merges and launches reviews.** Merge a PR only on their explicit "merge N"
+  (`gh pr merge N --merge`, after its check passes), never otherwise. Their Codex reviews land on
+  the PR ("Codex: found ... on PR #N"): read them with `gh api repos/Spotnick2/NodeRadar/pulls/N/comments`,
+  fix each finding with a regression test (mutation-tested), push, and check the run again.
 - **Plans** get an adversarial review before coding: Codex via the `codex-consult` skill,
   `gpt-6-astra` at high effort, looping until consensus. Verify its claims; push back on complexity.
 - **Code reviews are manual** (by the owner) unless the owner asks for one.
@@ -212,9 +223,15 @@ the probe.
   are the shared templates (`..\References\Docs\release\`, RELEASING.md §2), the workflow with
   `ADDON: NodeRadar` and our own test and allowlist steps; update them from there.
   Re-publish a tag with `workflow_dispatch` from `main` (`publish: both | github | wago`).
+- **A release:** a `release-X.Y.Z` branch turns `## Unreleased` into `## vX.Y.Z` with its date and
+  updates this file's status; once the owner merges it, tag `vX.Y.Z` on `main` and push the tag
+  (that's what publishes); then check the run's `release` and `wago` jobs.
 
 ## Conventions
 
 - **Right-size for a single maintainer.** The simplest thing that works; no speculative abstraction.
 - **Measured beats reasoned.** If a claim about the client can be checked in game, check it.
 - Match the surrounding code's idiom. Keep pure refactors in their own commit.
+- **Never name a competing addon** in tracked files, issues, PRs or commits (the owner, 2026-10-19).
+  Notes on how others do things go in `.local/` (gitignored); the owner's own sibling addons and
+  the libraries we use are fine to name.
