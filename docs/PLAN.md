@@ -1633,7 +1633,9 @@ off screen: the compass covers direction).
   marker sets it again after a reload), and `NodeRadarCharDB.marker` records whether that clear
   happened. At login, a waypoint is never assumed ours, except one equal to a saved point (within
   1e-6, as saved: SavedVariables may round) whose clear didn't happen (a crash, a disconnect):
-  adopted with the marker on, cleared with it off. A matching point isn't proof of authorship; a
+  adopted, so it's ours to clean up: cleared while no target is known (the next sweep sets it again),
+  with the marker on or off; no hold until a first sweep, which with tracking off never comes
+  (Codex, PR #74). A matching point isn't proof of authorship; a
   match that close on a node's computed spot is accepted as ours. Whether a clear at logout sticks
   is probed.
 - **What we can't help:** the client super-tracks a newly accepted quest only while nothing is

@@ -30,7 +30,6 @@ Marker.RETRY = 0.5     -- seconds between tries while ours is installed but not 
 Marker.GRACE = 2       -- seconds past the idle interval without a sweep before the target is stale
 
 local want       -- { map, x, y, record, north, west, at }: the target's point at the last sweep
-local swept      -- a sweep has given the target since login
 local ours       -- { map, x, y }: the waypoint we set and read back
 local writing    -- inside our own waypoint or super-track calls
 local cvarExpect -- the value we set the CVar to, while a restore is pending
@@ -298,9 +297,11 @@ function Marker.Reconcile()
     if not busy() then
         local on = Marker.On()
         local desire = on and want or nil
-        -- Until the first sweep, ours is kept: the target isn't known yet.
+        -- No target known (a fresh load before its first sweep included): ours
+        -- goes, and the next sweep sets it again (Codex, PR #74: a hold till a
+        -- sweep could last forever with tracking off).
         local onTarget = desire ~= nil and same(ours, desire.map, desire.x, desire.y)
-        if ours and (not on or (swept and not onTarget) or trackingOther()) then clear() end
+        if ours and (not on or not onTarget or trackingOther()) then clear() end
         if desire and not ours and not hasWaypoint() and not tracking() then set(desire) end
     end
     reconciling = false
@@ -315,7 +316,6 @@ end
 Marker.KEEP = 1        -- yards: a record moved less than this keeps its point
 function Marker.Update(result)
     if not Marker.On() then return end
-    swept = true
     local r = NR.Compass.Chosen()
     local where = result and result.where
     if r and want and want.record == r and where and where.map == want.map
@@ -425,5 +425,5 @@ Marker._test = {
     ours = function() return ours end,
     want = function() return want end,
     nav = function() return nav end,
-    reset = function() ours, want, swept, nav = nil, nil, nil, nil end,   -- a fresh load
+    reset = function() ours, want, nav = nil, nil, nil end,   -- a fresh load
 }

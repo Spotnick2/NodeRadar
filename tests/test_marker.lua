@@ -307,7 +307,10 @@ WoW.combat = false
 local saved = NR.charDb.marker
 M.reset()
 WoW.fire("PLAYER_LOGIN")
-check(M.ours() and near(M.ours().x, saved.x), "login: the saved waypoint adopted")
+eq(WoW.waypoint, nil, "login: the saved waypoint adopted as ours, so cleared while no target is known")
+eq(NR.charDb.marker, nil, "...nothing saved as ours")
+step(1)
+check(onNode(e), "...the first sweep sets it again")
 M.reset()
 NR.charDb.marker = { map = 1411, x = saved.x + 0.01, y = saved.y }
 WoW.fire("PLAYER_LOGIN")
@@ -320,6 +323,26 @@ M.reset()
 WoW.fire("PLAYER_LOGIN")
 eq(WoW.waypoint, nil, "login with the marker off: the adopted waypoint cleared")
 NR.Set("marker", true)
+-- Reloaded in combat with tracking off (Codex, PR #74): adopted, held by
+-- combat, and cleared once it ends, though no sweep ever runs.
+step(1)
+check(onNode(e), "ours")
+WoW.tracking[1].active = false
+WoW.combat = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+WoW.fire("PLAYER_LOGOUT")
+check(onNode(e) and NR.charDb.marker, "tracking off and a reload, in combat: ours held, saved")
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD", false, true)
+check(onNode(e) and M.ours(), "...adopted at the load, still in combat")
+WoW.combat = false
+for _ = 1, 10 do WoW.now = WoW.now + 0.1; WoW.tick(0.1) end
+eq(WoW.waypoint, nil, "...combat over: cleared, no sweep needed")
+eq(M.driver._scripts.OnUpdate, nil, "...and nothing left running")
+WoW.tracking[1].active = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+step(1); step(1)
 
 --------------------------------------------------------------------------------
 -- The CVar, and NodeRadar off
