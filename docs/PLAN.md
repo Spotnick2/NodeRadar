@@ -1554,6 +1554,143 @@ into two blips when the view shrinks on the way in (nodes farther apart on the m
 alerts although both were in view; telling nodes apart isn't worth it for this. Grey: unmeasured (no node in a cave yet); if real, what
 a grey node gets is the owner's choice.
 
+## A marker in the world (#61), experimental
+
+The node the compass would point at, marked out in the world: twinkling stars on its spot, seen
+through the scenery at any distance, as gathering points sparkle in Final Fantasy XIV (the owner's
+reference video). Off by default, labelled experimental, its own setting (`marker`, `/nr marker`,
+Options); off, nothing of it runs and nothing is touched.
+
+**Measured** (docs/FOREVER-PROBE.md, "Blizzard's waypoint marker" and "The navigation frame as an
+anchor", 70450): the user waypoint can be set from addon code and super-tracked; with
+`showInGameNavigation` at 1, `C_Navigation.GetFrame()` sits at the waypoint's spot on screen, our own
+art anchored to it follows the camera and is held at the screen's edge when the node is behind
+(`WasClampedToScreen`), and Blizzard draws its distance ("22 yds") there with no icon. The spot has
+no height: projected at the player's, so on a slope it sits above or below the node. Clearing:
+the super-track first, then the waypoint (the other order leaves the super-track reading true). A
+waypoint and its super-track survive a reload. `USER_WAYPOINT_UPDATED` fires inside
+`SetUserWaypoint`; `SUPER_TRACKING_CHANGED` after it, or not at all.
+
+**The owner's choices** (2026-10-20):
+- **Step aside, never borrow.** The marker shows only while the player has no waypoint of their own
+  and nothing else is super-tracked. NodeRadar never clears, moves or replaces theirs.
+- **Blizzard's distance text stays**: a free readout under the stars.
+- **The look: FFXIV's sparkle**, its own toggle using the compass's choice of node.
+
+**Which node:** the compass's target (`choose()`: the nearest wanted record not snoozed, the 5-yard
+hysteresis), chosen while the compass **or** the marker is on (`Compass.Choosing()`); records kept
+while either is on (`Icons.Keeping` gains `marker`). The compass's ring still shows only with
+`compass`. Hidden within 15 yards (`Compass.NEAR`, where Lueur's glow takes over), on a taxi, in an
+instance where `Scan.Where` is nil, and while the spot is clamped to the screen's edge (behind or
+off screen: the compass covers direction).
+
+**The waypoint, ours** (`Marker.lua`): one reconciler, not queued commands (Codex).
+- **Desired state:** the target's map point, or none. `Marker.Reconcile()` compares it with what's
+  installed and writes only when they differ and the gates pass. It runs after each successful
+  sweep (so within the idle interval of the world map closing), on `USER_WAYPOINT_UPDATED`,
+  `SUPER_TRACKING_CHANGED`, `PLAYER_REGEN_ENABLED`, `NAVIGATION_FRAME_CREATED`, and when the setting or NodeRadar is turned on or off (a
+  cleanup path of its own: `NR.Step`'s early returns and a disabled radar must not strand our
+  waypoint). Each run reads everything again: combat, the map, the target, ownership. A target that
+  stays the same is picked up when the slot frees (the player removes their pin, a quest stops
+  being super-tracked). While ours is installed but not wanted (a clear held by combat or the map,
+  the marker or the radar off meanwhile), a retry runs every 0.5 s until it's done, sweeps or none;
+  the compass's target cleared (`Compass.Reset`: tracking off, a loading screen) drops the point at
+  once, and a point no sweep has confirmed for the idle interval and 2 s is stale; `/nr reset` tears
+  down as turning it off does (Codex, PR #74).
+- **The map point:** kept while the target is the same record, moved less than a yard (the world
+  round: computed again from a moving player, it differed by a hair and the waypoint was set anew
+  every sweep, the stars blinking). Otherwise computed at the sweep from a paired sample, the sweep's `where` (the zone map,
+  the player's spot on it, its size in yards) and the player's world position read in the same frame
+  (`Icons.Update`'s), with the record's offset in yards, as `Scan.MapPosition` does for a blip (#27,
+  measured within reach): `x = where.x + (pw - r.west) / where.w`, `y = where.y - (r.north - pn) /
+  where.h`. Kept with the target until the next sweep; a gather's new target waits for it. Off the
+  map (0..1), or no `where` (an instance): none. `C_Map.GetMapPosFromWorldPos` (in the dump) is
+  checked against it in the probe, not used before.
+- **Free:** `C_Map.HasUserWaypoint()` false and `IsSuperTrackingAnything()` false, or both only ours.
+- **Set:** `C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(map, x, y))` must return true and
+  `C_Map.GetUserWaypoint()`, read back at once, must be our point (map equal, x and y within 1e-6);
+  only then `C_SuperTrack.SetSuperTrackedUserWaypoint(true)`. Anything else (another addon answering
+  our synchronous `USER_WAYPOINT_UPDATED` with its own point, inside our call) is contested: not
+  ours, we don't super-track it, and we wait. Ours is then that read-back point, kept in memory and
+  in `NodeRadarCharDB.marker` (map, x, y, as read back).
+- **Theirs:** a `USER_WAYPOINT_UPDATED` outside our call, or a waypoint that no longer equals ours,
+  is the player's or another addon's: we forget ours, take nothing back, and wait until the slot is
+  free. Anything else super-tracked (`IsSuperTrackingAnything()` and not
+  `IsSuperTrackingUserWaypoint()`: a quest, a pin, a corpse): if the waypoint is still ours we clear
+  the waypoint only (the super-track isn't ours), and wait.
+- **Clear** (the target gone, the setting or NodeRadar off): revalidated at that moment, never from
+  an earlier decision: only if `GetUserWaypoint()` still equals ours; the super-track first, if it's
+  the user waypoint's, then the waypoint. The ownership is kept until the second call is done.
+- **A dead end, left alone:** `HasUserWaypoint()` false with `IsSuperTrackingUserWaypoint()` still
+  true (measured after a waypoint cleared before its super-track) and not ours: someone else's
+  half-cleared state. We don't repair it; the marker stays blocked until it clears.
+- **Never in combat or with the world map open:** the map's waypoint provider rebuilds its pin
+  frame on `USER_WAYPOINT_UPDATED` while shown (`WaypointLocationDataProvider`, taint). The
+  reconciler just doesn't write; its next run after `PLAYER_REGEN_ENABLED` or the next sweep does.
+  The stars hide while the installed waypoint isn't the target's. A precaution, not proof: the
+  probe tries set, super-track and clear, then opens and uses the map.
+- **Across a reload or a logout:** our waypoint is cleared at `PLAYER_LOGOUT` (out of combat; the
+  marker sets it again after a reload), and `NodeRadarCharDB.marker` records whether that clear
+  happened. At login, a waypoint is never assumed ours, except one equal to a saved point (within
+  1e-6, as saved: SavedVariables may round) whose clear didn't happen (a crash, a disconnect):
+  adopted, so it's ours to clean up: cleared while no target is known (the next sweep sets it again),
+  with the marker on or off; no hold until a first sweep, which with tracking off never comes
+  (Codex, PR #74). A matching point isn't proof of authorship; a
+  match that close on a node's computed spot is accepted as ours. Whether a clear at logout sticks
+  is probed.
+- **What we can't help:** the client super-tracks a newly accepted quest only while nothing is
+  super-tracked (`QuestUtil.AllowAutoSuperTrackQuest`, FrameXML 70450), so while the marker shows,
+  a quest accepted isn't auto super-tracked (if Forever does that at all: unmeasured). Said in the
+  option's tooltip; the probe accepts a quest with the marker off and on.
+- **Drawn only for our waypoint:** `IsSuperTrackingUserWaypoint()` true and no other
+  `IsSuperTracking*` (quest, corpse, content, map pin, vignette) true, since the navigation frame is
+  shared.
+- **The navigation frame's life:** `C_Navigation.GetFrame()` taken at `NAVIGATION_FRAME_CREATED`
+  and dropped (anchors cleared) at `NAVIGATION_FRAME_DESTROYED`, as Blizzard's `SuperTrackedFrame`
+  does; nil right after a reload (measured). After a new waypoint, the stars hide for a settling
+  interval (0.3 s to start with, Blizzard's `SuperTrackedFrame` hides 0.2 s on a tracking change;
+  the probe tunes it), then wait until `HasValidScreenPosition()` and `GetDistance()` within 10
+  yards of our own distance to the record (the first read after setting was stale, 644 yards). The
+  distance alone can't prove the move (a new node as far as the old, in another direction), hence
+  the interval; the probe switches between two such nodes.
+- **`showInGameNavigation`:** set to 1 when the marker turns on if it was 0 (the setter's result
+  checked), the old value saved in `NodeRadarDB.markerCVar` across reloads; put back when the marker
+  turns off, or at login when it's off and a restore is pending. A change by anyone else
+  (`CVAR_UPDATE` for it outside our call) cancels the restore: theirs stands.
+
+**The stars** (art and animation, possibly handed to Codex): a frame of ours on `UIParent`,
+`CENTER` on the navigation frame, no mouse. A soft teal glow and 3 or 4 four-pointed stars (white
+cores, a cyan-green tinge), each popping in at a random spot within the glow, flaring and fading in
+about half a second, staggered so one is always lit; their spots drawn again each loop. Art from
+`Tools/make_media.py` (`Media/MarkerStar.tga`; the glow is `SonarGlow`), engine animation groups
+(scale and alpha), no per-frame Lua for the twinkle. Scaled by the distance (`C_Navigation.GetDistance`)
+between a floor (still seen at 200 yards) and a cap. The world round (70450): 22-unit stars were a
+speck at 140 yards; now 40, the glow 90, the scale 60 / yards between 0.7 and 1.3, the stars white
+with a cyan tinge over a teal glow. Blizzard also draws a small gold diamond on the spot, above its
+distance. A per-frame `OnUpdate` only while shown: the
+distance, the clamp, the valid position.
+
+**Cost:** nothing while off or with no waypoint of ours on the target; armed but hidden (behind,
+settling, near), the animations stopped and a check ten times a second (the camera turning can
+show them again); a waypoint call only when the desired point changes.
+
+**Tests:** the waypoint calls through the stubs (set, read back, super-track, clear order); a
+contested set (another addon's point inside our call); stepping aside for the player's waypoint and
+their super-tracked quest, and taking the slot back when it frees with the target unchanged; the
+half-cleared dead end; a clear revalidated (the player's waypoint by then: untouched); combat and the
+map deferring; logout's clear and login's adoption; the frame's create and destroy; a switch to a
+node as far as the old one, hidden through the settling interval; the CVar set,
+put back, and left after someone else's change; hidden near, on a taxi, clamped; the choice shared
+with the compass off. Mutation-tested.
+
+**Probe** (after November 4, on the live client while levelling; a new build, so the client-update
+skill first): the far case facing the node (round 1's 102-yard read had it off screen); uneven
+ground; how often something is super-tracked while levelling (if Forever super-tracks quests by
+itself, the marker would rarely show), and a quest accepted with the marker off and on; the
+player's own pin and quest; combat, and the map opened and used after our calls; a reload and a
+logout (does the clear at logout stick); the CVar from 0; `GetMapPosFromWorldPos` against our
+point.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock

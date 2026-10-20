@@ -657,6 +657,12 @@ is covered offline only (`test_nodots`: pairs on x, y and the diagonal at four g
 | Clicks, zoom | a ping and zooming in and out: no Lua error, nothing blocked (no); `NodeRadar.failures.tooltip` nil |
 | An ore | **never on the minimap without Mining** (the owner: no Find Minerals, no ore dot), so the "absent" red line can't show there; it's a fallback. The ore screenshot caught the client's own **world** tooltip for a Copper Vein, "Requires Mining" in red with no number (anchored at the default spot, not the cursor): not ours |
 
+Round 2 (the owner, 2026-10-20, Razormane Grounds, Herbalism 42): **the red line seen**. One
+hover over a Silverleaf and a Mageroyal side by side: the tooltip `Silverleaf` / `Mageroyal`, then
+`|cffffff00Silverleaf: Requires Herbalism (1)|r` (yellow at 42) and
+`|cffff2020Mageroyal: Requires Herbalism (50)|r` (**red**, above the skill), one line per distinct
+node with its name, as planned; the owner: yes; `failures.tooltip` nil.
+
 Round 1's step 2 passed on a unit's tooltip (Master Gadrin's coloured "Press F6" line) and its
 ask was skipped; the probe now counts only a whole coloured line ending in the skill's number
 (rev 2). The red a player does meet, a node above the skill, is covered offline only
@@ -673,3 +679,20 @@ ask was skipped; the probe now counts only a whole coloured line ending in the s
 | The view radius | indoors 150, 120, 90, 60, 40, 25 at zoom 0 to 5; outdoors 233.3, 200, 166.7, 133.3, 100, 66.7 (as #27) |
 | The rest | no held step, no stale gap (updates every 2 s standing, 0.6 s moving); two Silverleaf fires outdoors, a rise with no drop |
 | Rows | only Silverleaf, outdoors, its height arrow inline, `leftColor` ffd200 (48 second reads): **grey not measured**, no node in or near the inn |
+
+### NodeRadar's marker in the world: `/fp steps nr world`, 1.60.1.70450 (the owner, 2026-10-20, Durotar, Herbalism 42) (#61)
+
+| What | Measured |
+|---|---|
+| The stars | shown on the node's spot (Silverleaf, 144 yd: the navigation's distance 144.48, ours 144.4); the owner: "close but not exactly on it" (the spot at the player's height). In the screenshots **too small and faint**: a speck at 140 yards, a small teal star at 16-18 |
+| **Blizzard's own marker** | with `showInGameNavigation` 1 and our waypoint super-tracked, **a small gold diamond** on the spot, its distance ("142 yds") under it: more than the first round's distance alone |
+| NodeRadar's point | equal to `C_Map.GetMapPosFromWorldPos(instance, CreateVector2D(north, west), map)` of the record within 0.0001 and 0.0009 (map percent): the vector is (north, west), as HereBeDragons reads it |
+| **A churn (fixed)** | riding, NodeRadar cleared and set its waypoint **every sweep** (about 0.6 s): the target's point, recomputed from the moving player, differed by more than 1e-6 each time. Each set restarted the settling, so the stars blinked. Standing, none. Now the point is kept while the target is the same record |
+| A switch, two nodes as far | the navigation frame moved 0.01 to 0.12 s after a new waypoint (8 switches, churn included); the stars at 0.30 to 0.55 s; the owner: no flash at the old node |
+| The player's pin | Ctrl-click on the world map: `USER_WAYPOINT_UPDATED` (ours forgotten), then the map's own super-track off; theirs kept 7 s, untouched. Removed: NodeRadar's back 4 s later (the next sweep), on the same node |
+| Combat, the map | a fight (5 casts) and the map: no `ADDON_ACTION_BLOCKED` or `_FORBIDDEN`, no error (the owner) |
+| A reload, a logout | both: at load no saved point (**the clear at logout stuck**) and no waypoint; `NAVIGATION_FRAME_CREATED` 2.0 s after the load (reload), 8.2 s (logout); the stars back. `NAVIGATION_FRAME_DESTROYED` as the UI unloaded |
+| The CVar from 0 | 0, then the marker on: 1, NodeRadar to put back 0; the stars at once |
+| Super-tracked by something else | 0 of 469 s (no quest accepted: both quest steps skipped, so the auto super-track is still unmeasured) |
+| Far (100 yd) | "too far to see the node due to terrain" (unsure) |
+

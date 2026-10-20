@@ -36,7 +36,7 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63); world (#61: NodeRadar's marker in game).
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -5254,5 +5254,313 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
             str(info and info.name), str(info and info.type), str(info and info.atlasName)))
     end
 end)
+
+;(function()
+--------------------------------------------------------------------------------
+-- NodeRadar's marker in the world (#61, docs/PLAN.md "A marker in the world"),
+-- in game: the stars on the node, far, a switch between two nodes as far (the
+-- settling interval), a slope; stepping aside for the player's pin and a quest,
+-- a quest accepted with the marker on and off; combat and the map; a reload
+-- and a logout (does the clear at logout stick); the CVar from 0;
+-- GetMapPosFromWorldPos against NodeRadar's point. An observer runs while the
+-- round does: how long something else is super-tracked, blocked actions, the
+-- events. NodeRadar's settings put back at the summary.
+--------------------------------------------------------------------------------
+
+local KEY = Probe.name .. "/world"
+local function db()
+    NodeRadarProbeDB.world = NodeRadarProbeDB.world or { log = {}, super = { other = 0, total = 0 }, blocked = {} }
+    return NodeRadarProbeDB.world
+end
+local function note(text)
+    local w = db()
+    local line = ("%.1f %s"):format(GetTime(), text)
+    if #w.log < 400 then w.log[#w.log + 1] = line end
+    say("world: " .. text)
+    return text
+end
+local function M() local n = nr(); return n and n.Marker and n.Marker._test end
+local function shown() local m = M(); return m ~= nil and m.root:IsShown() end
+local function ours() local m = M(); return m and m.ours() end
+local function oursText()
+    local o = ours()
+    return o and ("(%.2f, %.2f) on map %s"):format(o.x * 100, o.y * 100, str(o.map)) or "none"
+end
+
+-- What NodeRadar saw at this load, before it reconciled: its saved point (nil:
+-- the clear at logout happened) and whether a waypoint was there.
+local atLoad
+local loader = CreateFrame("Frame")
+loader:RegisterEvent("ADDON_LOADED")
+loader:SetScript("OnEvent", function(_, _, name)
+    if name ~= Probe.name then return end
+    loader:UnregisterAllEvents()
+    local saved = type(NodeRadarCharDB) == "table" and NodeRadarCharDB.marker
+    atLoad = { saved = type(saved) == "table", waypoint = wpRead(C_Map.HasUserWaypoint), at = GetTime() }
+end)
+
+-- The observer, while the round runs.
+local watch = { frame = CreateFrame("Frame") }
+local function running()
+    local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+    return type(st) == "table" and st.active == KEY
+end
+local function navCenter()
+    local f = wpRead(C_Navigation.GetFrame)
+    if type(f) ~= "table" then return nil end
+    local ok, x, y = pcall(f.GetCenter, f)
+    if ok and num(x) and num(y) then return x, y end
+end
+local function otherTracked()
+    local any, wp = wpRead(C_SuperTrack.IsSuperTrackingAnything), wpRead(C_SuperTrack.IsSuperTrackingUserWaypoint)
+    return any == true and wp ~= true
+end
+local uninstall
+local function install()
+    if watch.on then return end
+    watch.on, watch.tick, watch.last = true, 0, ours()
+    watch.frame:SetScript("OnUpdate", function(_, elapsed)
+        if not running() then uninstall(); return end
+        watch.tick = watch.tick + elapsed
+        if watch.tick >= 1 then
+            local s = db().super
+            s.total = s.total + watch.tick
+            if otherTracked() then s.other = s.other + watch.tick end
+            watch.tick = 0
+        end
+        -- A new waypoint of NodeRadar's: when the frame moves, when the stars show.
+        local o = ours()
+        if o ~= watch.last then
+            watch.last = o
+            if o then
+                local x, y = navCenter()
+                watch.switch = { at = GetTime(), x = x, y = y }
+            end
+        end
+        local sw = watch.switch
+        if sw and not sw.done then
+            local t = GetTime() - sw.at
+            local x, y = navCenter()
+            if not sw.moved and x and sw.x and (math.abs(x - sw.x) + math.abs(y - sw.y)) > 20 then sw.moved = t end
+            if not sw.shown and shown() then sw.shown = t end
+            if t > 1.5 then
+                sw.done = true
+                watch.lastSwitch = ("the navigation frame moved %s s after NodeRadar's new waypoint, the stars "
+                    .. "showed at %s s (settling %s s)"):format(sw.moved and ("%.2f"):format(sw.moved) or "never",
+                    sw.shown and ("%.2f"):format(sw.shown) or "not yet", str(nr().Marker.SETTLE))
+                note(watch.lastSwitch)
+            end
+        end
+    end)
+    watch.frame:SetScript("OnEvent", function(_, event, a1, a2)
+        if event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+            local b = db().blocked
+            if #b < 20 then b[#b + 1] = ("%s %s %s"):format(event, str(a1), str(a2)) end
+            note(("%s by %s: %s"):format(event, str(a1), str(a2)))
+        elseif event == "QUEST_ACCEPTED" then
+            watch.quest = GetTime()
+        elseif event == "NAVIGATION_FRAME_CREATED" then
+            watch.created = watch.created or GetTime()
+            note("NAVIGATION_FRAME_CREATED; " .. navState())
+        elseif event == "PLAYER_REGEN_DISABLED" then
+            watch.fought = true
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            if watch.fought then watch.foughtDone = true end
+        else
+            note(event .. ": ours " .. oursText() .. "; " .. navState())
+        end
+    end)
+    Probe:RegisterEvents(watch.frame, { "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN", "QUEST_ACCEPTED",
+        "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED", "USER_WAYPOINT_UPDATED", "SUPER_TRACKING_CHANGED",
+        "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" })
+end
+function uninstall()
+    watch.frame:SetScript("OnUpdate", nil)
+    watch.frame:SetScript("OnEvent", nil)
+    watch.frame:UnregisterAllEvents()
+    watch.on = nil
+end
+
+-- NodeRadar's point against the client's own conversion of the record.
+local function compare()
+    local o, w = ours(), M() and M().want()
+    if not (o and w and w.record) then return "no point to compare" end
+    local _, _, _, inst = UnitPosition("player")
+    local okV, vec = pcall(rawget(_G, "CreateVector2D"), w.record.north, w.record.west)
+    if not okV then return "CreateVector2D: " .. str(vec) end
+    local ok, map, pos = pcall(C_Map.GetMapPosFromWorldPos, inst, vec, o.map)
+    if not ok or type(pos) ~= "table" then return "GetMapPosFromWorldPos: " .. str(map) end
+    local x, y = num(pos.x), num(pos.y)
+    if not (x and y) then return "GetMapPosFromWorldPos: unreadable" end
+    return ("NodeRadar's point (%.3f, %.3f), the client's from the record (%.3f, %.3f) on map %s: off by %.4f, %.4f"):format(
+        o.x * 100, o.y * 100, x * 100, y * 100, str(map), math.abs(x - o.x) * 100, math.abs(y - o.y) * 100)
+end
+
+local function distances()
+    local w = M() and M().want()
+    local pn, pw = UnitPosition("player")
+    local mine = w and num(pn) and math.sqrt((w.record.north - pn) ^ 2 + (w.record.west - pw) ^ 2)
+    return ("the navigation's distance %s, ours %s"):format(str(num(wpRead(C_Navigation.GetDistance))),
+        mine and ("%.1f"):format(mine) or "?")
+end
+
+local function starsWait(label, far)
+    return function()
+        if not nr() then return false, "NodeRadar isn't loaded" end
+        install()
+        if not ours() then return false, "no waypoint of NodeRadar's yet: " .. navState() end
+        if not shown() then return false, "no stars yet: " .. distances() end
+        local d = num(wpRead(C_Navigation.GetDistance))
+        if far and (not d or d < 100) then return false, "the node at " .. str(d) .. " yards" end
+        return true, note(("%s: stars shown; ours %s; %s; %s"):format(label, oursText(), distances(), compare()))
+    end
+end
+
+-- After a reload or a logout: what NodeRadar found at load, then the stars again.
+local function backWait(label)
+    return function()
+        if not nr() then return false, "NodeRadar isn't loaded" end
+        install()
+        if not shown() then return false, "no stars yet: " .. navState() end
+        local a = atLoad or {}
+        return true, note(("%s: at load NodeRadar's point %s (cleared at logout: %s), a waypoint %s; the "
+            .. "navigation frame created %s s after the load; the stars back"):format(label,
+            a.saved and "saved" or "none", tostring(not a.saved), str(a.waypoint),
+            watch.created and a.at and ("%.1f"):format(watch.created - a.at) or "?"))
+    end
+end
+
+local steps = {
+    rev = 1,
+    title = "NodeRadar's marker in the world: the stars, stepping aside, a reload (#61)",
+    { text = "Have NodeRadar on with Find Herbs or Find Minerals on. Remove any map waypoint of your own and "
+          .. "untrack quests on screen. The round turns NodeRadar's marker on and puts your settings back at the end.",
+      wait = function()
+          local n = nr()
+          if not (n and n.Marker) then return false, "NodeRadar (with the marker) isn't loaded" end
+          local free, why = waypointFree()
+          if not free then return false, why end
+          NodeRadarProbeDB.world = nil
+          local w = db()
+          w.saved = { marker = n.db.marker, cvar = wpRead(C_CVar.GetCVar, "showInGameNavigation"),
+                      pending = n.db.markerCVar }
+          n.Set("marker", true)
+          install()
+          return true, note(("the marker on; showInGameNavigation %s -> %s, NodeRadar will put back %s"):format(
+              str(w.saved.cvar), str(wpRead(C_CVar.GetCVar, "showInGameNavigation")), str(n.db.markerCVar)))
+      end },
+    { text = "Ride toward a herb or ore 40-80 yards away (the nearest you can gather) and face it, until the "
+          .. "stars show.", wait = starsWait("near"), screenshot = "world: the stars", timeout = 900 },
+    { text = "Are the twinkling stars on the node out in the world, with Blizzard's distance under them? (Note "
+          .. "box: how they look: too big, too small, too faint, too busy.)", ask = true },
+    { text = "Optional: ride away until the node is 100 yards or more off, and face it until the stars show. "
+          .. "Skip if another node takes over.", wait = starsWait("far", true), screenshot = "world: far",
+      timeout = 900 },
+    { text = "Far away, were the stars on the node? (Skip if you skipped.)", ask = true },
+    { text = "Find two nodes about as far from you in different directions. Snooze the compass's node (its key "
+          .. "binding, or NodeRadar's minimap button), and hold still.", wait = function()
+          install()
+          if not watch.switchStep then watch.switchStep, watch.lastSwitch = true, nil end   -- this step's own
+          if not watch.lastSwitch then return false, "waiting for NodeRadar's waypoint to move" end
+          local line = watch.lastSwitch
+          watch.lastSwitch, watch.switchStep = nil, nil
+          return true, line
+      end, timeout = 900 },
+    { text = "Did the stars ever flash at the old node before moving to the new one? (Note box: what you saw.)",
+      ask = true },
+    { text = "Optional: a node up or down a slope, its stars showing. Were they above or below it?", ask = true,
+      screenshot = "world: a slope" },
+    { text = "Open the world map, Ctrl-click somewhere to set a waypoint of your own, and close the map.",
+      wait = function()
+          install()
+          if wpRead(C_Map.HasUserWaypoint) ~= true or ours() then return false, "no waypoint of yours yet" end
+          if wpRead(function() return WorldMapFrame:IsShown() end) == true then return false, "close the map" end
+          watch.pinAt = watch.pinAt or GetTime()
+          if GetTime() - watch.pinAt < 4 then return false, "watching for 4 s" end
+          watch.pinAt = nil
+          return true, note(("your waypoint kept 4 s: %s; NodeRadar's %s; the stars %s"):format(navState(),
+              oursText(), shown() and "SHOWN" or "hidden"))
+      end, timeout = 900 },
+    { text = "Now remove your pin (click it on the world map) and close the map.", wait = function()
+          install()
+          if not ours() then return false, "NodeRadar's waypoint not back yet: " .. navState() end
+          return true, note("yours gone: NodeRadar's back on its node, " .. oursText())
+      end, timeout = 900 },
+    { text = "Accept a quest from a quest giver (any), with the stars up.", wait = function()
+          install()
+          if not watch.quest then return false, "no quest accepted yet" end
+          if GetTime() - watch.quest < 1.5 then return false, "a moment" end
+          watch.quest = nil
+          return true, note(("a quest accepted, the marker on: super-tracking a quest %s; NodeRadar's waypoint %s"):format(
+              str(wpRead(C_SuperTrack.IsSuperTrackingQuest)), oursText()))
+      end, timeout = 900 },
+    { text = "Optional: the marker is off for this step: accept another quest. (Then untrack it on screen if "
+          .. "it got tracked.)", wait = function()
+          local n = nr()
+          install()
+          if n.db.marker then n.Set("marker", false) end
+          if not watch.quest then return false, "no quest accepted yet" end
+          if GetTime() - watch.quest < 1.5 then return false, "a moment" end
+          watch.quest = nil
+          local line = note(("a quest accepted, the marker off: super-tracking a quest %s"):format(
+              str(wpRead(C_SuperTrack.IsSuperTrackingQuest))))
+          return true, line
+      end, timeout = 900 },
+    { text = "The marker on again. Untrack any quest on screen, then fight a creature with the stars up; after "
+          .. "the fight, open the world map, look around a moment, and close it.", wait = function()
+          local n = nr()
+          install()
+          if not n.db.marker then n.Set("marker", true); watch.fought, watch.foughtDone, watch.mapSeen = nil, nil, nil end
+          if not watch.foughtDone then return false, watch.fought and "in the fight" or "no fight yet" end
+          local open = wpRead(function() return WorldMapFrame:IsShown() end) == true
+          if open then watch.mapSeen = true; return false, "the map open" end
+          if not watch.mapSeen then return false, "open the world map" end
+          return true, note(("after the fight and the map: blocked %d; NodeRadar's waypoint %s; %s"):format(
+              #db().blocked, oursText(), navState()))
+      end, timeout = 900 },
+    { text = "Any error, or an \"action blocked\" message, in the fight or with the map?", ask = true },
+    { text = "Press Reload (or type /reload).", reload = true },
+    { text = "Back after the reload: waiting for the stars on a node again (ride toward one if needed).",
+      wait = backWait("after the reload"), timeout = 900 },
+    { text = "Optional: log out to the character list and back in (or exit the game and start it again).",
+      reload = "exit" },
+    { text = "Back after the logout: waiting for the stars again (Skip if you skipped).",
+      wait = backWait("after the logout"), timeout = 900 },
+    { text = "The CVar from 0: the marker off, showInGameNavigation 0, the marker on. Then ride toward a node "
+          .. "until the stars show.", wait = function()
+          local n = nr()
+          install()
+          if not watch.cvar0 then
+              n.Set("marker", false)
+              wpRead(C_CVar.SetCVar, "showInGameNavigation", "0")
+              n.Set("marker", true)
+              watch.cvar0 = note(("from 0: showInGameNavigation now %s, NodeRadar will put back %s"):format(
+                  str(wpRead(C_CVar.GetCVar, "showInGameNavigation")), str(n.db.markerCVar)))
+          end
+          if not shown() then return false, "no stars yet: " .. navState() end
+          local line = watch.cvar0 .. "; the stars shown"
+          watch.cvar0 = nil
+          return true, line
+      end, screenshot = "world: from 0", timeout = 900 },
+    { text = "The summary; NodeRadar's marker setting and the navigation option put back.", auto = true,
+      run = function()
+          local n, w = nr(), db()
+          local s = w.super
+          n.Set("marker", w.saved and w.saved.marker or false)
+          if w.saved and type(w.saved.cvar) == "string" and not w.saved.cvar:find("^[A-Z]") then
+              wpRead(C_CVar.SetCVar, "showInGameNavigation", w.saved.cvar)
+              n.db.markerCVar = w.saved.pending       -- NodeRadar's own restore, as it was
+          end
+          uninstall()
+          return ("something else super-tracked %.0f of %.0f s (%.0f%%); blocked actions %d%s; the marker %s, "
+              .. "showInGameNavigation %s"):format(s.other, s.total, s.total > 0 and 100 * s.other / s.total or 0,
+              #w.blocked, #w.blocked > 0 and (": " .. table.concat(w.blocked, "; ")) or "", str(n.db.marker),
+              str(wpRead(C_CVar.GetCVar, "showInGameNavigation")))
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("world", steps)
+NS._worldTest = { watch = watch, uninstall = uninstall }
+end)()
 
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }

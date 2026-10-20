@@ -76,10 +76,10 @@ function Icons.On()
     return db and db.icons and db.enabled and true or false
 end
 
--- Kept: the records, for the icons or the compass (#29), whichever is on.
+-- Kept: the records, for the icons, the compass (#29) or the marker (#61), whichever is on.
 function Icons.Keeping()
     local db = NR.db
-    return db and db.enabled and (db.icons or db.compass) and true or false
+    return db and db.enabled and (db.icons or db.compass or db.marker) and true or false
 end
 
 -- The player in UnitPosition's frame: north, west (HereBeDragons-2.0 reads its

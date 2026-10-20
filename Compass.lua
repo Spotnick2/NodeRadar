@@ -60,6 +60,13 @@ function Compass.On()
     return db and db.compass and db.enabled and true or false
 end
 
+-- The target is chosen for the ring or the marker in the world (#61),
+-- whichever is on; the ring shows only with the compass.
+function Compass.Choosing()
+    local db = NR.db
+    return db and db.enabled and (db.compass or db.marker) and true or false
+end
+
 local function wrap(a) return (a + math.pi) % TAU - math.pi end
 
 -- The player in UnitPosition's frame: north, west; nil when unreadable.
@@ -427,6 +434,9 @@ function Compass.Target()
     return target, name, pn and math.floor(yards(target, pn, pw) + 0.5) or nil
 end
 
+-- The node chosen, for the marker (#61): a record, or nil.
+function Compass.Chosen() return Compass.Choosing() and target or nil end
+
 local function choose()
     local pn, pw = here()
     if not pn then target = nil; return end
@@ -445,7 +455,7 @@ end
 
 local function refresh()
     choose()
-    if not target then hide(); return end
+    if not (target and Compass.On()) then hide(); return end
     dress()
     root:Show()
     frame()
@@ -453,7 +463,7 @@ end
 
 -- After each radar sweep's Icons.Update, before the alert and the learner.
 function Compass.Reconcile(result, now)
-    if not Compass.On() then return end
+    if not Compass.Choosing() then return end
     lastSweep = now
     refresh()
 end
@@ -461,7 +471,7 @@ end
 -- A gather took records out (Icons.Gathered, once the list is filtered):
 -- chosen again at once. Not a sweep: the freshness isn't renewed.
 function Compass.Refresh()
-    if not Compass.On() or not lastSweep then return end
+    if not Compass.Choosing() or not lastSweep then return end
     refresh()
 end
 
@@ -489,6 +499,7 @@ end
 function Compass.Reset()
     target = nil
     hide()
+    if NR.Marker then NR.Marker.TargetGone() end   -- the marker's point goes with it (#61)
 end
 
 Compass._test = {

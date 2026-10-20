@@ -74,6 +74,13 @@ turn on Find Herbs or Find Minerals.
   Options, `/nr compass reset` puts it back). A node out of reach (on a ledge, among mobs too
   strong)? Snooze it, and the compass moves on: from NodeRadar's minimap button, for 15 minutes,
   30 minutes, an hour or the session, or with a key binding. A reload clears them.
+- **Experimental: a marker in the world** (`/nr marker`, off by default). The compass's node,
+  marked out on its spot with twinkling stars you see through the scenery, and Blizzard's distance
+  under them. It works through your map waypoint: NodeRadar puts one on the node and tracks it, and
+  steps aside whenever you have a waypoint of your own or track a quest (it never touches yours).
+  While it shows, a quest you accept isn't tracked by itself. The spot is at your own height, so on
+  a slope it sits a little above or below the node, and it hides within 15 yards and while the node
+  is behind you.
 - **A minimap button.** Left-click: quick settings (the radar, the icons, the compass) and the
   compass's snooze; right-click: the Options page. It drags around the minimap, and button
   collectors take it. Also in the AddOns compartment.
@@ -92,7 +99,7 @@ notification, sci-fi HUD ping), the sonar on the node, a chat line (each node wi
 map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
 can't be told), Blizzard's ping, the time
 between alerts, a test button; only nodes you can gather; Blizzard's dots or item icons on the
-minimap, the icon's frame and size, what a skipped node shows; the experimental compass; learning by
+minimap, the icon's frame and size, what a skipped node shows; the experimental compass and marker; learning by
 toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the presets and smart.
 
 ## Commands
@@ -113,6 +120,7 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
 - `/nr compass`: the experimental compass toward the nearest node (off by default);
   `/nr compasssize small | medium | large`; `/nr compass lock | unlock | reset`: its position (Alt-drag
   moves it)
+- `/nr marker`: the experimental marker in the world on the compass's node (off by default)
 - `/nr snooze [15 | 30 | 60 | session]`: snooze the compass's node (the key binding's length, in
   Key Bindings > NodeRadar); `/nr snooze clear`
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)

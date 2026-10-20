@@ -46,6 +46,13 @@ The yellow frame (#50, docs/PLAN.md, "A yellow frame"):
                  Tinted in game the tracking dots' yellow (the white takes it,
                  the dark edges stay dark).
 
+The marker in the world (#61, docs/PLAN.md, "A marker in the world"):
+
+  MarkerStar     64 x 64, display 22 at scale 1. A four-pointed star: thin
+                 rays along both axes tapering to the edge, a bright core and a
+                 soft halo, white with the shape in alpha. Tinted teal in game
+                 and drawn additively; its glow is SonarGlow, tinted too.
+
 The sounds come from Tools/import_sounds.py.
 
 Plain Python, no dependencies: 32-bit uncompressed TGA (RGB and 8-bit alpha),
@@ -215,6 +222,19 @@ def icon_ring(x, y):
     return v, v, v, a
 
 
+def marker_star(x, y):
+    dx, dy = x - 32.0, y - 32.0
+    d = math.hypot(dx, dy)
+
+    def ray(along, across):
+        taper = max(0.0, 1.0 - abs(along) / 30.0)
+        return math.exp(-(across / (0.6 + 1.4 * taper)) ** 2) * taper ** 1.6
+
+    a = max(ray(dx, dy), ray(dy, dx))
+    a += math.exp(-(d / 3.5) ** 2) + 0.3 * math.exp(-(d / 9.0) ** 2)
+    return 1.0, 1.0, 1.0, min(1.0, a)
+
+
 def main():
     os.makedirs(MEDIA, exist_ok=True)
     for name, fn in (("SonarRing", ring), ("SonarGlow", glow)):
@@ -224,7 +244,7 @@ def main():
     for name, w, h, fn in (("CompassShadow", 128, 128, compass_shadow), ("CompassLens", 128, 128, compass_lens),
                            ("CompassRim", 128, 128, compass_rim), ("CompassArc", 128, 128, compass_arc),
                            ("CompassArrow", 64, 64, compass_arrow), ("CompassPill", 128, 64, compass_pill),
-                           ("IconRing", 64, 64, icon_ring)):
+                           ("IconRing", 64, 64, icon_ring), ("MarkerStar", 64, 64, marker_star)):
         path = os.path.join(MEDIA, name + ".tga")
         write_rgba(path, w, h, fn)
         print("wrote", os.path.relpath(path, ROOT))
