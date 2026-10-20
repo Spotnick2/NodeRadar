@@ -29,6 +29,14 @@ Scan.NODE_SLACK = 2
 Scan.FAR = 24
 Scan.STRIDE = 4
 Scan.HALVINGS = 4      -- 4 / 16: an edge to 0.25 units
+-- Peeling a merged blip (#67): from a cell inside a node, its edges are at most
+-- a square away, so a peel's walks go to PEEL_FAR; up to PEEL nodes a blip.
+-- A cell is explained by a node when it lies in its square, give or take
+-- EXPLAIN_TOL (the measure's 0.25 and the projection's drift, Codex).
+Scan.PEEL_FAR = 28
+Scan.PEEL = 4
+Scan.EXPLAIN_TOL = 1.5
+Scan.RIM_MARGIN = 2    -- a peeled node's square stays this far inside the round map
 
 -- The map's rect in its own units and its effective scale; nil and why when
 -- any part is missing or secret.
@@ -285,7 +293,9 @@ function Scan.Sweep(count)
 end
 
 -- Whether a point (map units from its centre) reads that name.
+local spent = 0        -- reads since Scan.Centre began
 local function reads(g, x, y, name)
+    spent = spent + 1
     Minimap:UpdateMouseoverAtPoint((g.l + g.w / 2 + x) * g.es, (g.b + g.h / 2 + y) * g.es)
     local found = names()
     if found then
@@ -300,9 +310,9 @@ end
 -- reads all the way to FAR (one merged with another of its name). Until #47 a
 -- single point FAR out had to read nothing: a same-name square within about
 -- 36 units failed it (two Silverleafs 35 apart, a 10-unit gap between them).
-local function edge(g, b, dx, dy)
+local function edge(g, b, dx, dy, far)
     local lo, hi = 0, nil
-    for d = Scan.STRIDE, Scan.FAR, Scan.STRIDE do
+    for d = Scan.STRIDE, far or Scan.FAR, Scan.STRIDE do
         if not reads(g, b.x + dx * d, b.y + dy * d, b.name) then hi = d; break end
         lo = d
     end
@@ -335,19 +345,139 @@ local function centre(g, b)
     return b.x + (r - l) / 2, b.y + (u - d) / 2
 end
 
--- Measures each blip's centre from this frame's sweep (#28): sets b.cx, b.cy
--- or b.why. About 29 reads a blip. True, or nil and why; the soft cursor is
--- turned off on every path, as after a sweep.
-function Scan.Centre(blips)
+-- A sweep's cell (b.points: map coordinates from the bottom left) from the
+-- map's centre, as a blip's and a record's.
+function Scan.Point(g, c) return c[1] - g.w / 2, c[2] - g.h / 2 end
+
+-- Whether a node centred at (x, y) explains a point (both from the map's centre).
+function Scan.Explains(x, y, px, py)
+    local reach = Scan.NODE / 2 + Scan.EXPLAIN_TOL
+    return math.abs(px - x) <= reach and math.abs(py - y) <= reach
+end
+
+-- A blip's cells no node of `known` or `found` (centres) explains: { px, py,
+-- cell } from the map's centre.
+function Scan.Unexplained(g, b, known, found)
+    local left = {}
+    for _, c in ipairs(b.points or {}) do
+        local px, py = Scan.Point(g, c)
+        local hit = false
+        for _, list in ipairs({ known, found or {} }) do
+            for _, n in ipairs(list) do
+                if Scan.Explains(n[1], n[2], px, py) then hit = true; break end
+            end
+            if hit then break end
+        end
+        if not hit then left[#left + 1] = { px, py, cell = c } end
+    end
+    return left
+end
+local unexplained = Scan.Unexplained
+
+local function near(list, x, y, within)
+    for _, n in ipairs(list) do
+        if math.sqrt((n[1] - x) ^ 2 + (n[2] - y) ^ 2) <= within then return true end
+    end
+    return false
+end
+
+-- Peeling (#67, docs/PLAN.md "Never a yellow dot"): the outermost unexplained
+-- cell along (dx, dy) is in a node whose edge on that side is the blip's. The
+-- walk out finds it; 3 units inside it, the walk across finds the node's other
+-- two edges, one square apart. A node's centre, or nil and why.
+local PEELS = { { -1, 0, "left" }, { 1, 0, "right" }, { 0, -1, "bottom" }, { 0, 1, "top" } }
+local function peel(g, name, left, dir)
+    local dx, dy = dir[1], dir[2]
+    local px, py = dy ~= 0 and 1 or 0, dx ~= 0 and 1 or 0    -- across
+    local best, ties = -math.huge, {}
+    for _, c in ipairs(left) do
+        local along = c[1] * dx + c[2] * dy
+        if along > best + 0.01 then best, ties = along, { c } elseif along >= best - 0.01 then ties[#ties + 1] = c end
+    end
+    table.sort(ties, function(a, b) return a[1] * px + a[2] * py < b[1] * px + b[2] * py end)
+    local s = ties[math.ceil(#ties / 2)]
+    local out = edge(g, { name = name, x = s[1], y = s[2] }, dx, dy, Scan.PEEL_FAR)
+    if not out then return nil, "crowded out to the " .. dir[3] end
+    local ex, ey = s[1] + dx * out, s[2] + dy * out
+    local q = { name = name, x = ex - dx * 3, y = ey - dy * 3 }
+    if not reads(g, q.x, q.y, name) then return nil, "nothing inside the " .. dir[3] .. " edge" end
+    local a = edge(g, q, px, py, Scan.PEEL_FAR)
+    local b = a and edge(g, q, -px, -py, Scan.PEEL_FAR)
+    if not b then return nil, "crowded across the " .. dir[3] .. " edge" end
+    if math.abs(a + b - Scan.NODE) > Scan.NODE_SLACK then
+        return nil, ("%.1f across the %s edge, not one node"):format(a + b, dir[3])
+    end
+    local cx = ex - dx * Scan.NODE / 2 + px * (a - b) / 2
+    local cy = ey - dy * Scan.NODE / 2 + py * (a - b) / 2
+    if not Scan.Explains(cx, cy, s[1], s[2]) then return nil, "the " .. dir[3] .. " node misses its cell" end
+    local half, reach = g.w / 2 - Scan.RIM_MARGIN, Scan.NODE / 2
+    for _, k in ipairs({ { -1, -1 }, { -1, 1 }, { 1, -1 }, { 1, 1 } }) do
+        if math.sqrt((cx + k[1] * reach) ^ 2 + (cy + k[2] * reach) ^ 2) > half then
+            return nil, "the " .. dir[3] .. " node reaches the rim"
+        end
+    end
+    return cx, cy
+end
+
+-- One blip: its nodes found (b.found, centres from the map's centre; b.cx, b.cy
+-- the first), its cells still unexplained (b.left), and why (b.why) when any
+-- are. b.known: the centres of its name's records, which explain cells and
+-- are never found again (within `match`). b.single: the centroid's measure
+-- first. A blip without points (one measured by hand) is that measure only.
+-- b.cut: the read ceiling stopped it.
+local function measure(g, b, budget, match)
+    local known, found = b.known or {}, {}
+    b.found = found
+    local why
+    if b.single or not b.points then
+        local x, y = centre(g, b)
+        if x and not near(known, x, y, match) then found[1] = { x, y } elseif not x then why = y end
+    end
+    if b.points then
+        local left = unexplained(g, b, known, found)
+        -- The longer axis of what's left first (a pair one above the other:
+        -- bottom, top), then on round; four failures in a row end it.
+        local x1, x2, y1, y2 = math.huge, -math.huge, math.huge, -math.huge
+        for _, c in ipairs(left) do
+            x1, x2, y1, y2 = math.min(x1, c[1]), math.max(x2, c[1]), math.min(y1, c[2]), math.max(y2, c[2])
+        end
+        local failed, i = 0, (y2 - y1 > x2 - x1) and 2 or 0
+        while #left > 0 and failed < #PEELS and #found < Scan.PEEL do
+            if spent >= budget then b.cut = true; break end
+            local dir = PEELS[i % #PEELS + 1]
+            i = i + 1
+            local x, y = peel(g, b.name, left, dir)
+            if not x then
+                why, failed = y, failed + 1
+            elseif near(known, x, y, match) or near(found, x, y, match) then
+                why, failed = "the " .. dir[3] .. " node is known", failed + 1
+            else
+                found[#found + 1] = { x, y }
+                left, failed = unexplained(g, b, known, found), 0
+            end
+        end
+        b.left = left
+        if #left == 0 then why = nil end
+    end
+    if found[1] then b.cx, b.cy = found[1][1], found[1][2] end
+    b.why = why
+end
+
+-- Measures blips from this frame's sweep (#28, #67): sets each one's nodes as
+-- above. About 29 reads a lone node, 30 a node peeled. `budget`: the reads at
+-- most (a blip started finishes its current try); `match`: within it, a node
+-- is a known one (Icons.MATCH). True, or nil and why; the soft cursor is turned
+-- off on every path, as after a sweep.
+function Scan.Centre(blips, budget, match)
     local g, why = Scan.Geometry()
     if not g then return nil, why end
+    budget, match, spent = budget or math.huge, match or 8, 0
     local okOn, errOn = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
     local ok, err = okOn, errOn
     if okOn then
         ok, err = pcall(function()
             for _, b in ipairs(blips) do
-                local x, y = centre(g, b)
-                if x then b.cx, b.cy = x, y else b.why = y end
+                if spent >= budget then b.cut = true else measure(g, b, budget, match) end
             end
         end)
     end

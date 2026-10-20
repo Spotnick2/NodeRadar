@@ -52,7 +52,10 @@ turn on Find Herbs or Find Minerals.
 - **Optionally, each node shows its item's icon** on the minimap (Peacebloom, Copper Ore) instead
   of Blizzard's yellow dot, dimmed when your skill can't gather it yet (`/nr icons`, off by
   default). NodeRadar measures where each new node is once and keeps it in place
-  as you move; near the map's edge, and where nodes of one name crowd together, the dot shows.
+  as you move, two of a name side by side included. A node it hasn't measured yet gets an icon
+  near its dot until it is. The dot still shows near the map's edge, and where three or more of a
+  name crowd together, or two almost on top of each other. Other dots (treasure, quests, party)
+  stay Blizzard's.
   Each icon sits in a frame that follows your minimap: a glass disc with Glass MiniMap, a bronze
   ring like Blizzard's minimap buttons otherwise (or none, a yellow ring the colour of the
   minimap's tracking dots, or the one you pick), small, medium or large, with a small arrow when the node is above or below you.

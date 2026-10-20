@@ -275,20 +275,21 @@ eq(stillBand, false, "...past the rim (94 out): dropped, covered or not")
 local _ = inner
 NR.db.interval = nil
 
--- Crowded: two of a name 30 apart; no record, Blizzard's dots.
+-- Not one node (a 40-unit area of a node's name): no record, and not tried
+-- again within 5 s. (Two of a name 30 apart are peeled since #67: test_nodots.)
 reset()
-node("Silverleaf", -15, 30)
-node("Silverleaf", 15, 30)
+node("Silverleaf", 0, 30, { half = 20 })
 step()
-eq(#records(), 0, "two of a name 30 apart: crowded, no record")
-eq(#T.tries(), 1, "...the one blip they make, its try remembered")
+eq(#records(), 0, "an area no measure explains: no record")
+eq(#T.tries(), 1, "...its try remembered")
 plain = plainReads()
 reads = step()
 eq(reads, plain, "...and not tried again within 5 s")
 
 -- Four refused nearer the centre and an isolated fifth (Codex, #28), at the
--- 5 s idle interval: the fifth is measured at the second sweep. The four are
--- too wide to be one node (40-unit areas): 35 apart, #47's walk measures them.
+-- 5 s idle interval: the fifth is measured once the four have had their try,
+-- the read ceiling (#67) spreading them over sweeps. The four are too wide to
+-- be one node (40-unit areas): 35 apart, #47's walk measures them.
 reset()
 NR.db.interval = 5
 for _, x in ipairs({ -67.5, -22.5, 22.5, 67.5 }) do
@@ -297,10 +298,14 @@ for _, x in ipairs({ -67.5, -22.5, 22.5, 67.5 }) do
 end
 local fifth = node("Wilted Peacebloom", 0, 70)
 step()
-eq(#records(), 0, "first sweep: the four nearest tried, all refused")
-WoW.now = WoW.now + 4                                      -- the next sweep, 5 s later
-step()
-eq(#records(), 1, "second sweep: the fifth measured")
+eq(#records(), 0, "first sweep: the nearest tried, refused")
+local sweeps = 1
+while #records() == 0 and sweeps < 8 do
+    WoW.now = WoW.now + 4                                  -- the next sweep, 5 s later
+    step()
+    sweeps = sweeps + 1
+end
+check(#records() == 1 and sweeps <= 4, ("the fifth measured at sweep %d"):format(sweeps))
 local fx5, fy5 = where(fifth)
 check(records()[1] and near(records()[1].x, fx5) and near(records()[1].y, fy5), "...at its centre")
 NR.db.interval = nil
