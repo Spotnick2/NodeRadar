@@ -4642,6 +4642,16 @@ local function gates()
         str(n.Learn.AnyOn()), cave.sweepWhy and ("failed: " .. str(cave.sweepWhy)) or "not run")
 end
 
+-- Whether this round is the procedure running: ForeverProbe calls nothing when
+-- one stops (Stop, another started), so the observer checks every frame (Codex,
+-- PR #72).
+local KEY = Probe.name .. "/cave"
+local function running()
+    local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+    return type(st) == "table" and st.active == KEY
+end
+
+local uninstall
 local function install()
     local n = nr()
     if not n or cave.n then return n end
@@ -4712,6 +4722,11 @@ local function install()
     end
     cave.frame = cave.frame or CreateFrame("Frame")
     cave.frame:SetScript("OnUpdate", function()
+        if not running() then
+            uninstall()
+            say("cave: the round stopped, NodeRadar put back")
+            return
+        end
         local inside = indoors()
         if inside == cave.was then return end
         cave.was, cave.changedAt, cave.out, cave.resumed = inside, GetTime(), 0, nil
@@ -4730,7 +4745,7 @@ local function install()
     return n
 end
 
-local function uninstall()
+function uninstall()
     local n, o = cave.n, cave.orig
     if not n then return end
     n.Alert.Reset, n.Alert.NewArea, n.Alert.Update, n.Alert.Fire = o.reset, o.newArea, o.update, o.fire
@@ -4828,6 +4843,7 @@ local steps = {
     title = "Caves: a node's name grey, and the alert on the way out (#63)",
     { text = "Have NodeRadar on with gathering tracking on. The probe watches NodeRadar's alert from now until "
           .. "the summary (it changes nothing).", wait = function()
+          uninstall()                              -- a restart starts afresh (Codex, PR #72)
           NodeRadarProbeDB.cave = nil
           if not install() then return false, "NodeRadar isn't loaded" end
           return true, db().events[#db().events]

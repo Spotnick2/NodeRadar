@@ -201,6 +201,48 @@ zoom(1)
 eq(#db.log, lines, "the SetZoom hook silent once the round is over")
 fp("steps stop")
 
+-- Stopped mid-round: the observer goes at the next frame (Codex, PR #72).
+local function putBack(label)
+    local now = current()
+    for i, f in ipairs(originals) do eq(now[i], f, names[i] .. " put back " .. label) end
+end
+fp("steps nr cave")
+poll()
+eq(result(1).status, "done", "started again: " .. detail(1))
+check(NR.Alert.Update ~= originals[3], "...watching")
+fp("steps stop")
+poll()
+putBack("on a stop")
+local count = #db.cave.events
+zoom(0); poll(); poll()
+eq(#db.cave.events, count, "...and nothing logged after it")
+
+-- Another procedure started: the same.
+fp("steps nr cave")
+poll()
+check(NR.Alert.Update ~= originals[3], "watching again")
+fp("steps nr nodots")
+poll()
+putBack("when another procedure starts")
+fp("steps stop")
+
+-- Restarted without a reload: a fresh round, not the old one's history.
+fp("steps nr cave")
+poll(); poll(); poll()
+check(NS._caveTest.cave().hist ~= nil, "a round watching, its history built")
+fp("steps nr cave")
+poll(); poll()
+check(detail(1):find("watching: indoors", 1, true), "restarted: watching afresh: " .. detail(1))
+local first
+for _, l in ipairs(db.cave.events) do
+    if l:find("update %(") then first = first or l end
+end
+check(first and first:find("a baseline: the probe's first", 1, true), "...its first update a baseline: "
+    .. tostring(first))
+fp("steps stop")
+poll()
+putBack("after the restart's stop")
+
 eq(errors(), 0, "no step threw")
 for _, l in ipairs(WoW.chat) do check(not l:find("cave"), "nothing of the probe in chat: " .. l) end
 done("test_probe_cave")
