@@ -477,6 +477,11 @@ C_Map = {
     GetMapWorldSize = function(map) return WoW.mapSize[1], WoW.mapSize[2] end,
 }
 function GetPlayerFacing() return WoW.facing end
+-- Blizzard's on-screen marker (Blizzard_QuestNavigation, FrameXML's): its OnUpdate
+-- calls UpdateAlpha every frame; here it just sets the alpha it wants (1).
+SuperTrackedFrame = WoW.newWidget("Frame", nil, "SuperTrackedFrame")
+SuperTrackedFrame.Icon = SuperTrackedFrame:CreateTexture()          -- the diamond (its parentKey)
+function SuperTrackedFrame:UpdateAlpha() self:SetAlpha(1) end
 -- The world map (FrameXML's, not in the dump): WoW.worldMapShown.
 WorldMapFrame = { IsShown = function() return WoW.worldMapShown == true end }
 function UnitOnTaxi(unit) return unit == "player" and WoW.onTaxi == true end

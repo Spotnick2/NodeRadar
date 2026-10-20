@@ -138,6 +138,44 @@ eq(shown(), false, "within 15 yards: hidden (Lueur's glow)")
 WoW.pos[1] = 0
 settle(a)
 
+-- Blizzard's own marker hidden while ours covers the spot (the owner,
+-- 2026-10-20), its edge arrow kept when the node is behind.
+local STF = SuperTrackedFrame
+-- Blizzard's marker as drawn now: "all" shown, "distance" (its diamond hidden), "none".
+local function blizzard()
+    STF:UpdateAlpha()
+    if STF:GetAlpha() == 0 then return "none" end
+    return STF.Icon:GetAlpha() == 0 and "distance" or "all"
+end
+check(M.hooked(), "Blizzard's marker hooked at login")
+eq(blizzard(), "distance", "ours on the spot, the compass off: Blizzard's diamond hidden, its distance kept")
+NR.Set("compass", true)
+eq(blizzard(), "none", "...the compass on (its own distance): Blizzard's whole marker hidden")
+NR.Set("compass", false)
+eq(blizzard(), "distance", "...the compass off again: the distance back")
+WoW.navClamped = true
+eq(blizzard(), "all", "...behind (clamped): Blizzard's all shown, its edge arrow")
+WoW.navClamped = false
+eq(blizzard(), "distance", "...facing it again")
+-- A quest tracked while our clear is held by combat (Codex, PR #75): its marker is the player's.
+WoW.combat = true
+NR.Set("compass", true)
+WoW.superTracked = "quest"                                 -- tracked by the player, our waypoint still set
+eq(blizzard(), "all", "a quest tracked, the stars not yet hidden this frame: the quest's marker untouched")
+frames(0.2)
+eq(shown(), false, "a quest tracked, our clear held by combat: no stars")
+eq(blizzard(), "all", "...the quest's marker untouched, even with the compass on")
+WoW.superTracked = "waypoint"
+NR.Set("compass", false)
+WoW.combat = false
+settle(a)
+eq(blizzard(), "distance", "...back to ours: the diamond hidden again")
+-- Hidden stars (the distance disagreeing, near, on a taxi): Blizzard's left alone.
+WoW.navDistance = yards(a) + 50
+frames(0.3)
+eq(blizzard(), "all", "the stars hidden (the distance off): Blizzard's marker shown")
+settle(a)
+
 -- Another node as far, in another direction (the first snoozed, so it goes at
 -- once): hidden through the settling interval.
 local b = node("Silverleaf", 0, -40)
@@ -165,6 +203,7 @@ step(1); step(1)
 check(WoW.waypoint and WoW.waypoint.x == 0.2, "...theirs never replaced")
 frames(0.2)
 eq(shown(), false, "...no stars")
+eq(blizzard(), "all", "...Blizzard's marker theirs, untouched")
 C_Map.ClearUserWaypoint()                                  -- their pin clicked off, as the map does
 C_SuperTrack.SetSuperTrackedUserWaypoint(false)
 step(1)
@@ -186,6 +225,7 @@ C_Map.ClearUserWaypoint = function() order[#order + 1] = "waypoint"; return real
 C_SuperTrack.SetSuperTrackedUserWaypoint = function(on) order[#order + 1] = "track"; return realTrack(on) end
 NR.Set("marker", false)
 C_Map.ClearUserWaypoint, C_SuperTrack.SetSuperTrackedUserWaypoint = realClear, realTrack
+eq(blizzard(), "all", "off: Blizzard's marker left alone")
 eq(WoW.waypoint, nil, "off: ours cleared")
 eq(table.concat(order, " "), "track waypoint", "...its super-track first, then the waypoint")
 eq(WoW.superTracked, nil, "...both gone")

@@ -5451,8 +5451,8 @@ local steps = {
       end },
     { text = "Ride toward a herb or ore 40-80 yards away (the nearest you can gather) and face it, until the "
           .. "stars show.", wait = starsWait("near"), screenshot = "world: the stars", timeout = 900 },
-    { text = "Are the twinkling stars on the node out in the world, with Blizzard's distance under them? (Note "
-          .. "box: how they look: too big, too small, too faint, too busy.)", ask = true },
+    { text = "Are the twinkling stars on the node out in the world, with Blizzard's distance under them and no "
+          .. "gold diamond? (Note box: how they look: too big, too small, too faint, too busy.)", ask = true },
     { text = "Optional: ride away until the node is 100 yards or more off, and face it until the stars show. "
           .. "Skip if another node takes over.", wait = starsWait("far", true), screenshot = "world: far",
       timeout = 900 },

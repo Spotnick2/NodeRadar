@@ -256,7 +256,8 @@ local function build()
     local markerHead = heading(page, compassSize, "The marker in the world (experimental)")
     local marker = checkbox(page, markerHead, "Mark the compass's node in the world with twinkling stars", "marker")
     local markerWhy = note(page, marker, "Experimental, off by default. Puts your map waypoint on the node and "
-        .. "tracks it, so the stars and Blizzard's distance show on its spot through the scenery. It steps aside "
+        .. "tracks it, so the stars show on its spot through the scenery, with Blizzard's distance under them "
+        .. "(the compass gives it when it's on). It steps aside "
         .. "while you have a waypoint of your own or track a quest, and while it shows, a quest you accept isn't "
         .. "tracked by itself. The spot is at your height: on a slope, a little above or below the node.")
 

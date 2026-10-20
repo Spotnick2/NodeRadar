@@ -1574,7 +1574,12 @@ waypoint and its super-track survive a reload. `USER_WAYPOINT_UPDATED` fires ins
 **The owner's choices** (2026-10-20):
 - **Step aside, never borrow.** The marker shows only while the player has no waypoint of their own
   and nothing else is super-tracked. NodeRadar never clears, moves or replaces theirs.
-- **Blizzard's distance text stays**: a free readout under the stars.
+- **Blizzard's distance text stays**: a free readout under the stars. Revised after the world
+  round (Blizzard also draws a gold diamond there): the diamond hidden while ours is on the spot,
+  its distance kept while the compass is off and hidden with it on (one distance on screen; Codex's
+  choice, the owner's leave). Behind the player, Blizzard's marker and edge arrow are left alone. A
+  post-hook on `SuperTrackedFrame.UpdateAlpha`: the frame's alpha 0 with the compass on, its `Icon`'s
+  alpha 0 (put back once when ours stops covering it).
 - **The look: FFXIV's sparkle**, its own toggle using the compass's choice of node.
 
 **Which node:** the compass's target (`choose()`: the nearest wanted record not snoozed, the 5-yard

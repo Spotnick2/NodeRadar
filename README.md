@@ -76,7 +76,7 @@ turn on Find Herbs or Find Minerals.
   30 minutes, an hour or the session, or with a key binding. A reload clears them.
 - **Experimental: a marker in the world** (`/nr marker`, off by default). The compass's node,
   marked out on its spot with twinkling stars you see through the scenery, and Blizzard's distance
-  under them. It works through your map waypoint: NodeRadar puts one on the node and tracks it, and
+  under them (the compass's own, when the compass is on). It works through your map waypoint: NodeRadar puts one on the node and tracks it, and
   steps aside whenever you have a waypoint of your own or track a quest (it never touches yours).
   While it shows, a quest you accept isn't tracked by itself. The spot is at your own height, so on
   a slope it sits a little above or below the node, and it hides within 15 yards and while the node
