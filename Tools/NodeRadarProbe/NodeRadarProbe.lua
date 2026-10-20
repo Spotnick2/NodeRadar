@@ -4832,10 +4832,11 @@ local steps = {
           if not install() then return false, "NodeRadar isn't loaded" end
           return true, db().events[#db().events]
       end },
-    hoverStep("Outdoors near a cave's mouth (Skull Rock by Orgrimmar, Dustwind Cave north of Razor Hill, Thunder "
-        .. "Ridge), hover a node's dot on the minimap and hold still.", "cave: a node in the open", false),
+    hoverStep("Outdoors near a place where the minimap zooms in (a cave, a mine, a building: the Undercity "
+        .. "does), hover a node's dot on the minimap (a herb or an ore) and hold still. Skip without one in "
+        .. "view.", "cave: a node in the open", false),
     zoomStep("Still outdoors: zoom the minimap in once, then out once (its + and -, or the wheel).", false),
-    { text = "Walk into the cave until the minimap changes (it zooms in indoors).", wait = function()
+    { text = "Walk in until the minimap changes (it zooms in indoors).", wait = function()
           if not begin() then return false, "NodeRadar isn't loaded" end
           if not indoors() then return false, "outdoors" end
           return finish()
@@ -4852,14 +4853,14 @@ local steps = {
           end
           return finish()
       end, timeout = 900 },
-    exitStep("Walk out of the cave, then keep walking or riding outside until this step completes (5 of "
+    exitStep("Walk out, then keep walking or riding outside until this step completes (5 of "
         .. "NodeRadar's updates outdoors).", false),
     { text = "When you came out, did NodeRadar ping (its sound, the rings) for nodes on the minimap outside? (Note: "
           .. "which nodes showed, and whether you'd seen them before going in.)", ask = true },
-    exitStep("Now a short visit: back into the cave and straight out (under 10 seconds inside), then on outside "
+    exitStep("Now a short visit: back in and straight out (under 10 seconds inside), then on outside "
         .. "until this step completes.", true),
     { text = "Did NodeRadar ping this time when you came out? (Note: which nodes showed.)", ask = true },
-    hoverStep("Optional: from outside, hover a node's dot that is inside the cave, if one shows. Skip without "
+    hoverStep("Optional: from outside, hover a node's dot that is inside, if one shows. Skip without "
         .. "one.", "cave: a cave node from outside", false),
     { text = "Did any node's name look grey in the minimap's tooltip, inside or outside? (Another pass in and out "
           .. "first? Go now: everything is logged until the next step.)", ask = true },

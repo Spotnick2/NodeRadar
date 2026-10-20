@@ -1502,8 +1502,9 @@ it does not always ping the new nodes"). What in our code could do it:
 - An alert isn't a sound heard: the sound setting, and `PlaySound`'s refusal (Codex).
 - Not the geometry's reset: it compares the frame's size and scale, which a cave doesn't change.
 
-**The round** (`/fp steps nr cave`), in any cave (Durotar: Skull Rock, Dustwind Cave, Thunder
-Ridge), best with nodes outside its mouth. Passive while it runs, all restored at the end; every
+**The round** (`/fp steps nr cave`), anywhere the minimap goes indoors (a cave, a mine, a
+building such as the Undercity), best with nodes, herbs or ores, in view outside. The swap's
+reset (a) needs no node: NodeRadar's updates run with tracking on, nodes or none. Passive while it runs, all restored at the end; every
 line numbered (several share a `GetTime()`) and carrying `IsIndoors()`, the zoom and the view radius:
 - each change of `IsIndoors()` (polled every frame: it brackets the engine's change, no more); each
   `MINIMAP_UPDATE_ZOOM`, with `IsIndoors()` read in it; each `Minimap:SetZoom` call (a secure hook:
