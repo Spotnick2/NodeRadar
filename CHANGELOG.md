@@ -1,26 +1,23 @@
 # Changelog
 
-## Unreleased
+## v1.3.0
 
-- **No more yellow dots between the icons** (#67): two herbs or ores of one name side by side now
-  each get their own icon, even right after a reload, and a node not measured yet gets an icon near
-  its dot until it is. Blizzard's dot still shows near the minimap's edge and where nodes of one
-  name pile up (three or more, or two almost on top of each other).
+Released 2026-10-19.
 
-- **Two herbs of one name close together keep their icons** (#28): from some spots the minimap
-  reading saw them as one, so their icons turned back into dots, then into icons again as you
-  moved. They now stay icons.
-
-- **Move the compass** (#57): hold Alt over it and drag it where you like, as with Apotheca's bar.
-  Without Alt, clicks still go through it to the world. Lock it in Options or with
-  `/nr compass lock`; `/nr compass reset` puts it back under your character.
+- **A minimap button** (#46): left-click for quick settings (the radar, the icons, the compass) and
+  the snooze; right-click for the Options page. Drag it around the minimap; hide it in Options. Also
+  in the AddOns compartment.
 - **Snooze the compass's node** (#46): a node out of reach (on a ledge, guarded by mobs too strong)
   can be put aside for 15 minutes, 30 minutes, an hour or the session, and the compass moves on to
   the next. Its icon is dimmed meanwhile. From the minimap button's menu, a key binding (Key
   Bindings > NodeRadar), or `/nr snooze`. A reload clears them, and so does `/nr snooze clear`.
-- **A minimap button** (#46): left-click for quick settings (the radar, the icons, the compass) and
-  the snooze; right-click for the Options page. Drag it around the minimap; hide it in Options. Also
-  in the AddOns compartment.
+- **No more yellow dots between the icons** (#66, #67): two herbs or ores of one name side by side
+  now each get their own icon, even right after a reload, and keep them as you move; a node not
+  measured yet gets an icon near its dot until it is. Blizzard's dot still shows near the minimap's
+  edge and where nodes of one name pile up (three or more, or two almost on top of each other).
+- **Move the compass** (#57): hold Alt over it and drag it where you like, as with Apotheca's bar.
+  Without Alt, clicks still go through it to the world. Lock it in Options or with
+  `/nr compass lock`; `/nr compass reset` puts it back under your character.
 
 ## v1.2.0
 
