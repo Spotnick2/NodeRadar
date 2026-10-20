@@ -1469,6 +1469,83 @@ still right after the radar's sweeps run while hovering (Codex); a short hover i
 normal minimap click and zoom, with any error or blocked action logged. A gear bonus and the green
 and grey bands stay pending until a character and nodes allow them.
 
+## Caves (#63)
+
+Two questions, one round. Measure first; what NodeRadar does follows from what the round shows.
+
+**1. A grey name.** The claim (another addon's audit, `.local/`): a node in a cave reads grey in the
+minimap's tooltip, as the line's `leftColor` or an inline `|c` code (it takes r, g and b within 0.1
+of each other and under 0.9 as grey). What's measured: `leftColor` is `#ffd200` for every blip in
+the open, herbs and NPCs alike (round 3, #7). Inline codes on a node's row were never logged:
+`Scan.Plain` strips them, and the probe logged plain names. NodeRadar reads neither, so a grey cave
+node is treated as any other today.
+
+**2. A ping missed on leaving a cave** (a tester, 2026-10-19: "when you get out of a cave or tunnel
+it does not always ping the new nodes"). What in our code could do it:
+- **a. The zoom's silent baseline** (the likeliest): `MINIMAP_UPDATE_ZOOM` calls `Alert.Reset()`, so
+  the next sweep counts every node in view without alerting. Indoors the minimap has its own zoom
+  and a smaller view (150 yd against 233 at zoom 0, measured, #27). If the client fires
+  `MINIMAP_UPDATE_ZOOM` when it swaps them, every node that comes into view on the way out is
+  counted silently. Offline it's certain; whether the client fires the event there isn't measured.
+- **b. No sweep for 5 s** (`Alert.STALE` + the interval): the next is a silent baseline. Only if
+  sweeps fail or stop indoors.
+- **c. The blink** (by design): a name that dropped on the way in (the smaller view) and rises
+  within 20 s on the way out is taken for the same node at the edge. Mostly it is, but a different
+  node of that name is held too.
+- **d. The cooldown** (Codex): the counts move on before the 5 s cooldown is checked, so a rise
+  within 5 s of another alert is counted and never alerted later.
+- **e. No rise** (Codex): a new node needn't raise its name's count (one went out of view as it came
+  in, or two of a name merged into one blip); and only known (`Learn.Kind`), wanted names alert.
+- **f. Sweeps held** (Codex): `NR.Step` returns before the alert when NodeRadar is off, the learner
+  is busy (a voided experiment still runs its restore), loading, the Gamepad UI, the minimap hidden,
+  or a sweep fails. A gap past 5 s + the interval (7 s by default) is (b).
+- An alert isn't a sound heard: the sound setting, and `PlaySound`'s refusal (Codex).
+- Not the geometry's reset: it compares the frame's size and scale, which a cave doesn't change.
+
+**The round** (`/fp steps nr cave`), in any cave (Durotar: Skull Rock, Dustwind Cave, Thunder
+Ridge), best with nodes outside its mouth. Passive while it runs, all restored at the end; every
+line numbered (several share a `GetTime()`) and carrying `IsIndoors()`, the zoom and the view radius:
+- each change of `IsIndoors()` (polled every frame: it brackets the engine's change, no more); each
+  `MINIMAP_UPDATE_ZOOM`, with `IsIndoors()` read in it; each `Minimap:SetZoom` call (a secure hook:
+  the player's, or Glass MiniMap's reset on moving);
+- NodeRadar's functions wrapped to observe only (Alert's state is private): `Alert.Reset` (its
+  call site from `debugstack`: the first frame past the probe's own, the first path on its line,
+  since each line names the call site and then the definition; porting guide), `Alert.NewArea`,
+  `Alert.Gathered`, `Alert.Fire` (with the sound setting), `Alert.Update`, `Scan.Sweep` (a
+  failure's reason) and `NR.Step`. A mirror of Alert's history follows its rules: gone after a
+  reset or a stale gap (that update a silent baseline), empty after a new area, a drop forgotten
+  after a gather; what came before the probe is marked unknown (drops for 20 s, the cooldown until
+  a fire). Every update leaves a brief line (indoors, zoom, radius); near a change, or with a
+  baseline, a rise or a fire, the full one: every cause of a baseline (several at once), the
+  counts, each rise with its drop's age (a blink or not) and wanted or not, the last fire, what
+  alerted. A step that didn't reach the alert says what held it (the gates, tracking among them)
+  or why its sweep failed;
+- `Scan.Plain` wrapped: every node row read, counted by its raw form, its line's `leftColor` and
+  `IsIndoors()`, so ordinary rows show coverage. The colour comes from a second
+  `GetMinimapMouseover()` read at the sweep's own point (never moving the mouseover), six a sweep
+  at most (each read is 2.5 KB), matched to the row by its raw text (two lines with it and two
+  colours: both said). A row with an inline code or a colour other than gold is logged when first
+  seen. A reload mid-round reinstalls at the next step, timed from then and said inconclusive. Hovers read `GameTooltip`'s line raw (`GetText`) with `GetTextColor`, and the
+  data's `leftColor`. A round with no node in a cave says nothing about grey (Codex).
+
+Steps: outdoors near the mouth, a node hovered (a screenshot); a zoom in and out outdoors; walk in
+until the minimap turns indoors; a node inside hovered if there is one (screenshot); 30 s inside
+with a zoom in and out; walk out, 5 updates after; "Did NodeRadar ping the nodes outside?"; a short
+visit (in and straight out), 5 updates after, the same question; from outside, a node in the cave
+hovered if one shows (screenshot); "Did any node's name look grey?"; the summary.
+
+**Then, if (a) is what happens:** a swap between indoors and outdoors isn't the player's zoom, so
+it keeps the history: no reset, and a node that rises on the way out alerts unless the blink holds
+it (a name that dropped within 20 s). The player's own zoom keeps its silent baseline, and the zoom
+still voids a learner's experiment. How to tell them apart is chosen from the round, not before:
+the event's own `IsIndoors()` against the last update's can misread when a sweep lands between the
+swap and the event (Codex), so the likelier rule decides at the next update instead, from the
+indoor state then against the last update's. Whatever the rule, these stay: a node seen before
+going in and back after more than 20 s alerts again; a rise inside the cooldown is lost (d); a
+different node of a name that blinked is held (c). If (b): why the sweeps stop, then the same rule.
+If grey is real: what a grey node gets (a mark on its icon, the compass passing it by, or nothing)
+is the owner's choice.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock
