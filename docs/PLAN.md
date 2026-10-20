@@ -1410,42 +1410,64 @@ frame. That goes through `TooltipDataHandlerMixin:ProcessInfo`: `C_TooltipInfo.G
 
 **The line:** from the data the post-call gets (`data.lines`, each `leftText` split on newlines,
 each row through `Scan.Plain`, as the sweep reads them):
-- one line per **distinct** known node name in the tooltip, in its order (`NODE_INFO`'s skill: a
-  learned name without one, or any other name, gets nothing);
+- one line per **distinct** known node name in the tooltip, in its order, deduplicated after
+  `Scan.Plain` (two Peacebloom rows, or one with a height arrow, are one name); its skill from
+  `Learn.Info` (so a learned "not a node" or a changed kind overrides the shipped `NODE_INFO`): a
+  learned name without one, or any other name, gets nothing;
 - its kind's skill line (`Alert.SKILL_LINES`); its name from `C_SkillInfo.GetSkillLineInfoByID`'s
   `name` (localized), else the English one (`Herbalism`, `Mining`: for display only, never
   compared);
 - the text from the client's `ITEM_MIN_SKILL` ("Requires %s (%d)", localized) when it's a string
   with `%s` and `%d`, else `"%s %d"`; with two or more node names, each line starts with the node's
   name ("Peacebloom: Requires Herbalism (1)") so they can be told apart;
-- coloured by `TrackOptions.colour(skill, rank)` (red below, orange, yellow from +25, green from
-  +50, grey from +100: measured on the world tooltip), the rank the **effective** one
-  (`API.Skill(line)`, gear included, as `Alert.Gatherable` decides who can gather); no such skill:
-  red. (The Herbs and Ores pages colour by the base rank, which smart follows; the two differ only
-  with a skill bonus from gear, unmeasured.)
-- Any secret on the way (`data`, `lines`, a `leftText`): no line, nothing raised (a tooltip must
-  never break).
+- coloured by `TrackOptions.colour(skill, rank)`: red below, orange, yellow from +25 (those three
+  measured on the world tooltip), green from +50 and grey from +100 (the classic bands, the existing
+  convention, not yet seen); the rank the **effective** one (`API.Skill(line)`, gear included: the
+  requirement the character can meet, not a claim about skill-ups); **no such profession: red**
+  (an explicit case: `colour(skill, nil)` is white). The Herbs and Ores pages keep the base rank,
+  which smart follows; the two differ only with a skill bonus from gear (unmeasured).
+  `Alert.Gatherable` doesn't decide the colour (it lets unknowns through, and Cultivation).
+- **The skill, readable or not** (Codex): `API.Skill` gains a second answer, `nil, "absent"` (no
+  such line: `GetSkillLineInfoByID` gives nil) against `nil, "unreadable"` (the call failed, or the
+  info, its rank or its modifier is secret); its modifier is tested for a secret **before** it's
+  compared (today's `info.modifier ~= nil` after the read would throw on one). Absent: red;
+  unreadable: no line for that kind. The alert and Track read only the first answer, as now.
+- **Secrets everywhere it reads** (a tooltip must never break): `data` before any field, `lines`
+  before iterating, each line before indexing it, `leftText` before splitting or using it as a key,
+  the skill info as above, its `name` before formatting (unreadable: the English name). Any secret
+  in the tooltip's own lines: no line at all. Nothing in the post-call raises: its body runs in a
+  `pcall`, a failure recorded once (`API.Fail("tooltip", ...)`), never repeated per frame.
+- **Observational:** besides `AddLine`, the post-call calls nothing that moves the mouseover or reads
+  the tooltip again (no `SetMinimapMouseover`, `UpdateMouseoverAtPoint`, no change to `data`), and
+  returns at once until `NR.db` is loaded.
 
 **The setting:** `tooltipSkill`, on by default, a checkbox in Options ("Show the skill a node needs
 in the minimap's tooltip"), `/nr tooltip`. Off, the post-call returns at once (it can't be
 unregistered). With the radar off it still works: it reads no blip and costs a few string ops per
 frame while hovering a node.
 
-**Tests:** the stubs grow `TooltipDataProcessor` (post-calls by type, run by a fake
+**Tests** (Codex's additions in): the stubs grow `TooltipDataProcessor` (post-calls by type, run by a fake
 `GameTooltip:SetMinimapMouseover` that reads `C_TooltipInfo.GetMinimapMouseover` as the client's
 handler does: clear, lines, post-calls, show). Cases: one node: the line, its text and colour at
 ranks below, at, +25, +50, +100; no skill: red; two names: one line each, with the names; two of
 one name: one line; another name (a quest's): no line; a learned name without a skill: no line;
 a height arrow's row: read as its name; `ITEM_MIN_SKILL` missing: the fallback; the skill-line
 name unreadable: English; secret lines: no line, no error; the setting off: no line; another
-tooltip than GameTooltip: untouched; `C_TooltipInfo.GetMinimapMouseover()`'s data unchanged after a
-build (the sweep's reading), and a sweep while the tooltip shows still reads only node names.
+tooltip than GameTooltip: untouched; two builds in a row: no stacking; the data the post-call gets
+unchanged by it (compared before and after our call alone: Blizzard's own processing writes
+`lineIndex`), and a sweep while the tooltip shows still reads only node names; secrets: the data,
+lines, a line, its text, a readable node then a secret row, the skill info, its rank, its
+modifier, its name; a gear bonus crossing a band (effective rank); a learned override (not a node,
+another kind); the setting: default on, saved off, `/nr tooltip`, the Options checkbox, the radar
+off.
 
 **Probe round** (`/fp steps nr tooltip`): hover a herb you can gather (the line read back from
 `GameTooltip`'s lines, with its colour; a screenshot), an ore without Mining (red), two nodes
 together if one is in view; log `ITEM_MIN_SKILL`, the skill lines' names (Mining unknown to the
-character: does `GetSkillLineInfoByID(186)` answer?), and that the radar's sweeps go on while
-hovering.
+character: does `GetSkillLineInfoByID(186)` answer, and with what?); the hovered node and its line
+still right after the radar's sweeps run while hovering (Codex); a short hover in combat and a
+normal minimap click and zoom, with any error or blocked action logged. A gear bonus and the green
+and grey bands stay pending until a character and nodes allow them.
 
 ## A public API (#4), after #3
 
