@@ -374,7 +374,7 @@ end
 
 --------------------------------------------------------------------------------
 -- Blizzard's own marker (a small gold diamond, its distance under it: the world
--- round, 70450), while ours is on the spot: the diamond hidden (the stars mark
+-- round, 70450), while our stars are on the spot: the diamond hidden (the stars mark
 -- it), its distance kept, unless the compass shows the distance already, then
 -- the whole marker hidden (Codex's choice, the owner's leave, 2026-10-20). Only
 -- while our waypoint is the one tracked and on screen: behind, its edge arrow
@@ -384,8 +384,12 @@ end
 -- whose alpha Blizzard never sets) put back once when we stop.
 --------------------------------------------------------------------------------
 
+-- Only while the stars are actually on the spot, and our waypoint is still the
+-- one tracked, alone, read now: a quest the player tracks while our clear is
+-- held (combat, the map) keeps its own marker (Codex, PR #75).
 local function covered()
-    return driver:GetScript("OnUpdate") == onUpdate and not yes(C_Navigation.WasClampedToScreen)
+    return root:IsShown() and isOurs() and trackingWaypoint() and not trackingOther()
+        and not yes(C_Navigation.WasClampedToScreen)
 end
 Marker.Covered = covered
 

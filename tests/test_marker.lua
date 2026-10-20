@@ -157,6 +157,24 @@ WoW.navClamped = true
 eq(blizzard(), "all", "...behind (clamped): Blizzard's all shown, its edge arrow")
 WoW.navClamped = false
 eq(blizzard(), "distance", "...facing it again")
+-- A quest tracked while our clear is held by combat (Codex, PR #75): its marker is the player's.
+WoW.combat = true
+NR.Set("compass", true)
+WoW.superTracked = "quest"                                 -- tracked by the player, our waypoint still set
+eq(blizzard(), "all", "a quest tracked, the stars not yet hidden this frame: the quest's marker untouched")
+frames(0.2)
+eq(shown(), false, "a quest tracked, our clear held by combat: no stars")
+eq(blizzard(), "all", "...the quest's marker untouched, even with the compass on")
+WoW.superTracked = "waypoint"
+NR.Set("compass", false)
+WoW.combat = false
+settle(a)
+eq(blizzard(), "distance", "...back to ours: the diamond hidden again")
+-- Hidden stars (the distance disagreeing, near, on a taxi): Blizzard's left alone.
+WoW.navDistance = yards(a) + 50
+frames(0.3)
+eq(blizzard(), "all", "the stars hidden (the distance off): Blizzard's marker shown")
+settle(a)
 
 -- Another node as far, in another direction (the first snoozed, so it goes at
 -- once): hidden through the settling interval.
