@@ -570,12 +570,27 @@ function Icons.Update(result, now)
         if now - e.at < Icons.LINGER then e.seen = false; fresh[#fresh + 1] = e end
     end
     gone = fresh
+    -- Whether a blip has a cell in the square of a node at (x, y) (Scan.Explains, #67).
+    local function holds(b, x, y)
+        for _, c in ipairs(b.points or {}) do
+            local px, py = NR.Scan.Point(g, c)
+            if NR.Scan.Explains(x, y, px, py) then return true end
+        end
+        return false
+    end
+    -- A gathered record's dot merged with a live neighbour's (Codex, #68): the
+    -- blip stays for the neighbour, the gathered node's cells count as
+    -- explained, so it's neither peeled back into a record nor drawn.
     local function lingering(b)
         for _, e in ipairs(gone) do
             local near = e.units or e.yards / k
-            if e.name == b.name and dist(-(e.west - pw) / k - b.x, (e.north - pn) / k - b.y) <= near then
-                e.seen = true
-                return true
+            if e.name == b.name then
+                e.x, e.y = -(e.west - pw) / k, (e.north - pn) / k
+                if dist(e.x - b.x, e.y - b.y) <= near then
+                    e.seen = true
+                    return true
+                end
+                if e.units and holds(b, e.x, e.y) then e.seen = true end
             end
         end
         return false
@@ -617,13 +632,7 @@ function Icons.Update(result, now)
     -- come out of a sweep as one blip, its centroid between them, near neither
     -- record. A record left unmatched stays while a blip of its name has a cell
     -- in its square (Scan.Explains, #67). Only the filtered blips count.
-    local function covers(b, r)
-        for _, c in ipairs(b.points or {}) do
-            local px, py = NR.Scan.Point(g, c)
-            if NR.Scan.Explains(r.x, r.y, px, py) then return true end
-        end
-        return false
-    end
+    local function covers(b, r) return holds(b, r.x, r.y) end
     for _, r in ipairs(records) do
         if not matched[r] then
             for _, b in ipairs(blips) do
@@ -650,12 +659,19 @@ function Icons.Update(result, now)
 
     -- Explained (#67): a blip's cells in a record's square of its name. The
     -- records' centres of a blip's name, and how many explain any of its cells.
+    -- A gathered record's spot (`gone`, still lingering) counts too.
     local function known(b)
         local list, explaining = {}, 0
         for _, r in ipairs(records) do
             if r.name == b.name then
                 list[#list + 1] = { r.x, r.y }
                 if covers(b, r) then explaining = explaining + 1 end
+            end
+        end
+        for _, e in ipairs(gone) do
+            if e.name == b.name and e.units and e.x then
+                list[#list + 1] = { e.x, e.y }
+                if holds(b, e.x, e.y) then explaining = explaining + 1 end
             end
         end
         return list, explaining

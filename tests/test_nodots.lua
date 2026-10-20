@@ -287,6 +287,31 @@ eq(#provisional(), 0, "a gather: the near provisional icons go at once")
 step()
 eq(#provisional(), 0, "...and the lingering dot gets none")
 
+-- A gather in a merged pair (Codex, #68): the gathered node's dot lingers in
+-- the neighbour's blip; it's neither peeled back nor drawn, the compass stays
+-- on the neighbour.
+reset()
+local g1 = node("Silverleaf", 3, 0)
+local g2 = node("Silverleaf", 29, 0)
+eq(blipsOf("Silverleaf"), 1, "a merged pair")
+NR.Set("compass", true)
+step()
+eq(#records(), 2, "...both measured")
+NR.Icons.Gathered("Silverleaf")                            -- the near one (4.5 yd), its loot window open
+eq(#records(), 1, "the near one gathered: its record gone")
+for _ = 1, 4 do step() end
+local ok2 = exact({ g2 })
+check(ok2 and #records() == 1, ("...not peeled back while its dot lingers (%d records)"):format(#records()))
+eq(#provisional(), 0, "...nor under a provisional icon")
+local target = NR.Compass._test.target()
+local tx = target and target.x
+check(tx and near(tx, 29), "...the compass on the neighbour: " .. tostring(tx))
+g1.gone = true
+nodes = { g2 }
+step()
+eq(#records(), 1, "the dot gone: the neighbour alone")
+NR.Set("compass", false)
+
 -- Cleared with the records; gone with the icons off, the compass on.
 reset()
 node("Silverleaf", 0, 30, { half = 20 })

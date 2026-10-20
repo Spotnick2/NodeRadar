@@ -516,6 +516,10 @@ can put one between two dots: Codex): an approximation until measured. Provision
   `Release`, `Clear` (the learner's same-frame clear included), hidden with the icons off;
 - are not records: `Icons.Records()` (the compass) and the alert never see them;
 - skip what the filters skip (a lingering gathered dot, #47's skipped names with Blizzard's dot).
+- **A gather in a merged pair** (Codex, PR #68): a gathered record's spot (`gone`, still lingering)
+  explains cells like a record, so its dot, merged into a live neighbour's blip, is neither peeled
+  back into a record nor drawn provisionally; the entry stays while a cell of that blip is in its
+  square, `LINGER` at most, and the compass stays on the neighbour.
 
 **3. The rim, an explicit exception:** within `half - extent` of the map's edge (the band where an
 icon fades out, about 11 units with the medium bronze ring) a dot can still show: a record fades
