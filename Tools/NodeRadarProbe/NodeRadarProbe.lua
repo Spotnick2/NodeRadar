@@ -4364,7 +4364,9 @@ end
 local function ourLine(kindWord)
     for i = 1, 8 do
         local text = ask(rawget(_G, "GameTooltipTextLeft" .. i), "GetText")
-        if type(text) == "string" and not secret(text) and text:find("|c", 1, true)
+        -- Ours only: a whole coloured line ending in the skill's number (a unit's
+        -- coloured "Press F6" line passed round 1's step 2).
+        if type(text) == "string" and not secret(text) and text:find("^|c%x+.*%d%)?|r$")
             and (kindWord == nil or text:find(kindWord, 1, true)) then
             return text
         end
@@ -4381,7 +4383,7 @@ local function tipText()
 end
 local hold = {}
 local tooltipSteps = {
-    rev = 1,
+    rev = 2,
     title = "The skill a node needs in the minimap's tooltip (#62)",
     { text = "Have NodeRadar loaded with gathering tracking on. Its tooltip line goes on for this round; the "
           .. "setting comes back as it was at the end.", wait = function()
@@ -4404,7 +4406,7 @@ local tooltipSteps = {
           .. "(red if above your skill, orange, yellow, green or grey as it gets easier)?", ask = true },
     { text = "Optional: hover an ore's dot (you have no Mining, so its line should be red). Skip without one in "
           .. "view.", wait = function()
-          local line = ourLine("Mining") or ourLine("(")
+          local line = ourLine()
           if not (line and not line:find("Herbalism", 1, true)) then
               return false, "no ore line yet: " .. tipText()
           end

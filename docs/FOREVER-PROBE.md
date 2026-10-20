@@ -646,3 +646,17 @@ fighting, the two icons stay.
 So nothing regressed for lone nodes, and nothing was left unexplained while riding. The merged
 pair itself (the owner's two Silverleafs, one 21-cell blip) is still to be seen in game: its peel
 is covered offline only (`test_nodots`: pairs on x, y and the diagonal at four grid phases).
+
+### The skill in the minimap's tooltip: `/fp steps nr tooltip`, 1.60.1.70450 (the owner, 2026-10-19, Durotar, Herbalism 42) (#62)
+
+| What | Measured |
+|---|---|
+| The client's strings | `ITEM_MIN_SKILL` "Requires %s (%d)"; `Enum.TooltipDataType.MinimapMouseover` **21** (as the plan assumed) |
+| The skill lines | Herbalism (182): name "Herbalism", rank 42, modifier 0, plain; Mining (186): **nil** (no profession: "absent", red) |
+| Holding on an Earthroot, 10 s | the tooltip `Earthroot` (its height arrow inline), then `\|cffffff00Requires Herbalism (15)\|r`: **yellow** at 42 (27 above, the yellow band); 5 sweeps under the cursor, the line missing in **0 of 11** reads; the owner: it stayed on the herb with its line (yes) |
+| Clicks, zoom | a ping and zooming in and out: no Lua error, nothing blocked (no); `NodeRadar.failures.tooltip` nil |
+| An ore | none near on the minimap: not seen. The ore screenshot caught the client's own **world** tooltip for a Copper Vein, "Requires Mining" in red with no number (anchored at the default spot, not the cursor): not ours |
+
+Round 1's step 2 passed on a unit's tooltip (Master Gadrin's coloured "Press F6" line) and its
+ask was skipped; the probe now counts only a whole coloured line ending in the skill's number
+(rev 2). The red line for a missing profession is covered offline only (`test_tooltip`).
