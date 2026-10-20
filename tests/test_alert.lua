@@ -1,6 +1,7 @@
 -- Alert: per node name, a rise in its number of blips is a new node; a blink at
--- the map's edge, a zoom or a tracking change doesn't alert; the cooldown; the
--- ring on each blip of the name; Blizzard's ping solo only.
+-- the map's edge, the player's zoom or a tracking change doesn't alert, the swap
+-- indoors or out does (#63); the cooldown; the ring on each blip of the name;
+-- Blizzard's ping solo only.
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
 
@@ -75,13 +76,111 @@ table.insert(WoW.blips, { "Stunted Silverleaf", 40, 60, kind = "herbs" })
 WoW.advance(1)
 eq(sounds(), before + 1, "two new nodes inside the cooldown: one alert")
 
--- A zoom: the counts start over, silently.
+-- The player's zoom (a SetZoom call, then the client's event): the counts
+-- start over, silently.
+local function zoom(z)
+    Minimap:SetZoom(z)
+    WoW.fire("MINIMAP_UPDATE_ZOOM")
+end
 WoW.advance(6)
 before = sounds()
-WoW.fire("MINIMAP_UPDATE_ZOOM")
+zoom(1)
 table.insert(WoW.blips, { "Silverleaf", 70, 10, kind = "herbs" })
 WoW.advance(0.6)
 eq(sounds(), before, "after a zoom, the first sweep is a silent baseline")
+zoom(0)
+WoW.advance(0.6)
+
+-- A call to the zoom already set: no event, nothing reset (#63), even before
+-- the event of the call that set it.
+WoW.advance(6)
+Minimap:SetZoom(1)                                         -- its event comes later
+WoW.advance(0.6)
+before = sounds()
+Minimap:SetZoom(1)
+table.insert(WoW.blips, { "Silverleaf", -70, 30, kind = "herbs" })
+WoW.advance(0.6)
+eq(sounds(), before + 1, "a call to the same zoom: a new node still alerts")
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+zoom(0)
+WoW.advance(0.6)
+
+-- Out of a cave or a tunnel: the client swaps the zoom with no call and fires
+-- the event; the history is kept, so the ore in view on the way out alerts (#63).
+WoW.advance(6)
+local minerals = { name = "Find Minerals", spellID = 2580, active = true }
+table.insert(WoW.tracking, minerals)
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+WoW.skillLines[186] = { skillID = 186, name = "Mining", rank = 50, modifier = 0, maxRank = 75 }
+NR.db.learned.enUS = NR.db.learned.enUS or {}
+NR.db.learned.enUS["Copper Vein"] = { kind = "ore", source = "gather" }
+NR.db.learned.enUS["Tin Vein"] = { kind = "ore", source = "gather" }
+WoW.advance(0.6)
+WoW.advance(6)
+before = sounds()
+WoW.indoors = true
+Minimap._zoom = 5                                          -- the indoor zoom, as left
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+local outside = WoW.blips
+WoW.blips = { outside[1] }                                 -- the smaller view inside
+WoW.advance(0.6)
+WoW.advance(25)                                            -- past the blink window
+WoW.indoors = false
+Minimap._zoom = 0
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+local back = { "Copper Vein", 60, -50, kind = "ore" }
+WoW.blips = { outside[1], back }
+WoW.advance(0.6)
+eq(sounds(), before + 1, "out of a tunnel: the ore in view alerts")
+-- A short visit: what dropped on the way in and is back within 20 s is the same node.
+WoW.advance(6)
+before = sounds()
+WoW.indoors = true
+Minimap._zoom = 5
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+WoW.blips = { outside[1] }
+WoW.advance(0.6)
+WoW.indoors = false
+Minimap._zoom = 0
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+WoW.blips = { outside[1], back }
+WoW.advance(0.6)
+eq(sounds(), before, "a short visit: the ore seen before going in doesn't alert again")
+-- Inside at the indoor zoom (5), the player zooms out to 0, the outdoor zoom
+-- remembered before the swap: still the player's zoom, silent.
+WoW.advance(25)
+before = sounds()
+WoW.indoors = true
+Minimap._zoom = 5
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+WoW.advance(0.6)
+zoom(0)
+table.insert(WoW.blips, { "Tin Vein", 30, 30, kind = "ore" })
+WoW.advance(0.6)
+eq(sounds(), before, "the player's zoom inside, back to the outdoor level: a silent baseline")
+WoW.indoors = false
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+WoW.blips = { outside[1], back }
+WoW.advance(0.6)
+-- A zoom the client reports as unreadable: a reset, as before.
+WoW.advance(6)
+before = sounds()
+Minimap._zoom = WoW.Secret("zoom")
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+table.insert(WoW.blips, { "Copper Vein", -30, 70, kind = "ore" })      -- no recent drop of its name
+WoW.advance(0.6)
+eq(sounds(), before, "an unreadable zoom: a silent baseline")
+WoW.advance(6)
+Minimap:SetZoom(WoW.Secret("zoom"))                        -- a call while it's still unreadable
+table.insert(WoW.blips, { "Copper Vein", -50, -50, kind = "ore" })
+WoW.advance(0.6)
+eq(sounds(), before, "...and a call while unreadable: a silent baseline too")
+Minimap._zoom = 0
+WoW.fire("MINIMAP_UPDATE_ZOOM")
+WoW.blips = { outside[1] }
+minerals.active = false
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+WoW.advance(0.6)
 
 -- The map resized (Edit Mode, a skin): silent too.
 local rect = Minimap._rect

@@ -33,10 +33,12 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   standing start, with provisional icons for what's left unexplained (#67). Checked in game on
   70450 (#67's merged pair offline only).
 - Unreleased: the skill a node needs in the minimap's tooltip (#62). Checked in game on 70450 (a
-  node above the skill, red, not yet seen there).
+  node above the skill, red, not yet seen there). Nodes alerting on the way out of a cave or a
+  tunnel (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call
+  does (measured on 70450; the fix offline only, no node was in view at a swap).
 
 Next: the public API for minimap skins (#4); the experimental ideas #61 (a marker in the world),
-#63 (grey names in caves). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+#63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
@@ -141,7 +143,8 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   instance and spot within 8 yards; a reload clears them). Tests never load `Libs\`: the stubs fake
   LibDataBroker, LibDBIcon and `MenuUtil`.
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
-  events, `/nr`.
+  events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
+  `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
   prints additions with their provenance for review, writes with `--write`.
 - `Tools/Reference/classic-enUS.lua`: the classic herb and ore names (English, not measured: a
