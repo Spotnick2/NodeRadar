@@ -27,5 +27,6 @@ Icons.lua
 Compass.lua
 Options.lua
 TrackOptions.lua
+Tooltip.lua
 Minimap.lua
 NodeRadar.lua

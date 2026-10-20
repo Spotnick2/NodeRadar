@@ -32,9 +32,11 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   compass with Alt-drag (#57); merged pairs keeping their icons (#66), peeled into two from a
   standing start, with provisional icons for what's left unexplained (#67). Checked in game on
   70450 (#67's merged pair offline only).
+- Unreleased: the skill a node needs in the minimap's tooltip (#62). Checked in game on 70450 (the
+  red line for no profession offline only).
 
 Next: the public API for minimap skins (#4); the experimental ideas #61 (a marker in the world),
-#62 (the skill in the minimap tooltip), #63 (grey names in caves). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+#63 (grey names in caves). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
@@ -56,12 +58,13 @@ live game, WoWInterface (#37).
 
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Track.lua` → `Icons.lua` → `Compass.lua` → `Options.lua` → `TrackOptions.lua` → `Minimap.lua` →
+`Track.lua` → `Icons.lua` → `Compass.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
 `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
   failure), `Fail` (the one failure recorder, `/nr failures`), secret-safe readers, the player's
-  state (`Speed`, `Casting`, `Dead`, `Gamepad`); `MEASURED_ON_BUILD`.
+  state (`Speed`, `Casting`, `Dead`, `Gamepad`); `API.Skill(line, base)`: a rank, or nil and
+  `"absent"` (no profession) or `"unreadable"` (#62); `MEASURED_ON_BUILD`.
 - `Data/Nodes.lua`: the shipped library, `NodeRadar.LIBRARY[locale][name] = "herbs" | "ore"`, and
   `NodeRadar.NODE_INFO[locale][name] = { skill, item }` (#26). **Generated**: change it with
   `Tools/export_nodes.lua`, never by hand.
@@ -123,6 +126,12 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
 - `TrackOptions.lua` (#47): the Herbs and Ores sub-pages (`Settings.RegisterCanvasLayoutSubcategory`
   right after the main page, from `Options.Register`), one builder; item names asked for with
   `RequestLoadItemDataByID` and filled on `ITEM_DATA_LOAD_RESULT`.
+- `Tooltip.lua` (#62, `tooltipSkill`, on): "Requires Herbalism (15)" in the minimap's hover
+  tooltip, one line per distinct known node (`Learn.Info`'s skill), coloured by
+  `TrackOptions.colour` at the **effective** rank (no profession: red; unreadable: no line). A
+  `TooltipDataProcessor` post-call on the MinimapMouseover type (21), registered at login: it only
+  adds lines to `GameTooltip`, so `C_TooltipInfo.GetMinimapMouseover` (what `Scan` reads) never
+  sees them. Any secret in what it reads: no line; its body in a `pcall`, a failure recorded once.
 - `Minimap.lua` (#46): NodeRadar's minimap button (GuildSpy's recipe: a LibDataBroker launcher shown
   by LibDBIcon, `NodeRadarDB.minimap` its table, `minimapButton`), its context menu
   (`MenuUtil.CreateContextMenu`: the radar, icons and compass toggles, which close it; the snooze

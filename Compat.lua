@@ -79,18 +79,24 @@ function API.Gamepad()
     return ok and on == true
 end
 
--- A gathering skill with its bonuses (rank + modifier), or nil: the character
--- hasn't the profession, or it's unreadable. Plain on 70450 (#26). With `base`,
--- the rank alone: gear and buffs move only the modifier (#47).
+-- A gathering skill with its bonuses (rank + modifier), or nil and why:
+-- "absent" (the character hasn't the profession: no info, measured on 70450)
+-- or "unreadable" (the call failed, or a part is secret). Plain on 70450 (#26).
+-- With `base`, the rank alone: gear and buffs move only the modifier (#47).
 function API.Skill(lineID, base)
     local f = C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID
-    if type(f) ~= "function" then return nil end
+    if type(f) ~= "function" then return nil, "unreadable" end
     local ok, info = pcall(f, lineID)
-    if not ok or API.IsSecret(info) or type(info) ~= "table" then return nil end
-    local rank, bonus = API.Num(info.rank), API.Num(info.modifier)
-    if not rank or (info.modifier ~= nil and not bonus) then return nil end
+    if not ok or API.IsSecret(info) then return nil, "unreadable" end
+    if info == nil then return nil, "absent" end
+    if type(info) ~= "table" then return nil, "unreadable" end
+    local rank, modifier = info.rank, info.modifier
+    -- Each tested for a secret before any comparison (Codex, #62).
+    if API.IsSecret(rank) or API.IsSecret(modifier) then return nil, "unreadable" end
+    rank = API.Num(rank)
+    if not rank or (modifier ~= nil and not API.Num(modifier)) then return nil, "unreadable" end
     if base then return rank end
-    return rank + (bonus or 0)
+    return rank + (modifier or 0)
 end
 
 -- Cultivation, the Tauren racial: a herb above the skill grows a copy anyone

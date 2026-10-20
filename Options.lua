@@ -229,6 +229,9 @@ local function build()
     -- #46: the minimap button (left-click: quick settings and the snooze; right-click: this page).
     size = checkbox(page, size, "A NodeRadar button on the minimap (left-click: quick settings; right-click: "
         .. "this page)", "minimapButton")
+    -- #62: the skill a node needs, in the minimap's own tooltip.
+    size = checkbox(page, size, "Show the skill a node needs in the minimap's tooltip, coloured by difficulty",
+        "tooltipSkill")
 
     -- #29: experimental, off by default, under its own heading.
     local compassHead = heading(page, size, "The compass (experimental)")
