@@ -208,6 +208,16 @@ Button.Click(btn, "LeftButton")
 check(WoW.menu and WoW.menu.owner == nil, "a click from a hidden button: the menu at the cursor")
 NR.Set("minimapButton", true)
 eq(btn._shown, true, "the setting on: shown")
+-- /nr reset brings a hidden button back (Codex, PR #65), LibDBIcon's table kept.
+NR.Set("minimapButton", false)
+local saved, before = NR.db.minimap, {}
+for k, v in pairs(NR.db) do before[k] = v end
+SlashCmdList.NODERADAR("reset")
+eq(btn._shown, true, "/nr reset: the hidden button shown again")
+eq(NR.db.minimap.hide, false, "...LibDBIcon's table says so")
+check(NR.db.minimap == saved, "...the same table LibDBIcon holds")
+for k, v in pairs(before) do NR.db[k] = v end              -- the rest of this file's settings back
+NR.db.minimapButton = true
 -- The tooltip.
 fresh()
 a = node("Silverleaf", 0, 30)
