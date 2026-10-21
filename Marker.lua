@@ -18,12 +18,12 @@ Marker.SETTLE = 0.3    -- seconds hidden after a new waypoint (Blizzard's SuperT
 Marker.AGREE = 10      -- yards: the navigation's distance must agree with ours this well
 Marker.NEAR = 15       -- yards: hidden this close, as the compass (Lueur's glow takes over)
 Marker.CVAR = "showInGameNavigation"
-Marker.STAR = 40       -- a star's size at scale 1 (22 was a speck: the world round, 70450)
-Marker.SPREAD = 24     -- how far from the spot a star can light
-Marker.GLOW = 90
+Marker.STAR = 48       -- the reference's long diagonal rays, varied per flare
+Marker.SPREAD = 30     -- how far from the spot a star can light
+Marker.GLOW = 96
 Marker.STARS = 4
-Marker.TEAL = { 0.55, 1, 0.9 }    -- the glow
-Marker.WHITE = { 0.9, 1, 1 }      -- the stars: white, a cyan tinge
+Marker.TEAL = { 0.35, 0.9, 0.75 } -- a faint haze, not a bright central orb
+Marker.WHITE = { 1, 1, 1 }       -- the star texture carries its mint/blue halo
 Marker.NEAR_SCALE, Marker.FAR_SCALE = 1.3, 0.7   -- the scale near and far (60 / yards between them)
 Marker.HIDDEN_EVERY = 0.1  -- seconds between checks while armed but hidden (behind, settling)
 Marker.RETRY = 0.5     -- seconds between tries while ours is installed but not wanted (the map open, combat)
@@ -181,19 +181,23 @@ local function anim(group, kind, from, to, duration, order, delay)
     return a
 end
 
--- A star lights at a new spot each time round, after a short random wait.
-local function place(s)
+-- The reference: diagonal flares of different sizes, a little upward drift,
+-- and independent pauses. The engine handles the motion between flares.
+local function place(s, delay)
     local r, a = Marker.SPREAD * math.sqrt(math.random()), math.random() * 2 * math.pi
     s:ClearAllPoints()
     s:SetPoint("CENTER", root, "CENTER", r * math.cos(a), r * math.sin(a) * 0.6)
-    s.wait:SetStartDelay(0.05 + 0.25 * math.random())
+    local size = Marker.STAR * (0.7 + 0.5 * math.random())
+    s:SetSize(size, size)
+    s.drift:SetOffset(-2 - 5 * math.random(), 3 + 5 * math.random())
+    s.wait:SetStartDelay(delay or (0.08 + 0.22 * math.random()))
 end
 
 local function build()
     if glow then return end
     glow = part("SonarGlow", Marker.GLOW, "ARTWORK", Marker.TEAL)
     local g = glow:CreateAnimationGroup()
-    anim(g, "Alpha", 0.5, 0.85, 1.2, 1)
+    anim(g, "Alpha", 0.06, 0.14, 1.6, 1)
     g:SetLooping("BOUNCE")
     glow.anim = g
     for i = 1, Marker.STARS do
@@ -201,20 +205,28 @@ local function build()
         s:SetAlpha(0)                                  -- seen only while its animation runs
         local ag = s:CreateAnimationGroup()
         s.wait = anim(ag, "Alpha", 0, 0, 0.01, 1, 0)
-        anim(ag, "Alpha", 0, 1, 0.15, 2)
-        anim(ag, "Scale", 0.3, 1, 0.15, 2)
-        anim(ag, "Alpha", 1, 0, 0.35, 3)
-        anim(ag, "Scale", 1, 0.4, 0.35, 3)
+        anim(ag, "Alpha", 0, 1, 0.12, 2):SetSmoothing("OUT")
+        anim(ag, "Scale", 0.2, 1, 0.12, 2):SetSmoothing("OUT")
+        anim(ag, "Alpha", 1, 0, 0.54, 3):SetSmoothing("OUT")
+        anim(ag, "Scale", 1, 0.25, 0.54, 3):SetSmoothing("IN")
+        s.drift = ag:CreateAnimation("Translation")
+        s.drift:SetDuration(0.54)
+        s.drift:SetOrder(3)
         ag:SetScript("OnFinished", function() place(s); ag:Play() end)
         s.anim = ag
-        place(s)
-        s.wait:SetStartDelay((i - 1) * 0.5 / Marker.STARS)   -- staggered, so one is always lit
         stars[i] = s
     end
 end
 
 local function play(on)
-    for _, f in ipairs(stars) do if on then f.anim:Play() else f.anim:Stop() end end
+    for i, f in ipairs(stars) do
+        if on then
+            place(f, (i - 1) * 0.82 / Marker.STARS)
+            f.anim:Play()
+        else
+            f.anim:Stop()
+        end
+    end
     if glow then if on then glow.anim:Play() else glow.anim:Stop() end end
 end
 

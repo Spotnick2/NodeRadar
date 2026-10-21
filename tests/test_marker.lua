@@ -467,5 +467,6 @@ eq(WoW.cvars.showInGameNavigation, "0", "...the CVar put back")
 
 -- Every widget method called exists on Forever (the dump), the animation's among them.
 checkMethods({ "AnimationGroup:SetLooping", "Alpha:SetFromAlpha", "Alpha:SetToAlpha", "Scale:SetScaleFrom",
-    "Scale:SetScaleTo", "Alpha:SetStartDelay", "Texture:SetBlendMode", "Frame:SetScale" })
+    "Scale:SetScaleTo", "Alpha:SetStartDelay", "Alpha:SetSmoothing", "Scale:SetSmoothing",
+    "Translation:SetOffset", "Translation:SetDuration", "Translation:SetOrder", "Texture:SetBlendMode", "Frame:SetScale" })
 done("test_marker")

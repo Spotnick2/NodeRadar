@@ -128,8 +128,9 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   `Icons.Update` → `Compass.Reconcile` → `Marker.Update` → `Alert.Update` → `Learn.Consider`, then a
   learner experiment just started clears the records.
 - `Marker.lua` (#61, `marker`, experimental, off by default): twinkling stars in the world on the
-  compass's target (FFXIV's gathering sparkle: `Media/MarkerStar.tga` from `Tools/make_media.py` and
-  `SonarGlow`, tinted teal, engine animation groups), on the navigation frame (`C_Navigation.GetFrame()`)
+  compass's target (FFXIV's gathering sparkle: diagonal white flares with mint/blue halos,
+  `Media/MarkerStar.tga` from `Tools/make_media.py`, faint teal `SonarGlow`, engine alpha/scale/drift
+  animation groups), on the navigation frame (`C_Navigation.GetFrame()`)
   of a user waypoint we set on the node and super-track. One reconciler (`Marker.Reconcile`: what
   should be against what is, read again each run) from the sweeps, the waypoint and super-track
   events, combat's end, the frame's life and the toggles. It **steps aside**: never the player's

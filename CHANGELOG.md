@@ -7,6 +7,8 @@
   compass's, when it's on). It puts your map
   waypoint on the node and tracks it, and steps aside whenever you have a waypoint of your own or
   track a quest. Off by default: `/nr marker`, or Options.
+  The sparkle follows the FFXIV reference: diagonal white flares with mint and blue halos,
+  staggered sizes and timing, gentle drift, and a faint background haze.
 
 ## v1.4.0
 

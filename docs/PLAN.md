@@ -1664,15 +1664,16 @@ off screen: the compass covers direction).
   (`CVAR_UPDATE` for it outside our call) cancels the restore: theirs stands.
 
 **The stars** (art and animation, possibly handed to Codex): a frame of ours on `UIParent`,
-`CENTER` on the navigation frame, no mouse. A soft teal glow and 3 or 4 four-pointed stars (white
-cores, a cyan-green tinge), each popping in at a random spot within the glow, flaring and fading in
-about half a second, staggered so one is always lit; their spots drawn again each loop. Art from
-`Tools/make_media.py` (`Media/MarkerStar.tga`; the glow is `SonarGlow`), engine animation groups
-(scale and alpha), no per-frame Lua for the twinkle. Scaled by the distance (`C_Navigation.GetDistance`)
-between a floor (still seen at 200 yards) and a cap. The world round (70450): 22-unit stars were a
-speck at 140 yards; now 40, the glow 90, the scale 60 / yards between 0.7 and 1.3, the stars white
-with a cyan tinge over a teal glow. Blizzard also draws a small gold diamond on the spot, above its
-distance. A per-frame `OnUpdate` only while shown: the
+`CENTER` on the navigation frame, no mouse. Following the owner's FFXIV video (2026-10-18): four
+diagonal stars, their lower-left/upper-right rays longer, white cores with mint halos fading to
+blue, over a faint teal haze. Each flares in 0.12 s and shrinks and fades over 0.54 s, drifting a
+few units up and left. Random spots, sizes (0.7 to 1.2 times 48 units), and pauses (0.08 to 0.3 s)
+per flare; staggered again whenever shown. Art from `Tools/make_media.py` (`Media/MarkerStar.tga`;
+the haze is `SonarGlow`, 96 units, alpha 0.06 to 0.14), engine animation groups (scale, alpha and
+translation), no per-frame Lua for the twinkle. The world round (70450): 22-unit stars were a
+speck at 140 yards. The scale stays 60 / yards between 0.7 and 1.3. This animation revision needs
+an in-game comparison; the navigation anchor still has no terrain height. Blizzard also draws a
+small gold diamond on the spot, above its distance. A per-frame `OnUpdate` only while shown: the
 distance, the clamp, the valid position.
 
 **Cost:** nothing while off or with no waypoint of ours on the target; armed but hidden (behind,
