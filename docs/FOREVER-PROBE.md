@@ -696,3 +696,16 @@ ask was skipped; the probe now counts only a whole coloured line ending in the s
 | Super-tracked by something else | 0 of 469 s (no quest accepted: both quest steps skipped, so the auto super-track is still unmeasured) |
 | Far (100 yd) | "too far to see the node due to terrain" (unsure) |
 
+### Marker occlusion trial (owner's beta feedback, 2026-10-20) (#61)
+
+The owner accepted the revised sparkle animation. A subsequent trial hid the stars whenever
+`C_Navigation.GetTargetState()` returned `Enum.NavigationState.Occluded`, retaining the waypoint
+and checking for visibility again while hidden. The owner reported "no sparkles at all, just the
+blizzard diamond". The gate was removed and the accepted sparkle version redeployed.
+
+This is a failed visibility trial, not a measured clear/blocked state comparison: no raw state
+values or Lua errors were supplied. It is consistent with the gate rejecting the projected
+waypoint throughout the test, but does not establish why or prove the API always reports occlusion.
+Before another attempt, capture the state in both views; the waypoint's height still differs from
+the gathering object's on uneven terrain.
+
