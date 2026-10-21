@@ -128,10 +128,6 @@ function CreateFrame(ftype, name, parent, template)
     w._template = template
     -- The radio template's own label (CheckButtonTemplates.xml: parentKey "text").
     if template == "UIRadioButtonTemplate" then w.text = Methods.CreateFontString(w) end
-    -- The slider template's labels (UISliderTemplateWithLabels: parentKeys Text, Low, High).
-    if template == "OptionsSliderTemplate" and ftype == "Slider" then
-        w.Text, w.Low, w.High = Methods.CreateFontString(w), Methods.CreateFontString(w), Methods.CreateFontString(w)
-    end
     table.insert(WoW.frames, w)
     if parent then
         parent._children = parent._children or {}
@@ -164,24 +160,6 @@ function Methods.GetChecked(w) return w._checked == true end
 function WoW.click(w)
     if w._type == "CheckButton" then w._checked = not w._checked end
     if w._scripts.OnClick then w._scripts.OnClick(w, "LeftButton") end
-end
-
--- Sliders: SetValue clamps to the range and runs OnValueChanged when the value
--- changes, as the client does for a value set from code too; WoW.drag(sl, v)
--- is the player's drag.
-function Methods.SetMinMaxValues(w, lo, hi) w._min, w._max = lo, hi end
-function Methods.GetMinMaxValues(w) return w._min, w._max end
-function Methods.SetValue(w, v)
-    if w._min then v = math.max(w._min, math.min(w._max, v)) end
-    if v == w._value then return end
-    w._value = v
-    if w._scripts.OnValueChanged then w._scripts.OnValueChanged(w, v, false) end
-end
-function Methods.GetValue(w) return w._value end
-function WoW.drag(w, v)
-    if w._min then v = math.max(w._min, math.min(w._max, v)) end
-    w._value = v
-    if w._scripts.OnValueChanged then w._scripts.OnValueChanged(w, v, true) end
 end
 
 function Methods.Show(w) w._shown = true; if w._scripts.OnShow then w._scripts.OnShow(w) end end

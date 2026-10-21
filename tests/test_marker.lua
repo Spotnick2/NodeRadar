@@ -29,8 +29,7 @@ local function place()
     local list = {}
     for _, n in ipairs(nodes) do
         if not n.gone then
-            list[#list + 1] = { n.name, -(n.west - WoW.pos[2]) / K(), (n.north - WoW.pos[1]) / K(), kind = "herbs",
-                                text = n.text }
+            list[#list + 1] = { n.name, -(n.west - WoW.pos[2]) / K(), (n.north - WoW.pos[1]) / K(), kind = "herbs" }
         end
     end
     WoW.blips = list
@@ -85,8 +84,6 @@ check(M.root._parent == UIParent and M.root._mouse == false, "the stars: a child
 --------------------------------------------------------------------------------
 
 NR.Set("marker", true)
-eq(NR.db.markerRange, 40, "the stars within 40 yards by default")
-NR.Set("markerRange", 100)                                 -- the nodes below sit about 58 yards off
 eq(WoW.cvars.showInGameNavigation, "1", "on: Blizzard's navigation on")
 eq(NR.db.markerCVar, "0", "...its old value kept to put back")
 fresh()
@@ -467,49 +464,6 @@ SlashCmdList.NODERADAR("reset")
 eq(NR.db.marker, false, "/nr reset: the marker off (the default)")
 eq(WoW.waypoint, nil, "...ours cleared")
 eq(WoW.cvars.showInGameNavigation, "0", "...the CVar put back")
-
--- How close (the owner, 2026-10-21): the stars only within markerRange, 40 by
--- default, growing as the player closes in; none for a node the minimap marks
--- above or below (the sight round, 70450: they'd sit on the ground under it).
-NR.Set("marker", true)
-Compass.ClearSnoozes()                                     -- the earlier Silverleaf here was snoozed
-fresh()
-eq(NR.db.markerRange, 40, "/nr reset: the range back to 40")
-local f = node("Silverleaf", 0, 40)
-step(1); step(1)
-check(onNode(f), "beyond the range: the waypoint set all the same")
-settle(f)
-check(yards(f) > 50, "the node " .. yards(f) .. " yards off")
-eq(shown(), false, "...the range 40: no stars")
-WoW.pos[1] = f.north - 39
-settle(f)
-eq(shown(), true, "39 yards: shown")
-check(near(M.root:GetScale(), 0.7 + 0.6 / 25, 1e-6), "...small at the range's edge: " .. M.root:GetScale())
-WoW.pos[1] = f.north - 16
-settle(f)
-check(near(M.root:GetScale(), 0.7 + 0.6 * 24 / 25, 1e-6), "...grown close in: " .. M.root:GetScale())
-WoW.pos[1] = f.north - 39
-settle(f)
-SlashCmdList.NODERADAR("marker 30")
-eq(NR.db.markerRange, 30, "/nr marker 30: the range")
-frames(0.2)
-eq(shown(), false, "...39 yards now beyond it: hidden")
-SlashCmdList.NODERADAR("marker 500")
-eq(NR.db.markerRange, 30, "/nr marker 500: refused, the range kept")
-check(WoW.chat[#WoW.chat]:find("20%-100"), "...the bounds said: " .. WoW.chat[#WoW.chat])
-eq(NR.db.marker, true, "...the marker still on")
-NR.Set("markerRange", 40)
-frames(0.2)
-eq(shown(), true, "40 again: shown")
-f.text = "|TInterface\Minimap\Minimap-PositionArrows:0:0:0:0:16:32:0:16:0:16|t" .. f.name
-step(1)
-frames(0.2)
-eq(Compass.Chosen().height, "above", "the minimap marks it above")
-eq(shown(), false, "...no stars")
-f.text = nil
-step(1)
-frames(0.2)
-eq(shown(), true, "level again: shown")
 
 -- Every widget method called exists on Forever (the dump), the animation's among them.
 checkMethods({ "AnimationGroup:SetLooping", "Alpha:SetFromAlpha", "Alpha:SetToAlpha", "Scale:SetScaleFrom",
