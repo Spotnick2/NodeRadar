@@ -1650,11 +1650,11 @@ off screen: the compass covers direction).
 - **Drawn only for our waypoint:** `IsSuperTrackingUserWaypoint()` true and no other
   `IsSuperTracking*` (quest, corpse, content, map pin, vignette) true, since the navigation frame is
   shared.
-- **Occlusion trial withdrawn (2026-10-20):** gating the stars on
-  `C_Navigation.GetTargetState() == Enum.NavigationState.Occluded` left the owner with no
-  sparkles, only Blizzard's diamond. The raw state was not captured, so its terrain behaviour
-  is still unverified. Keep the working visibility rules; measure the state in clear and blocked
-  views before trying this gate again (docs/FOREVER-PROBE.md).
+- **No occlusion or height gate (measured 2026-10-21, `/fp steps nr sight`):**
+  `C_Navigation.GetTargetState()` reads `Occluded` in a clear view and behind a rock alike, so the
+  trial gate hid the stars everywhere; `UnitPosition` gives no height, and a waypoint's z doesn't
+  move the navigation's marker. Nothing tells whether the node is in sight or raised above the
+  ground under it (docs/FOREVER-PROBE.md).
 - **The navigation frame's life:** `C_Navigation.GetFrame()` taken at `NAVIGATION_FRAME_CREATED`
   and dropped (anchors cleared) at `NAVIGATION_FRAME_DESTROYED`, as Blizzard's `SuperTrackedFrame`
   does; nil right after a reload (measured). After a new waypoint, the stars hide for a settling

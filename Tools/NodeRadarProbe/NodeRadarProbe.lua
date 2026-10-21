@@ -5563,4 +5563,314 @@ Probe:Steps("world", steps)
 NS._worldTest = { watch = watch, uninstall = uninstall }
 end)()
 
+;(function()
+--------------------------------------------------------------------------------
+-- What the stars can know about seeing the node (#61, the owner's feedback on
+-- 2026-10-20: stars over a crest or a rock that hides the node, and at the
+-- foot of a node up on a ledge). C_Navigation.GetTargetState in a clear view,
+-- behind a crest, a rock, on a ledge (the earlier logs read Occluded nearly
+-- everywhere); how far a node's model draws; the height arrow against the
+-- height difference on a straight approach (the node's height taken where the
+-- player stands on it, if UnitPosition gives one); whether a waypoint's z
+-- moves Blizzard's marker. A sampler runs every 0.5 s while the round does.
+-- NodeRadar's settings put back at the summary.
+--------------------------------------------------------------------------------
+
+local KEY = Probe.name .. "/sight"
+local HOLD = 10            -- seconds held still in each view
+local function db()
+    NodeRadarProbeDB.sight = NodeRadarProbeDB.sight or { log = {}, samples = {} }
+    return NodeRadarProbeDB.sight
+end
+local function note(text)
+    local s = db()
+    if #s.log < 200 then s.log[#s.log + 1] = ("%.1f %s"):format(GetTime(), text) end
+    say("sight: " .. text)
+    return text
+end
+local function M() local n = nr(); return n and n.Marker and n.Marker._test end
+local function shown() local m = M(); return m ~= nil and m.root:IsShown() end
+local function ours() local m = M(); return m and m.ours() end
+local function target() local m = M(); local w = m and m.want(); return w and w.record end
+local function running()
+    local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+    return type(st) == "table" and st.active == KEY
+end
+
+-- The player: north, west, and the height if UnitPosition gives one (0 reads nil).
+local function pos()
+    local ok, n, w, z = pcall(UnitPosition, "player")
+    n, w, z = ok and num(n), ok and num(w), ok and num(z)
+    if n and w then return n, w, z ~= 0 and z or nil end
+end
+local function yardsTo(r)
+    local pn, pw = pos()
+    if r and pn then return math.sqrt((r.north - pn) ^ 2 + (r.west - pw) ^ 2) end
+end
+local function navCenter()
+    local f = wpRead(C_Navigation.GetFrame)
+    if type(f) ~= "table" then return nil end
+    local ok, x, y = pcall(f.GetCenter, f)
+    if ok and num(x) and num(y) then return x, y end
+end
+local function stateName(v)
+    local e = type(Enum) == "table" and rawget(Enum, "NavigationState")
+    if type(e) == "table" then
+        for k, n in pairs(e) do if n == v then return k end end
+    end
+    return str(v)
+end
+local function fmt(v) return num(v) and ("%.1f"):format(v) or "?" end
+
+-- The sampler: every 0.5 s while the round runs, tagged with the view held.
+local sampler = { frame = CreateFrame("Frame"), tick = 0 }
+local function sample()
+    local r = sampler.record or target()
+    local _, _, z = pos()
+    local s = db().samples
+    if #s >= 1500 then return end
+    s[#s + 1] = { at = GetTime(), tag = sampler.tag, state = stateName(wpRead(C_Navigation.GetTargetState)),
+        nav = num(wpRead(C_Navigation.GetDistance)), ours = yardsTo(r), z = z, height = r and (r.height or "level"),
+        name = r and r.name, stars = shown(), clamped = wpRead(C_Navigation.WasClampedToScreen) == true,
+        valid = wpRead(C_Navigation.HasValidScreenPosition) == true }
+end
+local uninstall
+local function install()
+    if sampler.on then return end
+    sampler.on, sampler.tick = true, 0
+    sampler.frame:SetScript("OnUpdate", function(_, elapsed)
+        if not running() then uninstall(); return end
+        sampler.tick = sampler.tick + elapsed
+        if sampler.tick < 0.5 then return end
+        sampler.tick = 0
+        sample()
+    end)
+end
+function uninstall()
+    sampler.frame:SetScript("OnUpdate", nil)
+    sampler.on, sampler.tag, sampler.record = nil, nil, nil
+end
+
+-- One view's samples, as a line: the states, the stars, the distances, the heights.
+local function counts(list, field)
+    local c, keys = {}, {}
+    for _, s in ipairs(list) do
+        local k = tostring(s[field])
+        if not c[k] then c[k] = 0; keys[#keys + 1] = k end
+        c[k] = c[k] + 1
+    end
+    table.sort(keys)
+    local out = {}
+    for _, k in ipairs(keys) do out[#out + 1] = k .. " " .. c[k] end
+    return table.concat(out, ", ")
+end
+local function tagged(tag)
+    local out = {}
+    for _, s in ipairs(db().samples) do if s.tag == tag then out[#out + 1] = s end end
+    return out
+end
+local function summary(tag)
+    local list = tagged(tag)
+    if #list == 0 then return tag .. ": no samples" end
+    local lo, hi = math.huge, -math.huge
+    for _, s in ipairs(list) do
+        if s.ours then lo, hi = math.min(lo, s.ours), math.max(hi, s.ours) end
+    end
+    return ("%s: %d samples; state %s; stars %s; clamped %s; height %s; ours %s-%s yd, the navigation's %s"):format(
+        tag, #list, counts(list, "state"), counts(list, "stars"), counts(list, "clamped"), counts(list, "height"),
+        fmt(lo < math.huge and lo or nil), fmt(hi > -math.huge and hi or nil), fmt(list[#list].nav))
+end
+
+-- A view held still for HOLD seconds, NodeRadar's waypoint on its node; moving
+-- more than 2 yards starts it again.
+local holds = {}
+local function hold(tag, needStars)
+    return function()
+        if not nr() then return false, "NodeRadar isn't loaded" end
+        install()
+        local h = holds[tag]
+        if not ours() then if h then h.at = nil end; return false, "no waypoint of NodeRadar's yet" end
+        if needStars and not shown() and not (h and h.at) then return false, "no stars yet" end
+        local pn, pw = pos()
+        if not pn then return false, "no position" end
+        if not (h and h.at) or math.abs(pn - h.n) + math.abs(pw - h.w) > 2 then
+            for i = #db().samples, 1, -1 do if db().samples[i].tag == tag then table.remove(db().samples, i) end end
+            holds[tag] = { at = GetTime(), n = pn, w = pw }
+            sampler.tag = tag
+            return false, "holding still"
+        end
+        local left = HOLD - (GetTime() - h.at)
+        if left > 0 then sampler.tag = tag; return false, ("holding still: %.0f s"):format(left) end
+        sampler.tag, holds[tag] = nil, nil
+        return true, note(summary(tag))
+    end
+end
+
+-- The straight approach: from 40 yards or more to standing on the node; the
+-- node's height is the player's there, and each sample's arrow is set against
+-- the difference.
+local function approachLine()
+    local list = tagged("approach")
+    local last = list[#list]
+    local top = last and last.z
+    if not top then
+        return note("the approach: " .. summary("approach") .. "; UnitPosition gives no height, no threshold")
+    end
+    local by = {}
+    for _, s in ipairs(list) do
+        if s.z and s.ours and s.ours > 5 then
+            local h = tostring(s.height)
+            local d = top - s.z
+            local b = by[h] or { lo = math.huge, hi = -math.huge, n = 0 }
+            b.lo, b.hi, b.n = math.min(b.lo, d), math.max(b.hi, d), b.n + 1
+            by[h] = b
+        end
+    end
+    local parts = {}
+    for h, b in pairs(by) do parts[#parts + 1] = ("%s %d (the node %s to %s yd above you)"):format(h, b.n, fmt(b.lo), fmt(b.hi)) end
+    table.sort(parts)
+    return note(("the approach: the node's height %s (where you stood); %s; %s"):format(fmt(top),
+        table.concat(parts, "; "), summary("approach")))
+end
+
+-- Does a waypoint's z move Blizzard's marker? NodeRadar's marker off, the
+-- probe's own waypoint on the node with no z, then above and below; each read
+-- a poll after its set. NodeRadar's marker back on at the end.
+local lift
+local function liftWait()
+    local n = nr()
+    if not n then return false, "NodeRadar isn't loaded" end
+    install()
+    if not lift then
+        local o, r = ours(), target()
+        if not (o and r) then return false, "no waypoint of NodeRadar's yet: face a node 30-60 yards off" end
+        local _, _, z = pos()
+        local zs = z and { false, z + 15, z - 15 } or { false, 0, 200, -200 }
+        lift = { map = o.map, x = o.x, y = o.y, zs = zs, i = 0, out = {}, z = z, name = r.name }
+        n.Set("marker", false)
+        return false, "NodeRadar's marker off"
+    end
+    if lift.pending then
+        local x, y = navCenter()
+        local pt = wpRead(C_Map.GetUserWaypoint)
+        local back = type(pt) == "table" and not secret(pt) and pt.z
+        lift.out[#lift.out + 1] = ("z %s: the frame at %s, %s, the navigation's distance %s, valid %s, clamped %s, "
+            .. "read back z %s"):format(lift.set and fmt(lift.set) or "none", fmt(x), fmt(y),
+            fmt(num(wpRead(C_Navigation.GetDistance))), str(wpRead(C_Navigation.HasValidScreenPosition)),
+            str(wpRead(C_Navigation.WasClampedToScreen)), str(back))
+        lift.pending, lift.set = nil, nil
+    end
+    if lift.i >= #lift.zs then
+        pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
+        pcall(C_Map.ClearUserWaypoint)
+        n.Set("marker", true)
+        local line = ("a waypoint's z on %s (your height %s): %s"):format(lift.name, fmt(lift.z), table.concat(lift.out, "; "))
+        lift = nil
+        return true, note(line)
+    end
+    if lift.i == 0 and wpRead(C_Map.HasUserWaypoint) ~= false then return false, "NodeRadar's waypoint clearing" end
+    lift.i = lift.i + 1
+    local z = lift.zs[lift.i]
+    local ok, pt = pcall(UiMapPoint.CreateFromCoordinates, lift.map, lift.x, lift.y, z or nil)
+    if not ok then lift.i = #lift.zs; return false, "UiMapPoint: " .. str(pt) end
+    wpRead(C_Map.SetUserWaypoint, pt)
+    pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
+    lift.pending, lift.set = true, z or nil
+    return false, "set at z " .. (z and fmt(z) or "none")
+end
+
+local steps = {
+    rev = 1,
+    title = "What the marker's stars can know about seeing the node (#61)",
+    { text = "Have NodeRadar on with Find Herbs or Find Minerals on. Remove any map waypoint of your own and "
+          .. "untrack quests on screen. The round turns NodeRadar's marker on and puts your settings back at the end.",
+      wait = function()
+          local n = nr()
+          if not (n and n.Marker) then return false, "NodeRadar (with the marker) isn't loaded" end
+          local free, why = waypointFree()
+          if not free then return false, why end
+          NodeRadarProbeDB.sight = nil
+          holds, lift = {}, nil
+          local s = db()
+          s.saved = { marker = n.db.marker, cvar = wpRead(C_CVar.GetCVar, "showInGameNavigation"),
+                      pending = n.db.markerCVar }
+          n.Set("marker", true)
+          install()
+          local _, _, z = pos()
+          return true, note(("the marker on; UnitPosition's height %s"):format(z and fmt(z) or "none (0 or unreadable)"))
+      end },
+    { text = "A clear view: stand still 30-60 yards from a herb or ore you can see plainly, the stars showing, "
+          .. "and hold still 10 seconds.", wait = hold("clear", true), screenshot = "sight: clear", timeout = 900 },
+    { text = "Could you see the node itself, with the stars on it?", ask = true },
+    { text = "Behind a crest: move so a hill or the top of a slope hides the node, the stars still up, and hold "
+          .. "still 10 seconds. (Skip if you can't find one.)", wait = hold("crest"), screenshot = "sight: crest",
+      timeout = 900 },
+    { text = "Was the node hidden by the ground, and were the stars still showing? (Note box: what you saw.)",
+      ask = true },
+    { text = "Behind a rock: move so a rock, a tree or a building hides the node, and hold still 10 seconds. "
+          .. "(Skip if you can't.)", wait = hold("rock"), screenshot = "sight: rock", timeout = 900 },
+    { text = "Was the node hidden by the rock (or tree), and were the stars still showing?", ask = true },
+    { text = "Up on a ledge: a node up on a rock or a ledge, the stars showing, and hold still 10 seconds. "
+          .. "(Skip if there's none.)", wait = hold("ledge", true), screenshot = "sight: ledge", timeout = 900 },
+    { text = "Where were the stars: on the node, at the foot of the rock, or elsewhere? (Note box: how far off.)",
+      ask = true },
+    { text = "How far a node draws: ride away from the compass's node, looking back at it, and press Gone the "
+          .. "moment the herb or ore itself disappears. (Skip if another node takes over.)", button = "Gone",
+      run = function()
+          install()
+          local r = target()
+          if not r then error("no node targeted: turn toward one", 0) end
+          return note(("%s gone from view at %s yards (the navigation's %s); %s"):format(r.name, fmt(yardsTo(r)),
+              fmt(num(wpRead(C_Navigation.GetDistance))), shown() and "the stars showing" or "the stars hidden"))
+      end },
+    { text = "A straight approach, best up a slope or a rise: from 40 yards or more, walk to the compass's node "
+          .. "and stand on it (within 3 yards), then hold still.", wait = function()
+          if not nr() then return false, "NodeRadar isn't loaded" end
+          install()
+          if not sampler.record then
+              local r = target()
+              if not r then return false, "no node targeted" end
+              local d = yardsTo(r)
+              if not d or d < 40 then return false, ("%s at %s yards: back off to 40"):format(r.name, fmt(d)) end
+              for i = #db().samples, 1, -1 do
+                  if db().samples[i].tag == "approach" then table.remove(db().samples, i) end
+              end
+              sampler.record, sampler.tag = r, "approach"
+              return false, "walking in from " .. fmt(d) .. " yards"
+          end
+          local d = yardsTo(sampler.record)
+          if not d or d > 3 then sampler.still = nil; return false, ("%s yards to go"):format(fmt(d)) end
+          sampler.still = sampler.still or GetTime()
+          if GetTime() - sampler.still < 2 then return false, "standing on it" end
+          sample()
+          local line = approachLine()
+          sampler.record, sampler.tag, sampler.still = nil, nil, nil
+          return true, line
+      end, timeout = 900 },
+    { text = "A waypoint's height: stand still facing a node 30-60 yards off, the stars showing, and press "
+          .. "Test. The probe puts its own waypoint on the node with no height, then above and below, and reads "
+          .. "where Blizzard's marker lands; NodeRadar's marker comes back after.", button = "Test",
+      run = function() lift = nil; return "started" end },
+    { text = "Testing a waypoint's height (keep still).", wait = liftWait, screenshot = "sight: lift",
+      timeout = 120 },
+    { text = "The summary; NodeRadar's marker setting and the navigation option put back.", auto = true,
+      run = function()
+          local n, s = nr(), db()
+          n.Set("marker", s.saved and s.saved.marker or false)
+          if s.saved and type(s.saved.cvar) == "string" and not s.saved.cvar:find("^[A-Z]") then
+              wpRead(C_CVar.SetCVar, "showInGameNavigation", s.saved.cvar)
+              n.db.markerCVar = s.saved.pending       -- NodeRadar's own restore, as it was
+          end
+          uninstall()
+          local out = {}
+          for _, tag in ipairs({ "clear", "crest", "rock", "ledge", "approach" }) do out[#out + 1] = summary(tag) end
+          return note(table.concat(out, " | ") .. ("; the marker %s, showInGameNavigation %s"):format(
+              str(n.db.marker), str(wpRead(C_CVar.GetCVar, "showInGameNavigation"))))
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("sight", steps)
+NS._sightTest = { sampler = sampler, uninstall = uninstall }
+end)()
+
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }

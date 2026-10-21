@@ -357,6 +357,8 @@ end
 
 SlashCmdList = {}
 Enum = {}
+-- In the dump's order (70450); the probe's logs read 0, 1 and 2.
+Enum.NavigationState = { Invalid = 0, Occluded = 1, InRange = 2, Disabled = 3 }
 date = os.date
 -- The clock follows WoW.now, so a test that advances time also turns the
 -- second (ForeverProbe takes a screenshot just after it changes).
@@ -414,12 +416,12 @@ function UnitChannelInfo(unit) return nil end
 function UnitIsDeadOrGhost(unit) return WoW.dead end
 -- The player's world position (#28): WoW.pos = { north, west, instance } in
 -- UnitPosition's frame, its first value north and its second west
--- (HereBeDragons-2.0); WoW.posSecret makes it secret.
+-- (HereBeDragons-2.0); WoW.posSecret makes it secret; WoW.posZ its height (0 if nil).
 WoW.pos = { 0, 0, 1 }
 function UnitPosition(unit)
     if unit ~= "player" or not WoW.pos then return nil end
     if WoW.posSecret then return WoW.Secret("north"), WoW.Secret("west"), 0, WoW.pos[3] end
-    return WoW.pos[1], WoW.pos[2], 0, WoW.pos[3]
+    return WoW.pos[1], WoW.pos[2], WoW.posZ or 0, WoW.pos[3]
 end
 function IsInGroup() return WoW.group end
 function GetLocale() return WoW.locale end
@@ -525,11 +527,11 @@ function CreateVector2D(x, y) return { x = x, y = y } end
 C_Map.CanSetUserWaypointOnMap = function(map) return map == WoW.map end
 C_Map.GetUserWaypoint = function()
     local w = WoW.waypoint
-    if w then return { uiMapID = w.map, position = { x = w.x, y = w.y } } end
+    if w then return { uiMapID = w.map, position = { x = w.x, y = w.y }, z = w.z } end
 end
 C_Map.SetUserWaypoint = function(point)
     if not (point and point.uiMapID == WoW.map) then return false end
-    WoW.waypoint = { map = point.uiMapID, x = point.position.x, y = point.position.y }
+    WoW.waypoint = { map = point.uiMapID, x = point.position.x, y = point.position.y, z = point.z }
     WoW.fire("USER_WAYPOINT_UPDATED")
     return true
 end
@@ -584,7 +586,7 @@ C_Navigation = {
     HasValidScreenPosition = function() return WoW.superTracked == "waypoint" end,
     GetDistance = function() return WoW.navDistance end,
     WasClampedToScreen = function() return WoW.navClamped == true end,
-    GetTargetState = function() return 0 end,
+    GetTargetState = function() return WoW.navState or 0 end,
 }
 
 WoW.mounted = false
