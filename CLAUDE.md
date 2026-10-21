@@ -141,11 +141,14 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   for the idle interval and 2 s. Cleared at logout; at login only the saved point is adopted. `showInGameNavigation` held at 1 while on
   (`NodeRadarDB.markerCVar` to put back; someone else's change cancels that). The stars wait 0.3 s
   after a new waypoint and need the navigation's distance within 10 yards of ours; hidden within 15
-  yards, on a taxi, clamped at the screen's edge. Blizzard's own marker while ours covers the spot: its
+  yards, on a taxi, clamped at the screen's edge; beyond `markerRange` (40 yards, a slider: the game
+  can't tell whether the node is in sight, the sight round) or with a height arrow; growing from the
+  range in. Blizzard's own marker while ours covers the spot: its
   diamond hidden, its distance kept (the whole marker hidden with the compass on), a post-hook on
   `SuperTrackedFrame.UpdateAlpha`. docs/PLAN.md has every rule. Not yet in game.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
-  hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
+  hidden at creation, built on the first show, re-read on every show; radio groups, the marker's range
+  a slider). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.
 - `TrackOptions.lua` (#47): the Herbs and Ores sub-pages (`Settings.RegisterCanvasLayoutSubcategory`
   right after the main page, from `Options.Register`), one builder; item names asked for with

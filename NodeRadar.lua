@@ -26,6 +26,7 @@ local DEFAULTS = {
     compassLock = false, -- its position locked (#57; else Alt-drag moves it); compassX, compassY: where, nil home
     marker   = false,   -- experimental (#61): stars in the world on the compass's node, by the user waypoint;
                         -- markerCVar: showInGameNavigation's value to put back, while we hold it at 1
+    markerRange = 40,   -- yards: its stars show only this close (Marker.RANGE; the owner, 2026-10-21)
     snoozeFor = "session", -- the key binding's snooze (#46): "15", "30", "60" minutes or "session"
     minimapButton = true, -- NodeRadar's minimap button (#46); NodeRadarDB.minimap is LibDBIcon's table
     tooltipSkill = true, -- the skill a node needs, coloured, in the minimap's tooltip (#62)
@@ -265,7 +266,8 @@ local function status()
     API.Say("radar " .. onOff(db.enabled) .. "; only nodes you can gather " .. onOff(db.skillOnly)
         .. "; item icons on the minimap " .. onOff(db.icons) .. " (" .. tostring(db.iconStyle) .. ", "
         .. tostring(db.iconSize) .. "); the compass (experimental) " .. onOff(db.compass)
-        .. "; the marker in the world (experimental) " .. onOff(db.marker)
+        .. "; the marker in the world (experimental) " .. onOff(db.marker) .. " (within " .. tostring(db.markerRange)
+        .. " yards)"
         .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
         .. ", chat " .. onOff(db.chat) .. ", Blizzard's ping " .. onOff(db.ping) .. "; learning " .. onOff(db.learn)
         .. "; " .. db.cooldown .. " s between alerts")
@@ -311,7 +313,8 @@ local function help()
     API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
         .. "/nr compasssize small | medium | large. Hold Alt and drag it to move it; /nr compass lock | unlock | reset")
     API.Say("/nr marker: experimental, stars in the world on the compass's node, through your map waypoint "
-        .. "(off by default; it steps aside for a waypoint or quest you track)")
+        .. "(off by default; it steps aside for a waypoint or quest you track). /nr marker <yards>: how close "
+        .. "the stars show (40 by default)")
     API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
@@ -361,6 +364,14 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "compass" and (rest:lower() == "lock" or rest:lower() == "unlock") then
         NR.Set("compassLock", rest:lower() == "lock")
         API.Say("the compass's position " .. (db.compassLock and "locked" or "unlocked: hold Alt and drag it"))
+    elseif cmd == "marker" and tonumber(rest) then
+        local yards = tonumber(rest)
+        if yards >= NR.Marker.RANGE[1] and yards <= NR.Marker.RANGE[2] then
+            NR.Set("markerRange", yards)
+            API.Say(("the marker's stars within %d yards"):format(yards))
+        else
+            API.Say(("/nr marker <%d-%d>: how close the stars show, in yards"):format(NR.Marker.RANGE[1], NR.Marker.RANGE[2]))
+        end
     elseif cmd == "marker" then
         NR.Set("marker", not db.marker)
         API.Say("the marker in the world (experimental) " .. onOff(db.marker))

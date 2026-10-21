@@ -137,6 +137,31 @@ for _, child in ipairs({ O.page:GetRegions() }) do
 end
 check(named, "...named after its title (now 7 s)")
 
+-- The marker's range (#61): a slider, 20 to 100 by 5, its value in its title;
+-- a drag saves it on the step; a value set some other way shows and is kept.
+local function titled(text)
+    for _, child in ipairs({ O.page:GetRegions() }) do
+        if child._text == text then return true end
+    end
+    return false
+end
+local sl = O.sliders.markerRange
+check(sl and sl._template == "OptionsSliderTemplate", "the marker's range: a slider")
+eq(sl:GetValue(), 40, "...at 40 yards")
+check(select(1, sl:GetMinMaxValues()) == 20 and select(2, sl:GetMinMaxValues()) == 100, "...from 20 to 100")
+eq(sl.Low._text, "20 yards", "...its ends named")
+check(titled("Show the stars within: 40 yards"), "...the value in its title")
+eq(rawget(db, "markerRange"), nil, "...showing it saves nothing")
+WoW.drag(sl, 63)
+eq(db.markerRange, 65, "a drag saves it on the step")
+check(titled("Show the stars within: 65 yards"), "...and titles it")
+SlashCmdList.NODERADAR("marker 37")
+O.panel:Hide()
+O.panel:Show()
+eq(sl:GetValue(), 37, "/nr marker 37: the slider shows it")
+eq(db.markerRange, 37, "...and the refresh keeps it")
+check(titled("Show the stars within: 37 yards"), "...titled")
+
 -- The sound: choosing one plays it; the sonar ships with the addon.
 local function choose(_, value)
     for _, item in ipairs(WoW.menu(dd)) do if item.label == SOUND_LABELS[value] then return item.pick() end end
@@ -236,6 +261,8 @@ SlashCmdList.NODERADAR("reset")
 eq(rawget(db, "yards"), nil, "/nr reset: yards")
 eq(rawget(db, "soundKind"), nil, "...the sound")
 eq(db.yards, 4, "...back to 4 yards")
+eq(db.markerRange, 40, "...the marker's range back to 40")
 
-checkMethods({ "CheckButton:SetChecked", "Button:SetText" })
+checkMethods({ "CheckButton:SetChecked", "Button:SetText", "Slider:SetMinMaxValues", "Slider:SetValueStep",
+    "Slider:SetObeyStepOnDrag", "Slider:SetValue" })
 done("test_options")

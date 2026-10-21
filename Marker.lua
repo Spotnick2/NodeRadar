@@ -24,7 +24,8 @@ Marker.GLOW = 96
 Marker.STARS = 4
 Marker.TEAL = { 0.35, 0.9, 0.75 } -- a faint haze, not a bright central orb
 Marker.WHITE = { 1, 1, 1 }       -- the star texture carries its mint/blue halo
-Marker.NEAR_SCALE, Marker.FAR_SCALE = 1.3, 0.7   -- the scale near and far (60 / yards between them)
+Marker.RANGE = { 20, 100, 5 } -- yards: markerRange's slider, its least, most and step (the owner, 2026-10-21)
+Marker.NEAR_SCALE, Marker.FAR_SCALE = 1.3, 0.7   -- the scale at NEAR and at the range, growing between
 Marker.HIDDEN_EVERY = 0.1  -- seconds between checks while armed but hidden (behind, settling)
 Marker.RETRY = 0.5     -- seconds between tries while ours is installed but not wanted (the map open, combat)
 Marker.GRACE = 2       -- seconds past the idle interval without a sweep before the target is stale
@@ -36,6 +37,11 @@ local cvarExpect -- the value we set the CVar to, while a restore is pending
 local nav        -- the navigation frame (NAVIGATION_FRAME_CREATED)
 local settledAt = 0
 local reconciling
+
+-- How close the stars show: markerRange, or the default if it isn't a number.
+function Marker.Range()
+    return API.Num(NR.db and NR.db.markerRange) or NR.DEFAULTS.markerRange
+end
 
 function Marker.On()
     local db = NR.db
@@ -250,6 +256,10 @@ local function showable()
     if not theirs or math.abs(theirs - mine) > Marker.AGREE then return nil end
     local ok, taxi = pcall(UnitOnTaxi, "player")
     if mine < Marker.NEAR or (ok and API.Yes(taxi)) then return nil end
+    -- Nothing tells whether the node is in sight or up on a ledge (the sight
+    -- round, 70450): only the last stretch, and none for a node the minimap
+    -- marks above or below, its stars on the ground under it.
+    if mine > Marker.Range() or r.height == "above" or r.height == "below" then return nil end
     return mine
 end
 
@@ -263,7 +273,9 @@ local function onUpdate(_, elapsed)
     since = 0
     local d = showable()
     if not d then hideStars(); return end
-    root:SetScale(math.max(Marker.FAR_SCALE, math.min(Marker.NEAR_SCALE, 60 / d)))
+    local span = Marker.Range() - Marker.NEAR
+    local t = span > 0 and math.max(0, math.min(1, (Marker.Range() - d) / span)) or 1
+    root:SetScale(Marker.FAR_SCALE + (Marker.NEAR_SCALE - Marker.FAR_SCALE) * t)
     if not root:IsShown() then
         root:Show()
         play(true)

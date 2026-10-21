@@ -9,6 +9,9 @@
   track a quest. Off by default: `/nr marker`, or Options.
   The sparkle follows the FFXIV reference: diagonal white flares with mint and blue halos,
   staggered sizes and timing, gentle drift, and a faint background haze.
+  The stars show only in the last stretch, within 40 yards by default (a slider in Options, or
+  `/nr marker <yards>`), and grow as you close in; the compass points the way from farther off.
+  A node the minimap marks above or below you gets none: the stars would sit on the ground under it.
 
 ## v1.4.0
 

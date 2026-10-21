@@ -3,7 +3,7 @@
 -- page"), as GlassMail's: a plain Frame with .name, hidden at creation (or the
 -- first visit is blank), controls built on the first OnShow, every value
 -- re-read on every OnShow, registered once at PLAYER_LOGIN from NodeRadar.lua.
--- Choices are radio groups; the sound, a dropdown (the owner).
+-- Choices are radio groups; the sound, a dropdown, the marker's range, a slider (the owner).
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
@@ -137,6 +137,47 @@ local function dropdown(parent, anchor, title, key, choices, onPick)
     return dd
 end
 
+-- A slider of numbers under `title` (the owner, #61): OptionsSliderTemplate
+-- (it exists on Forever: porting guide), its Low and High the range's ends; the
+-- value in the title. Refreshing only reads: a value set some other way, off
+-- the step (/nr marker 37), shows and is kept. Without the template, the radio
+-- group of its least, middle and most.
+local function slider(parent, anchor, title, key, least, most, stepBy, unit)
+    local sl, templated = API.SafeFrame("Slider", parent, "OptionsSliderTemplate", "Low")
+    if not templated then
+        local mid = least + math.floor((most - least) / stepBy / 2) * stepBy
+        return radios(parent, anchor, title, key, { { least, least .. " " .. unit }, { mid, mid .. " " .. unit },
+            { most, most .. " " .. unit } }, unit)
+    end
+    local head = label(parent, title)
+    head:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -10)
+    sl:SetWidth(240)
+    sl:SetPoint("TOPLEFT", head, "BOTTOMLEFT", 4, -10)
+    sl:SetMinMaxValues(least, most)
+    sl:SetValueStep(stepBy)
+    if sl.SetObeyStepOnDrag then sl:SetObeyStepOnDrag(true) end
+    sl.Low:SetText(least .. " " .. unit)
+    sl.High:SetText(most .. " " .. unit)
+    if sl.Text then sl.Text:SetText("") end
+    local syncing
+    local function show(v) head:SetText(("%s: %s %s"):format(title, tostring(v), unit)) end
+    local function sync()
+        syncing = true
+        sl:SetValue(NR.db[key])
+        syncing = false
+        show(NR.db[key])
+    end
+    sl:SetScript("OnValueChanged", function(_, v)
+        if syncing then return end
+        v = math.floor(v / stepBy + 0.5) * stepBy
+        if v ~= NR.db[key] then NR.Set(key, v) end
+        show(v)
+    end)
+    refreshers[#refreshers + 1] = sync
+    Options._test.sliders[key] = sl
+    return sl.Low                                      -- below the bar, so what follows clears it
+end
+
 local function heading(parent, anchor, text)
     local fs = label(parent, text, "GameFontNormal")
     fs:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -18)
@@ -259,7 +300,13 @@ local function build()
         .. "tracks it, so the stars show on its spot through the scenery, with Blizzard's distance under them "
         .. "(the compass gives it when it's on). It steps aside "
         .. "while you have a waypoint of your own or track a quest, and while it shows, a quest you accept isn't "
-        .. "tracked by itself. The spot is at your height: on a slope, a little above or below the node.")
+        .. "tracked by itself.")
+    -- #61: only the last stretch (the sight round, 70450: nothing tells whether the node is in sight).
+    local range = slider(page, markerWhy, "Show the stars within", "markerRange", NR.Marker.RANGE[1],
+        NR.Marker.RANGE[2], NR.Marker.RANGE[3], "yards")
+    markerWhy = note(page, range, "They grow as you close in; farther off, the compass points the way. The game "
+        .. "can't tell whether the node is in sight: behind a rock, the stars show on the rock. A node the minimap "
+        .. "marks above or below you (up on a ledge, say) gets none, since the stars would sit on the ground under it.")
 
     local learning = heading(page, markerWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
@@ -294,4 +341,4 @@ function Options.Open()
     return pcall(Settings.OpenToCategory, category:GetID()) and true or false
 end
 
-Options._test = { panel = panel, refreshers = refreshers, radios = {}, dropdowns = {}, checks = {} }
+Options._test = { panel = panel, refreshers = refreshers, radios = {}, dropdowns = {}, checks = {}, sliders = {} }

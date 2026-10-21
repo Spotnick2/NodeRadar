@@ -5268,6 +5268,7 @@ end)
 --------------------------------------------------------------------------------
 
 local KEY = Probe.name .. "/world"
+local RANGE = 1000         -- the marker's range for the round: the stars at every distance, put back at the end
 local function db()
     NodeRadarProbeDB.world = NodeRadarProbeDB.world or { log = {}, super = { other = 0, total = 0 }, blocked = {} }
     return NodeRadarProbeDB.world
@@ -5431,7 +5432,7 @@ local function backWait(label)
 end
 
 local steps = {
-    rev = 1,
+    rev = 2,
     title = "NodeRadar's marker in the world: the stars, stepping aside, a reload (#61)",
     { text = "Have NodeRadar on with Find Herbs or Find Minerals on. Remove any map waypoint of your own and "
           .. "untrack quests on screen. The round turns NodeRadar's marker on and puts your settings back at the end.",
@@ -5443,8 +5444,9 @@ local steps = {
           NodeRadarProbeDB.world = nil
           local w = db()
           w.saved = { marker = n.db.marker, cvar = wpRead(C_CVar.GetCVar, "showInGameNavigation"),
-                      pending = n.db.markerCVar }
+                      pending = n.db.markerCVar, range = n.db.markerRange }
           n.Set("marker", true)
+          n.Set("markerRange", RANGE)
           install()
           return true, note(("the marker on; showInGameNavigation %s -> %s, NodeRadar will put back %s"):format(
               str(w.saved.cvar), str(wpRead(C_CVar.GetCVar, "showInGameNavigation")), str(n.db.markerCVar)))
@@ -5547,6 +5549,7 @@ local steps = {
           local n, w = nr(), db()
           local s = w.super
           n.Set("marker", w.saved and w.saved.marker or false)
+          if w.saved then n.Set("markerRange", w.saved.range) end
           if w.saved and type(w.saved.cvar) == "string" and not w.saved.cvar:find("^[A-Z]") then
               wpRead(C_CVar.SetCVar, "showInGameNavigation", w.saved.cvar)
               n.db.markerCVar = w.saved.pending       -- NodeRadar's own restore, as it was
@@ -5577,6 +5580,7 @@ end)()
 --------------------------------------------------------------------------------
 
 local KEY = Probe.name .. "/sight"
+local RANGE = 1000         -- the marker's range for the round: the stars at every distance, put back at the end
 local HOLD = 10            -- seconds held still in each view
 local function db()
     NodeRadarProbeDB.sight = NodeRadarProbeDB.sight or { log = {}, samples = {} }
@@ -5780,7 +5784,7 @@ local function liftWait()
 end
 
 local steps = {
-    rev = 1,
+    rev = 2,
     title = "What the marker's stars can know about seeing the node (#61)",
     { text = "Have NodeRadar on with Find Herbs or Find Minerals on. Remove any map waypoint of your own and "
           .. "untrack quests on screen. The round turns NodeRadar's marker on and puts your settings back at the end.",
@@ -5793,8 +5797,9 @@ local steps = {
           holds, lift = {}, nil
           local s = db()
           s.saved = { marker = n.db.marker, cvar = wpRead(C_CVar.GetCVar, "showInGameNavigation"),
-                      pending = n.db.markerCVar }
+                      pending = n.db.markerCVar, range = n.db.markerRange }
           n.Set("marker", true)
+          n.Set("markerRange", RANGE)
           install()
           local _, _, z = pos()
           return true, note(("the marker on; UnitPosition's height %s"):format(z and fmt(z) or "none (0 or unreadable)"))
@@ -5857,6 +5862,7 @@ local steps = {
       run = function()
           local n, s = nr(), db()
           n.Set("marker", s.saved and s.saved.marker or false)
+          if s.saved then n.Set("markerRange", s.saved.range) end
           if s.saved and type(s.saved.cvar) == "string" and not s.saved.cvar:find("^[A-Z]") then
               wpRead(C_CVar.SetCVar, "showInGameNavigation", s.saved.cvar)
               n.db.markerCVar = s.saved.pending       -- NodeRadar's own restore, as it was

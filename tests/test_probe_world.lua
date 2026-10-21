@@ -59,6 +59,7 @@ WoW.waypoint = nil
 tick(1.2)
 eq(result(1).status, "done", "free: " .. detail(1))
 check(NR.db.marker == true and detail(1):find("1 %-> 1, NodeRadar will put back nil"), "...the marker on, the CVar at 1")
+eq(NR.db.markerRange, 1000, "...the stars at every distance for the round")
 
 -- 2: the stars on a node.
 local a = node("Silverleaf", 0, 40)
@@ -168,6 +169,7 @@ tick(0.5)
 eq(result(20).status, "done", "the summary: " .. detail(20))
 check(detail(20):find("something else super%-tracked %d+ of %d+ s"), "...the share of time tracked")
 eq(NR.db.marker, false, "...the marker off again, as it was")
+eq(NR.db.markerRange, 40, "...its range as it was")
 eq(WoW.cvars.showInGameNavigation, "1", "...the CVar as it was")
 eq(NR.db.markerCVar, nil, "...NodeRadar's restore as it was")
 eq(NS._worldTest.watch.on, nil, "...the observer gone")

@@ -1587,7 +1587,11 @@ hysteresis), chosen while the compass **or** the marker is on (`Compass.Choosing
 while either is on (`Icons.Keeping` gains `marker`). The compass's ring still shows only with
 `compass`. Hidden within 15 yards (`Compass.NEAR`, where Lueur's glow takes over), on a taxi, in an
 instance where `Scan.Where` is nil, and while the spot is clamped to the screen's edge (behind or
-off screen: the compass covers direction).
+off screen: the compass covers direction). **Only the last stretch** (the owner, 2026-10-21, after
+the sight round): beyond `markerRange` yards (40 by default; Options' slider, 20 to 100 by 5, or
+`/nr marker <yards>`) the stars hide, the waypoint kept for the approach; and none for a record the
+minimap marks above or below (`height`), whose stars would sit on the ground under it. Nothing
+tells whether the node is in sight, so behind a rock within range they show on the rock.
 
 **The waypoint, ours** (`Marker.lua`): one reconciler, not queued commands (Codex).
 - **Desired state:** the target's map point, or none. `Marker.Reconcile()` compares it with what's
@@ -1676,7 +1680,7 @@ few units up and left. Random spots, sizes (0.7 to 1.2 times 48 units), and paus
 per flare; staggered again whenever shown. Art from `Tools/make_media.py` (`Media/MarkerStar.tga`;
 the haze is `SonarGlow`, 96 units, alpha 0.06 to 0.14), engine animation groups (scale, alpha and
 translation), no per-frame Lua for the twinkle. The world round (70450): 22-unit stars were a
-speck at 140 yards. The scale stays 60 / yards between 0.7 and 1.3. This animation revision needs
+speck at 140 yards. The scale grows from 0.7 at the range to 1.3 at 15 yards, linearly. This animation revision needs
 an in-game comparison; the navigation anchor still has no terrain height. Blizzard also draws a
 small gold diamond on the spot, above its distance. A per-frame `OnUpdate` only while shown: the
 distance, the clamp, the valid position.
