@@ -1651,8 +1651,8 @@ off screen: the compass covers direction).
   `IsSuperTracking*` (quest, corpse, content, map pin, vignette) true, since the navigation frame is
   shared.
 - **No occlusion or height gate (measured 2026-10-21, `/fp steps nr sight`):**
-  `C_Navigation.GetTargetState()` reads `Occluded` in a clear view and behind a rock alike, so the
-  trial gate hid the stars everywhere; `UnitPosition` gives no height, and a waypoint's z doesn't
+  `C_Navigation.GetTargetState()` reads `Occluded` in a clear view and behind a rock alike (all on
+  sloping ground, the marker's point under the hillside), so the trial gate hid the stars everywhere; `UnitPosition` gives no height, and a waypoint's z doesn't
   move the navigation's marker. Nothing tells whether the node is in sight or raised above the
   ground under it (docs/FOREVER-PROBE.md).
 - **The navigation frame's life:** `C_Navigation.GetFrame()` taken at `NAVIGATION_FRAME_CREATED`
