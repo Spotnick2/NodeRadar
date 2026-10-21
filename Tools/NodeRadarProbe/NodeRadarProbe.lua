@@ -5255,6 +5255,23 @@ boot:SetScript("OnEvent", function(_, event, a1, a2, a3, a4)
     end
 end)
 
+-- A round that changes NodeRadar's settings puts them back however it ends
+-- (Codex, PR #77): its summary, a Stop, another round started, a timeout. While
+-- `pending()` (saved, so a reload keeps it) and the round isn't the active one,
+-- `restore()` runs; checked every half second from the probe's load.
+local function guardRound(key, pending, restore)
+    local f, tick = CreateFrame("Frame"), 0
+    f:SetScript("OnUpdate", function(_, elapsed)
+        tick = tick + elapsed
+        if tick < 0.5 then return end
+        tick = 0
+        local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+        local active = type(st) == "table" and st.active == key
+        if not active and type(NodeRadarProbeDB) == "table" and nr() and pending() then restore() end
+    end)
+    return f
+end
+
 ;(function()
 --------------------------------------------------------------------------------
 -- NodeRadar's marker in the world (#61, docs/PLAN.md "A marker in the world"),
@@ -5273,6 +5290,21 @@ local function db()
     NodeRadarProbeDB.world = NodeRadarProbeDB.world or { log = {}, super = { other = 0, total = 0 }, blocked = {} }
     return NodeRadarProbeDB.world
 end
+-- NodeRadar's marker, its range and the navigation option, as before the round.
+local function pending() local w = NodeRadarProbeDB.world; return w ~= nil and w.saved ~= nil end
+local function restore()
+    local n, w = nr(), db()
+    local s = w.saved
+    if not s then return end
+    w.saved = nil
+    n.Set("marker", s.marker or false)
+    n.Set("markerRange", s.range)
+    if type(s.cvar) == "string" and not s.cvar:find("^[A-Z]") then
+        wpRead(C_CVar.SetCVar, "showInGameNavigation", s.cvar)
+        n.db.markerCVar = s.pending       -- NodeRadar's own restore, as it was
+    end
+end
+local guard = guardRound(KEY, pending, restore)
 local function note(text)
     local w = db()
     local line = ("%.1f %s"):format(GetTime(), text)
@@ -5441,6 +5473,7 @@ local steps = {
           if not (n and n.Marker) then return false, "NodeRadar (with the marker) isn't loaded" end
           local free, why = waypointFree()
           if not free then return false, why end
+          if pending() then restore() end                 -- a round before this one, cut short
           NodeRadarProbeDB.world = nil
           local w = db()
           w.saved = { marker = n.db.marker, cvar = wpRead(C_CVar.GetCVar, "showInGameNavigation"),
@@ -5548,12 +5581,7 @@ local steps = {
       run = function()
           local n, w = nr(), db()
           local s = w.super
-          n.Set("marker", w.saved and w.saved.marker or false)
-          if w.saved then n.Set("markerRange", w.saved.range) end
-          if w.saved and type(w.saved.cvar) == "string" and not w.saved.cvar:find("^[A-Z]") then
-              wpRead(C_CVar.SetCVar, "showInGameNavigation", w.saved.cvar)
-              n.db.markerCVar = w.saved.pending       -- NodeRadar's own restore, as it was
-          end
+          restore()
           uninstall()
           return ("something else super-tracked %.0f of %.0f s (%.0f%%); blocked actions %d%s; the marker %s, "
               .. "showInGameNavigation %s"):format(s.other, s.total, s.total > 0 and 100 * s.other / s.total or 0,
@@ -5563,7 +5591,7 @@ local steps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("world", steps)
-NS._worldTest = { watch = watch, uninstall = uninstall }
+NS._worldTest = { watch = watch, uninstall = uninstall, guard = guard }
 end)()
 
 ;(function()
@@ -5741,6 +5769,34 @@ end
 -- probe's own waypoint on the node with no z, then above and below; each read
 -- a poll after its set. NodeRadar's marker back on at the end.
 local lift
+-- NodeRadar's marker, its range and the navigation option as before the round,
+-- and the probe's own waypoint (the height step's, s.lift) cleared if it's
+-- still the one set.
+local function pending() local s = NodeRadarProbeDB.sight; return s ~= nil and (s.saved ~= nil or s.lift ~= nil) end
+local function restore()
+    local n, s = nr(), db()
+    local p = s.lift
+    if p then
+        local pt = wpRead(C_Map.GetUserWaypoint)
+        local pos = type(pt) == "table" and not secret(pt) and pt.position
+        if pos and pt.uiMapID == p.map and num(pos.x) and math.abs(pos.x - p.x) < 1e-6 and math.abs(pos.y - p.y) < 1e-6 then
+            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
+            pcall(C_Map.ClearUserWaypoint)
+        end
+        s.lift, lift = nil, nil
+    end
+    local saved = s.saved
+    if not saved then return end
+    s.saved = nil
+    n.Set("marker", saved.marker or false)
+    n.Set("markerRange", saved.range)
+    if type(saved.cvar) == "string" and not saved.cvar:find("^[A-Z]") then
+        wpRead(C_CVar.SetCVar, "showInGameNavigation", saved.cvar)
+        n.db.markerCVar = saved.pending       -- NodeRadar's own restore, as it was
+    end
+end
+local guard = guardRound(KEY, pending, restore)
+
 local function liftWait()
     local n = nr()
     if not n then return false, "NodeRadar isn't loaded" end
@@ -5767,6 +5823,7 @@ local function liftWait()
     if lift.i >= #lift.zs then
         pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
         pcall(C_Map.ClearUserWaypoint)
+        db().lift = nil
         n.Set("marker", true)
         local line = ("a waypoint's z on %s (your height %s): %s"):format(lift.name, fmt(lift.z), table.concat(lift.out, "; "))
         lift = nil
@@ -5777,6 +5834,7 @@ local function liftWait()
     local z = lift.zs[lift.i]
     local ok, pt = pcall(UiMapPoint.CreateFromCoordinates, lift.map, lift.x, lift.y, z or nil)
     if not ok then lift.i = #lift.zs; return false, "UiMapPoint: " .. str(pt) end
+    db().lift = { map = lift.map, x = lift.x, y = lift.y }
     wpRead(C_Map.SetUserWaypoint, pt)
     pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
     lift.pending, lift.set = true, z or nil
@@ -5793,6 +5851,7 @@ local steps = {
           if not (n and n.Marker) then return false, "NodeRadar (with the marker) isn't loaded" end
           local free, why = waypointFree()
           if not free then return false, why end
+          if pending() then restore() end                 -- a round before this one, cut short
           NodeRadarProbeDB.sight = nil
           holds, lift = {}, nil
           local s = db()
@@ -5860,13 +5919,8 @@ local steps = {
       timeout = 120 },
     { text = "The summary; NodeRadar's marker setting and the navigation option put back.", auto = true,
       run = function()
-          local n, s = nr(), db()
-          n.Set("marker", s.saved and s.saved.marker or false)
-          if s.saved then n.Set("markerRange", s.saved.range) end
-          if s.saved and type(s.saved.cvar) == "string" and not s.saved.cvar:find("^[A-Z]") then
-              wpRead(C_CVar.SetCVar, "showInGameNavigation", s.saved.cvar)
-              n.db.markerCVar = s.saved.pending       -- NodeRadar's own restore, as it was
-          end
+          local n = nr()
+          restore()
           uninstall()
           local out = {}
           for _, tag in ipairs({ "clear", "crest", "rock", "ledge", "approach" }) do out[#out + 1] = summary(tag) end
@@ -5876,7 +5930,7 @@ local steps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("sight", steps)
-NS._sightTest = { sampler = sampler, uninstall = uninstall }
+NS._sightTest = { sampler = sampler, uninstall = uninstall, guard = guard }
 end)()
 
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }

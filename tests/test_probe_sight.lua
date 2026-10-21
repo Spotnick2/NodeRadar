@@ -142,9 +142,31 @@ fp("steps stop")
 fp("steps nr sight")
 tick(1.2)
 check(NS._sightTest.sampler.on, "sampling")
+eq(NR.db.markerRange, 1000, "...the range lifted")
 fp("steps stop")
 tick(1)
 eq(NS._sightTest.sampler.on, nil, "stopped: the sampler gone")
+eq(NR.db.markerRange, 40, "...the range put back (Codex, PR #77)")
+eq(NR.db.marker, false, "...the marker as it was")
+eq(WoW.cvars.showInGameNavigation, "0", "...the CVar as it was")
+
+-- Stopped in the height step: the probe's own waypoint cleared, the marker put back.
+NR.Set("marker", true)                                     -- on before the round: the height step turns it off
+fp("steps nr sight")
+tick(1.2)
+for _ = 2, 11 do S.Skip() end
+run(12, 2)
+S.Run()                                                    -- 12: Test
+for _ = 1, 8 do if not db.sight.lift then tick(1) end end
+check(db.sight.lift and WoW.waypoint and WoW.superTracked == "waypoint", "the probe's waypoint set")
+eq(NR.db.marker, false, "...NodeRadar's marker off for it")
+fp("steps stop")
+tick(1)
+eq(WoW.waypoint, nil, "stopped: the probe's waypoint cleared")
+eq(WoW.superTracked, nil, "...not super-tracked")
+eq(NR.db.marker, true, "...the marker on again, as it was")
+eq(NR.db.markerRange, 40, "...the range as it was")
+eq(db.sight.lift, nil, "...nothing left to put back")
 NR.Set("marker", false)
 
 eq(errors(), 0, "no step threw")
