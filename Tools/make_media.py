@@ -48,10 +48,10 @@ The yellow frame (#50, docs/PLAN.md, "A yellow frame"):
 
 The marker in the world (#61, docs/PLAN.md, "A marker in the world"):
 
-  MarkerStar     64 x 64, display 22 at scale 1. A four-pointed star: thin
-                 rays along both axes tapering to the edge, a bright core and a
-                 soft halo, white with the shape in alpha. Tinted teal in game
-                 and drawn additively; its glow is SonarGlow, tinted too.
+  MarkerStar     64 x 64, display 48 at scale 1, varied per flare. Four diagonal
+                 rays, the lower-left/upper-right pair longer, a small white
+                 core and a mint halo fading to blue. Drawn additively over a
+                 faint SonarGlow haze, following the owner's FFXIV video.
 
 The sounds come from Tools/import_sounds.py.
 
@@ -225,14 +225,25 @@ def icon_ring(x, y):
 def marker_star(x, y):
     dx, dy = x - 32.0, y - 32.0
     d = math.hypot(dx, dy)
+    u, v = (dx - dy) / math.sqrt(2), (dx + dy) / math.sqrt(2)
 
-    def ray(along, across):
-        taper = max(0.0, 1.0 - abs(along) / 30.0)
-        return math.exp(-(across / (0.6 + 1.4 * taper)) ** 2) * taper ** 1.6
+    def ray(along, across, length):
+        taper = max(0.0, 1.0 - abs(along) / length)
+        return math.exp(-(across / (0.35 + 1.3 * taper)) ** 2) * taper ** 0.8
 
-    a = max(ray(dx, dy), ray(dy, dx))
-    a += math.exp(-(d / 3.5) ** 2) + 0.3 * math.exp(-(d / 9.0) ** 2)
-    return 1.0, 1.0, 1.0, min(1.0, a)
+    rays = max(ray(u, v, 40.0), ray(v, u, 24.0))
+    core = math.exp(-(d / 2.2) ** 2)
+    halo = 0.3 * math.exp(-(d / 7.0) ** 2)
+    outer = 0.055 * math.exp(-(d / 12.0) ** 2)
+    light = min(1.0, rays + core)
+    a = light + halo + outer
+    if a == 0:
+        return 1.0, 1.0, 1.0, 0.0
+    # White rays stay sharp; colour lives in the light surrounding them.
+    return ((light + 0.35 * halo + 0.25 * outer) / a,
+            (light + halo + 0.65 * outer) / a,
+            (0.94 * light + 0.7 * halo + outer) / a,
+            min(1.0, a))
 
 
 def main():
