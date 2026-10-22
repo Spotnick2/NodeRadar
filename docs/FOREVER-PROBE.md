@@ -762,3 +762,14 @@ each time).
 | `nameplateGameObjectMaxDistance` 60 -> 30 | kept |
 
 The marker claims the three it needs, and only those.
+
+### The marker's first run: the CVars overwritten after login (70450, 2026-10-22) (#78, PR #79)
+
+The owner's first runs of #78's marker: no stars. `NodeRadarDB.softCVars` read all three claims
+`cancelled`, and `Config.wtf` held none of them (the game's defaults). NodeRadar had set them at
+`PLAYER_LOGIN`; a moment later the client put its own values back, and the `CVAR_UPDATE` that fired
+was taken as someone else's change. Another addon's source says the same of these CVars on this
+client: synced settings can arrive after `PLAYER_LOGIN` and overwrite an addon's, so it sets them
+again at `VARIABLES_LOADED` and `PLAYER_ENTERING_WORLD`. The marker now waits 5 seconds after
+entering the world before it writes or judges anything. The exact timing is unmeasured: the
+`softmark` round reads the claims after a reload and a full exit.

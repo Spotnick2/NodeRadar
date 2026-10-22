@@ -24,6 +24,8 @@ Marker.CVARS = {
     { "SoftTargetInteractRange", "60" }, -- past the default 10 (the plate reaches about 15 whatever this is)
 }
 Marker.TICK = 0.5      -- seconds between passes while on, or while a claim is left to put back
+Marker.SETTLE = 5      -- seconds after entering the world before the login's read: the client's synced
+                       -- CVars arrive after PLAYER_LOGIN and overwrite ours (the owner's run, #79)
 Marker.STAR = 48       -- the reference's long diagonal rays, varied per flare
 Marker.SPREAD = 30     -- how far from the spot a star can light
 Marker.GLOW = 96
@@ -34,6 +36,7 @@ Marker.WHITE = { 1, 1, 1 }       -- the star texture carries its mint/blue halo
 local bound      -- { unit, plate }: the plate the stars are on
 local writing    -- inside our own SetCVar: its CVAR_UPDATE is ours
 local wasPad     -- the gamepad UI on at the last pass
+local settling   -- from PLAYER_LOGIN to the login's read: no CVar written or judged
 
 function Marker.On()
     local db = NR.db
@@ -282,6 +285,7 @@ local function pending()
     return NR.db and (NR.db.softClaim or (NR.db.softCVars and next(NR.db.softCVars) ~= nil)) and true or false
 end
 local function pass()
+    if settling then Marker.Reconcile(); return end
     local pad = API.Gamepad()
     if pad then
         wasPad = true
@@ -334,10 +338,6 @@ local function migrate()
     if NR.charDb then NR.charDb.marker = nil end
 end
 
--- The login's read of the claims, once out of the gamepad UI: polled only
--- while it waits.
-local loginDriver = CreateFrame("Frame")
-local loginRead
 -- On at login: each claim read again. Never any `softCVars` (the marker on
 -- since #61, or set by hand): a first turn-on, claimed now (the owner, #79:
 -- no stars, nothing claimed).
@@ -347,35 +347,44 @@ local function readAtLogin()
     judge(true)
     if NR.db.softClaim then claim() end
 end
-local function deferLogin()
-    loginRead, wasPad = true, true
+
+-- The login's read waits for the client's synced CVars: SETTLE seconds after
+-- the first PLAYER_ENTERING_WORLD, and out of the gamepad UI. Polled only while
+-- it waits, and only with something to read.
+local loginDriver = CreateFrame("Frame")
+local loginAt
+local function settle()
+    loginAt = GetTime() + Marker.SETTLE
     loginDriver:SetScript("OnUpdate", function()
-        if API.Gamepad() then return end
+        if GetTime() < loginAt or API.Gamepad() then return end
         loginDriver:SetScript("OnUpdate", nil)
-        loginRead, wasPad = nil, nil
+        settling, loginAt = nil, nil
         readAtLogin()
         arm()
+        Marker.Reconcile()
     end)
 end
 
 local events = CreateFrame("Frame")
-API.RegisterEvents(events, { "PLAYER_LOGIN", "PLAYER_LOGOUT", "CVAR_UPDATE", "NAME_PLATE_UNIT_ADDED",
-    "NAME_PLATE_UNIT_REMOVED" })
+API.RegisterEvents(events, { "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_LOGOUT", "CVAR_UPDATE",
+    "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED" })
 events:SetScript("OnEvent", function(_, event, ...)
     if not NR.db then return end
     if event == "PLAYER_LOGIN" then
         migrate()
         -- A value changed while NodeRadar wasn't loaded raises no CVAR_UPDATE
-        -- for us: each claim read first (Codex, #78), never inside the gamepad UI.
-        if API.Gamepad() then deferLogin() else readAtLogin() end
+        -- for us: each claim read first (Codex, #78), once the client's synced
+        -- values are in and out of the gamepad UI; nothing judged till then.
+        settling = (Marker.On() or pending()) or nil
         arm()
-        Marker.Reconcile()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if settling and not loginAt then settle() end
     elseif event == "PLAYER_LOGOUT" then
         atLogout()
     elseif event == "CVAR_UPDATE" then
         -- Someone else's change (the player, another addon): theirs stands.
         -- Ours inside put(), and anything inside the gamepad UI, never counts.
-        if writing or API.Gamepad() or not NR.db.softCVars then return end
+        if writing or settling or API.Gamepad() or not NR.db.softCVars then return end
         for name, e in pairs(NR.db.softCVars) do
             if not e.cancelled and not same(get(name), e.ours) then
                 NR.db.softCVars[name] = Marker.On() and { cancelled = true } or nil
@@ -394,5 +403,9 @@ Marker._test = {
     root = root, stars = stars, driver = driver,
     bound = function() return bound end,
     pass = pass, loginDriver = loginDriver,
-    reset = function() bound, writing, wasPad, loginRead = nil, nil, nil, nil; since = 0 end,   -- a fresh load
+    reset = function()                                 -- a fresh load
+        bound, writing, wasPad, settling, loginAt = nil, nil, nil, nil, nil
+        since = 0
+        loginDriver:SetScript("OnUpdate", nil)
+    end,
 }

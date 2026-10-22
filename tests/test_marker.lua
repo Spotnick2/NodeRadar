@@ -24,6 +24,15 @@ local function cv(name) return WoW.cvars[name] end
 local function claims() return NR.db.softCVars or {} end
 local function plate(unit) return C_NamePlate.GetNamePlateForUnit(unit) end
 local function setPlates(list) WoW.plates = list; WoW.fire("NAME_PLATE_UNIT_ADDED", list[1] and list[1].unit) end
+-- A login: PLAYER_LOGIN, entering the world, and the settling wait for the
+-- client's synced CVars (`synced`: the values it puts back meanwhile).
+local function login(synced)
+    WoW.fire("PLAYER_LOGIN")
+    WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+    frames(1.2)                                -- a pass or two first
+    for name, v in pairs(synced or {}) do C_CVar.SetCVar(name, v) end
+    frames(NR.Marker.SETTLE + 0.6)
+end
 local SILVERLEAF = { unit = "nameplate1", name = "Silverleaf", object = true, soft = true }
 local function soft(over)
     local p = {}
@@ -206,19 +215,19 @@ WoW.fire("PLAYER_LOGOUT")
 eq(cv("softTargetInteract"), "1", "logout: ours put back, best effort")
 check(claims().softTargetInteract ~= nil, "...the claim kept")
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login()
 eq(cv("softTargetInteract"), "3", "login, the restore stuck: ours again")
 -- The restore didn't stick: ours read at login, kept.
 WoW.fire("PLAYER_LOGOUT")
 WoW.cvars.softTargetInteract = "3"
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login()
 eq(claims().softTargetInteract and claims().softTargetInteract.ours, "3", "login, ours still there: kept")
 -- Changed while NodeRadar wasn't loaded: theirs, cancelled, never claimed again.
 WoW.fire("PLAYER_LOGOUT")
 WoW.cvars.softTargetInteract = "2"
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login()
 eq(cv("softTargetInteract"), "2", "login, changed while unloaded: left alone")
 eq(claims().softTargetInteract and claims().softTargetInteract.cancelled, true, "...cancelled")
 frames(2)
@@ -230,10 +239,9 @@ WoW.fire("PLAYER_LOGOUT")
 WoW.gamepadUI = true
 WoW.cvars.SoftTargetInteractRange = "20"                   -- Blizzard's temporary value
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login()
 check(claims().SoftTargetInteractRange and not claims().SoftTargetInteractRange.cancelled, "login inside the gamepad UI: kept")
 check(M.loginDriver._scripts.OnUpdate ~= nil, "...its read waiting")
-frames(1)
 WoW.cvars.SoftTargetInteractRange = claims().SoftTargetInteractRange.old   -- out: the logout's restore under it
 WoW.gamepadUI = false
 frames(0.6)
@@ -245,7 +253,7 @@ WoW.fire("PLAYER_LOGOUT")
 NR.db.marker = false
 WoW.cvars.softTargetInteract = "3"                         -- the logout's restore didn't stick
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login({ softTargetInteract = "3" })                        -- the client's synced value: ours, after the login
 frames(0.6)
 eq(cv("softTargetInteract"), old, "off at login, a claim left: put back")
 eq(next(claims()), nil, "...nothing left")
@@ -269,12 +277,31 @@ eq(shown(), false, "...no stars")
 NR.Set("enabled", true)
 eq(cv("softTargetInteract"), "3", "...on again: claimed")
 
+-- The client's synced values arriving after PLAYER_LOGIN (the owner's run,
+-- #79): never taken as someone else's; ours set again once they're in.
+NR.Set("marker", false)
+WoW.cvars.softTargetInteract, WoW.cvars.SoftTargetInteractRange = "1", "10.000000"
+NR.Set("marker", true)
+WoW.fire("PLAYER_LOGOUT")
+M.reset()
+login({ softTargetInteract = "1", SoftTargetInteractRange = "10.000000" })
+eq(claims().softTargetInteract and claims().softTargetInteract.cancelled, nil, "synced values after login: not cancelled")
+eq(cv("softTargetInteract"), "3", "...ours set again once they're in")
+eq(cv("SoftTargetInteractRange"), "60", "...each one")
+eq(M.loginDriver._scripts.OnUpdate, nil, "...the wait over")
+-- Settling, only with something to read: off, nothing claimed, no wait.
+NR.Set("marker", false)
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+eq(M.loginDriver._scripts.OnUpdate, nil, "off, nothing claimed: no settling wait")
+
 -- On since #61, nothing ever claimed (the owner, #79): a first turn-on at login.
 NR.Set("marker", false)
 WoW.cvars.softTargetInteract = "1"
 NR.db.marker, NR.db.softCVars = true, nil
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login()
 eq(cv("softTargetInteract"), "3", "on from before, never claimed: claimed at login")
 eq(claims().softTargetInteract and claims().softTargetInteract.old, "1", "...the old value kept")
 setPlates({ soft() })
@@ -284,7 +311,7 @@ eq(shown(), true, "...the stars")
 NR.db.softCVars = { softTargetInteract = { cancelled = true } }
 WoW.cvars.softTargetInteract = "2"
 M.reset()
-WoW.fire("PLAYER_LOGIN")
+login()
 eq(cv("softTargetInteract"), "2", "a claim cancelled before: not taken at login")
 
 checkMethods({ "AnimationGroup:SetLooping", "Alpha:SetFromAlpha", "Alpha:SetToAlpha", "Scale:SetScaleFrom",

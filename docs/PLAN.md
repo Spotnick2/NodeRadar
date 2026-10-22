@@ -1784,6 +1784,12 @@ is: the owner accepts the game's icons on interactables while the marker is on (
   else's newer choice: that entry is cancelled (and stays so) and the value left alone. A cancelled
   entry is never read nor set at login. The probe round checks a full client exit. A player who
   removes NodeRadar after a logout restore that didn't stick keeps our values: said in the README.
+- **The login waits for the client's synced CVars** (the owner's first run, #79): set at
+  `PLAYER_LOGIN`, all three were overwritten a moment later by the client's own values, and the
+  `CVAR_UPDATE` cancelled every claim. From `PLAYER_LOGIN` until `Marker.SETTLE` (5) seconds after
+  the first `PLAYER_ENTERING_WORLD`, nothing is written or judged (a `CVAR_UPDATE`, the ticker's
+  claims and restores); then the login's read runs. Only with something to read (the marker on, or a
+  claim left).
 - **Nothing written in combat:** a set or restore that falls in `InCombatLockdown()` waits for
   `PLAYER_REGEN_ENABLED`.
 - **A restore that has to wait runs later, the marker off or not** (Codex): the marker turned off in
