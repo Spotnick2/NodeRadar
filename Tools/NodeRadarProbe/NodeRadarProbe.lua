@@ -5814,7 +5814,7 @@ end)()
 ;(function()
 --------------------------------------------------------------------------------
 -- Who changes the marker's interact CVars (#78, PR #79: NodeRadar's claims kept
--- being cancelled). `/fp nr cvarwatch on`, then /reload: every SetCVar,
+-- being cancelled). On unless `/fp nr cvarwatch off`: every SetCVar,
 -- SetTempCVar and CVAR_UPDATE of the watched CVars, with the caller's stack
 -- and the time from the login, into NodeRadarProbeDB.cvarlog (the last 400).
 -- The hooks go in at the probe's load so the login itself is seen; lines
@@ -5824,7 +5824,7 @@ end)()
 local WATCH = { softtargetinteract = true, softtargeticongameobject = true, softtargetinteractrange = true,
                 softtargetnameplateinteract = true }
 local early, t0 = {}, nil
-local function on() return type(NodeRadarProbeDB) == "table" and NodeRadarProbeDB.cvarWatch == true end
+local function on() return type(NodeRadarProbeDB) == "table" and NodeRadarProbeDB.cvarWatch ~= false end   -- on unless turned off
 local function record(line)
     local stamp = ("%.2f %s"):format(t0 and (GetTime() - t0) or -1, line)
     if type(NodeRadarProbeDB) ~= "table" then
@@ -5866,7 +5866,7 @@ f:SetScript("OnEvent", function(_, event, a1, a2)
         if a1 ~= Probe.name then return end
         if on() then
             record("--- a load: " .. #early .. " line(s) before the saved flag")
-            for _, l in ipairs(early) do NodeRadarProbeDB.cvarlog[#NodeRadarProbeDB.cvarlog + 1] = l end
+            for _, l in ipairs(early) do record(l) end
         end
         early = {}
     elseif event == "PLAYER_LOGIN" then
@@ -5880,7 +5880,7 @@ f:SetScript("OnEvent", function(_, event, a1, a2)
 end)
 Probe:Command("cvarwatch", function(arg)
     if arg == "on" then NodeRadarProbeDB.cvarWatch, NodeRadarProbeDB.cvarlog = true, {}
-    elseif arg == "off" then NodeRadarProbeDB.cvarWatch = nil end
+    elseif arg == "off" then NodeRadarProbeDB.cvarWatch = false end
     say(("cvarwatch %s, %d line(s): /reload to see a login"):format(on() and "on" or "off",
         #(NodeRadarProbeDB.cvarlog or {})))
 end, "who changes the marker's interact CVars: on | off")
