@@ -196,6 +196,55 @@ eq(WoW.cvars.softTargetInteract, "1", "...everything put back")
 eq(WoW.cvars.SoftTargetInteractRange, "10.000000", "...the range too")
 fp("steps stop")
 
+-- softmark: NodeRadar's own marker in game; the probe turns it on and watches.
+local function mrec() return FP.db.steps.records["NodeRadarProbe/softmark"] end
+local function mres(i) return mrec().results[i] or {} end
+local function mdetail(i) return tostring(mres(i).detail or mres(i).lastError) end
+local function mrun(i, s) for _ = 1, s * 2 do if mres(i).status == nil then place(); NR.Step(WoW.now); tick(0.5) end end end
+WoW.cvars.SoftTargetIconGameObject = "0"
+WoW.plates = {}
+fp("steps nr softmark")
+tick(1.2)
+eq(mres(1).status, "done", "softmark set up: " .. mdetail(1))
+eq(NR.db.marker, true, "...NodeRadar's marker on")
+check(mdetail(1):find("softTargetInteract 3 %(claimed, old 1%)"), "...NodeRadar's own claims read")
+WoW.plates = { { unit = "nameplate5", name = "Silverleaf", object = true, soft = true } }
+WoW.fire("NAME_PLATE_UNIT_ADDED", "nameplate5")
+mrun(2, 3)
+eq(mres(2).status, "done", "the stars near: " .. mdetail(2))
+check(mdetail(2):find("near: the stars on nameplate5 Silverleaf"), "...on the soft target's plate")
+settle()
+S.Answer(true)                                             -- 3
+S.Skip()                                                   -- 4: a slope
+S.Skip()                                                   -- 5
+S.Skip()                                                   -- 6: a rock
+S.Skip()                                                   -- 7
+NR.Track.Set(765, false)                                   -- Silverleaf skipped
+mrun(8, 3)
+eq(mres(8).status, "done", "a skipped node: " .. mdetail(8))
+check(mdetail(8):find("a skipped Silverleaf targeted at .- no stars"), "...no stars")
+NR.Track.Set(765, true)
+WoW.combat = true
+WoW.fire("PLAYER_REGEN_DISABLED")
+tick(1.2)
+WoW.combat = false
+WoW.fire("PLAYER_REGEN_ENABLED")
+tick(1.2)
+eq(mres(9).status, "done", "combat: " .. mdetail(9))
+check(mdetail(9):find("off in combat: softTargetInteract 3 %(claimed"), "...off in combat, nothing written")
+check(mdetail(9):find("on again: softTargetInteract 3 %(claimed, old 1%)"), "...on again after")
+WoW.fire("PLAYER_LOGOUT")
+FP.run = FP.run + 1
+WoW.fire("PLAYER_LOGIN")
+S.Resume()
+tick(0.5)
+eq(mres(11).status, "done", "after the reload: " .. mdetail(11))
+fp("steps stop")
+tick(1)
+eq(NR.db.marker, false, "stopped: NodeRadar's marker as it was")
+eq(WoW.cvars.softTargetInteract, "1", "...its CVars put back by NodeRadar")
+eq(NR.db.compass, false, "...the compass as it was")
+
 eq(errors(), 0, "no step threw")
 for _, l in ipairs(WoW.chat) do check(not l:find("plates"), "nothing of the probe in chat: " .. l) end
 done("test_probe_plates")

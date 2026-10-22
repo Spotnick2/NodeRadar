@@ -1758,8 +1758,11 @@ is: the owner accepts the game's icons on interactables while the marker is on (
 
 **The CVars are the player's** (the same rule as gathering tracking):
 - **Only the CVars the plate needs** (Codex: the probe changed six together, and the arc and range
-  change the player's interact targeting too). The probe round below takes them away one at a time;
-  the set kept is what it shows the plate needs at 15 yards.
+  change the player's interact targeting too). The ablation round (`/fp steps nr ablate`, 70450,
+  2026-10-22, a Peacebloom at 14.3 yards) kept three: `softTargetInteract` 3,
+  `SoftTargetIconGameObject` 1 and `SoftTargetInteractRange` 60 (the default 10 loses it at 14.3).
+  Each put back alone lost the plate. `SoftTargetNameplateInteract`, `SoftTargetInteractArc` and
+  `nameplateGameObjectMaxDistance` (30 already reaches 15) didn't matter: left as they are.
 - **Claimed only when the marker is turned on** (the setting, `/nr marker`, NodeRadar enabled with
   it on), each one only if it differs; never by the ticker or the reconciler. The old value is saved
   per CVar in `NodeRadarDB.softCVars = { [name] = { old, ours } }`, and only once the game accepts
@@ -1823,8 +1826,7 @@ the marker is turned off and on; `/nr reset`; the migration; off: nothing runs a
 Every widget method checked against the dump.
 
 **Probe round** (`/fp steps nr softmark`), in game:
-- **before the code**, the ablation: each of the six CVars put back alone, a herb within 15 yards,
-  whether its plate stays;
+- **before the code**, the ablation (done, above);
 - the marker on: the stars on a herb within 15 yards, up a slope, behind a rock (does the plate fade
   or hide), a skipped herb (none), a competing interactable, combat (the stars and a deferred set),
   the gamepad UI in and out if it can be tried;

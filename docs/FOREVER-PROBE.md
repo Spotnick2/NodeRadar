@@ -745,3 +745,20 @@ Durotar, Razormane Grounds; Silverleaf and Peacebloom; 855 samples, every half s
 
 So the soft-interact plate marks the node exactly, height included, but only the one the game
 targets and only within about 15 yards: where the compass hides.
+
+### Which interact CVars the plate needs: `/fp steps nr ablate` (70450, 2026-10-22) (#78)
+
+A Peacebloom at 14.3 yards, its plate shown with the plates round's six CVars set. Each one put back
+alone to the owner's value for two polls, the plate looked for, then ours set again (the plate back
+each time).
+
+| Put back alone | The plate |
+|---|---|
+| `softTargetInteract` 3 -> 1 | **gone** |
+| `SoftTargetIconGameObject` 1 -> 0 | **gone** |
+| `SoftTargetInteractRange` 60 -> 10 | **gone** (14.3 yards is past 10) |
+| `SoftTargetNameplateInteract` 1 -> 0 | kept |
+| `SoftTargetInteractArc` 2 -> 0 | kept (facing it) |
+| `nameplateGameObjectMaxDistance` 60 -> 30 | kept |
+
+The marker claims the three it needs, and only those.

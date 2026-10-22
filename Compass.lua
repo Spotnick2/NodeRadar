@@ -60,11 +60,10 @@ function Compass.On()
     return db and db.compass and db.enabled and true or false
 end
 
--- The target is chosen for the ring or the marker in the world (#61),
--- whichever is on; the ring shows only with the compass.
+-- The target is chosen for the ring (the marker, #78, finds its node itself).
 function Compass.Choosing()
     local db = NR.db
-    return db and db.enabled and (db.compass or db.marker) and true or false
+    return db and db.enabled and db.compass and true or false
 end
 
 local function wrap(a) return (a + math.pi) % TAU - math.pi end
@@ -434,7 +433,7 @@ function Compass.Target()
     return target, name, pn and math.floor(yards(target, pn, pw) + 0.5) or nil
 end
 
--- The node chosen, for the marker (#61): a record, or nil.
+-- The node chosen: a record, or nil.
 function Compass.Chosen() return Compass.Choosing() and target or nil end
 
 local function choose()
@@ -499,7 +498,6 @@ end
 function Compass.Reset()
     target = nil
     hide()
-    if NR.Marker then NR.Marker.TargetGone() end   -- the marker's point goes with it (#61)
 end
 
 Compass._test = {

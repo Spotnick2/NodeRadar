@@ -252,14 +252,14 @@ local function build()
     compassSize = note(page, compassLock, "Hold Alt and drag the compass to move it. /nr compass reset puts it back "
         .. "under your character.")
 
-    -- #61: experimental, off by default, its own heading.
+    -- #78: experimental, off by default, its own heading.
     local markerHead = heading(page, compassSize, "The marker in the world (experimental)")
-    local marker = checkbox(page, markerHead, "Mark the compass's node in the world with twinkling stars", "marker")
-    local markerWhy = note(page, marker, "Experimental, off by default. Puts your map waypoint on the node and "
-        .. "tracks it, so the stars show on its spot through the scenery, with Blizzard's distance under them "
-        .. "(the compass gives it when it's on). It steps aside "
-        .. "while you have a waypoint of your own or track a quest, and while it shows, a quest you accept isn't "
-        .. "tracked by itself. The spot is at your height: on a slope, a little above or below the node.")
+    local marker = checkbox(page, markerHead, "Twinkling stars on the herb or ore in front of you", "marker")
+    local markerWhy = note(page, marker, "Experimental, off by default. Within about 15 yards, the stars sit on the "
+        .. "node itself, a herb or ore you want, on the spot the game marks for its interact key; farther off, the "
+        .. "compass points the way. While on, the game's interact targeting is on (three of your settings: it "
+        .. "marks the object you'd interact with, a cactus or a mailbox too). They're put back when it's off, and "
+        .. "a change of yours to one of them is kept.")
 
     local learning = heading(page, markerWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")

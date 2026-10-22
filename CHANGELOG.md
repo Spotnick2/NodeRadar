@@ -2,13 +2,13 @@
 
 ## Unreleased
 
-- **Experimental: a marker in the world** (#61): the compass's node marked out on its spot with
-  twinkling stars, seen through the scenery, with Blizzard's distance under them (or the
-  compass's, when it's on). It puts your map
-  waypoint on the node and tracks it, and steps aside whenever you have a waypoint of your own or
-  track a quest. Off by default: `/nr marker`, or Options.
-  The sparkle follows the FFXIV reference: diagonal white flares with mint and blue halos,
-  staggered sizes and timing, gentle drift, and a faint background haze.
+- **Experimental: a marker in the world** (#61, #78): twinkling stars on the herb or ore itself,
+  within about 15 yards, at its real height, for a node you want: on the spot the game marks for
+  its interact key. Farther off, the compass points the way. While it's on, three of your
+  interact settings are changed (the game then also marks other objects you could interact
+  with); they're put back when it's off, and a change of yours is kept. Off by default:
+  `/nr marker`, or Options. The sparkle follows the FFXIV reference: diagonal white flares with
+  mint and blue halos, staggered sizes and timing, gentle drift, and a faint background haze.
 
 ## v1.4.0
 
