@@ -5811,4 +5811,80 @@ Probe:Steps("softmark", markSteps)
 NS._platesTest = { watch = watch, guard = guard, star = function() return star end }
 end)()
 
+;(function()
+--------------------------------------------------------------------------------
+-- Who changes the marker's interact CVars (#78, PR #79: NodeRadar's claims kept
+-- being cancelled). `/fp nr cvarwatch on`, then /reload: every SetCVar,
+-- SetTempCVar and CVAR_UPDATE of the watched CVars, with the caller's stack
+-- and the time from the login, into NodeRadarProbeDB.cvarlog (the last 400).
+-- The hooks go in at the probe's load so the login itself is seen; lines
+-- before the saved flag is read are kept and written if it's on.
+--------------------------------------------------------------------------------
+
+local WATCH = { softtargetinteract = true, softtargeticongameobject = true, softtargetinteractrange = true,
+                softtargetnameplateinteract = true }
+local early, t0 = {}, nil
+local function on() return type(NodeRadarProbeDB) == "table" and NodeRadarProbeDB.cvarWatch == true end
+local function record(line)
+    local stamp = ("%.2f %s"):format(t0 and (GetTime() - t0) or -1, line)
+    if type(NodeRadarProbeDB) ~= "table" then
+        if #early < 100 then early[#early + 1] = stamp end
+        return
+    end
+    if not on() then return end
+    local log = NodeRadarProbeDB.cvarlog or {}
+    NodeRadarProbeDB.cvarlog = log
+    log[#log + 1] = stamp
+    while #log > 400 do table.remove(log, 1) end
+end
+local function watched(name) return type(name) == "string" and not secret(name) and WATCH[name:lower()] end
+local function caller()
+    local ok, s = pcall(rawget(_G, "debugstack"), 3, 3, 0)
+    if not ok or type(s) ~= "string" then return "?" end
+    return (s:gsub("Interface[/\\]AddOns[/\\]", ""):gsub("\n", " | "))
+end
+local function hook(tbl, fname, label)
+    if type(tbl) ~= "table" or type(rawget(tbl, fname)) ~= "function" then return end
+    hooksecurefunc(tbl, fname, function(name, value)
+        if watched(name) then
+            record(("%s(%s, %s) -> now %s; from %s"):format(label, name, str(value), str(wpRead(C_CVar.GetCVar, name)),
+                caller()))
+        end
+    end)
+end
+hook(_G, "SetCVar", "SetCVar")
+hook(C_CVar, "SetCVar", "C_CVar.SetCVar")
+hook(C_CVar, "SetTempCVar", "SetTempCVar")
+hook(C_CVar, "RemoveTempCVar", "RemoveTempCVar")
+local f = CreateFrame("Frame")
+f:RegisterEvent("CVAR_UPDATE")
+f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("ADDON_LOADED")
+f:SetScript("OnEvent", function(_, event, a1, a2)
+    if event == "ADDON_LOADED" then
+        if a1 ~= Probe.name then return end
+        if on() then
+            record("--- a load: " .. #early .. " line(s) before the saved flag")
+            for _, l in ipairs(early) do NodeRadarProbeDB.cvarlog[#NodeRadarProbeDB.cvarlog + 1] = l end
+        end
+        early = {}
+    elseif event == "PLAYER_LOGIN" then
+        t0 = GetTime()
+        record("PLAYER_LOGIN")
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        record("PLAYER_ENTERING_WORLD")
+    elseif watched(a1) then
+        record(("CVAR_UPDATE %s %s -> now %s"):format(a1, str(a2), str(wpRead(C_CVar.GetCVar, a1))))
+    end
+end)
+Probe:Command("cvarwatch", function(arg)
+    if arg == "on" then NodeRadarProbeDB.cvarWatch, NodeRadarProbeDB.cvarlog = true, {}
+    elseif arg == "off" then NodeRadarProbeDB.cvarWatch = nil end
+    say(("cvarwatch %s, %d line(s): /reload to see a login"):format(on() and "on" or "off",
+        #(NodeRadarProbeDB.cvarlog or {})))
+end, "who changes the marker's interact CVars: on | off")
+NS._cvarTest = { record = record }
+end)()
+
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }
