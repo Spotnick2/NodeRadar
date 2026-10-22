@@ -5839,7 +5839,7 @@ local function record(line)
 end
 local function watched(name) return type(name) == "string" and not secret(name) and WATCH[name:lower()] end
 local function caller()
-    local ok, s = pcall(rawget(_G, "debugstack"), 3, 3, 0)
+    local ok, s = pcall(rawget(_G, "debugstack"), 3, 14, 0)   -- deep: the caller sits past pcall frames
     if not ok or type(s) ~= "string" then return "?" end
     return (s:gsub("Interface[/\\]AddOns[/\\]", ""):gsub("\n", " | "))
 end
