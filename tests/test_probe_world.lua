@@ -181,7 +181,10 @@ check(NS._worldTest.watch.on, "watching")
 fp("steps stop")
 tick(0.2)
 eq(NS._worldTest.watch.on, nil, "stopped: the observer gone")
-NR.Set("marker", false)
+tick(0.6)
+eq(NR.db.marker, false, "...the marker as it was")
+eq(WoW.cvars.showInGameNavigation, "1", "...the CVar as it was")
+eq(db.world.saved, nil, "...nothing left to put back")
 
 eq(errors(), 0, "no step threw")
 for _, l in ipairs(WoW.chat) do check(not l:find("world"), "nothing of the probe in chat: " .. l) end

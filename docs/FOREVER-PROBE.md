@@ -709,3 +709,21 @@ waypoint throughout the test, but does not establish why or prove the API always
 Before another attempt, capture the state in both views; the waypoint's height still differs from
 the gathering object's on uneven terrain.
 
+### What the stars can know about seeing the node: `/fp steps nr sight` (70450, 2026-10-21) (#61)
+
+Durotar, Razormane Grounds, a Silverleaf each time; the owner's answers and the screenshots.
+
+| Measured | Result |
+|---|---|
+| `C_Navigation.GetTargetState()`, held 10 s in each view | `Occluded` in every one: a clear view at 50 yd (21 of 21), behind a rock wall at 39 yd (19 of 19, and 20 of 20 for the crest step, the same spot), a node up on a rise at 57 yd (20 of 20). On a 300-sample walk: `Occluded` 248, `Invalid` 50, `InRange` 16. **Not the node's line of sight.** Every view was on sloping ground, where the marker's point (at the player's height) is under the hillside, so it may track that point's visibility; unmeasured on flat ground |
+| `UnitPosition("player")`'s height | 0 (no height): nothing gives the player's height, or the node's |
+| A waypoint's z (`UiMapPoint.CreateFromCoordinates(map, x, y, z)`) | stored and read back (0, 200, -200), but Blizzard's marker stays at the same screen point (1028, 927) and `GetDistance` at 74.5 for each: **the navigation ignores z**, and its distance is horizontal |
+| How far a node draws | a Silverleaf left view at 114 yd (the owner's Gone): the model isn't culled before the radar's range |
+| The minimap's height arrow | "above" for a node 50 yd up a slope: the arrow is relative to the player, so it fires on any slope. The stars there were short of the herb, at the player's height (corrected 2026-10-21: the owner's screenshot at 37 yd) |
+| The owner, clear view at 50 yd | couldn't see the herb itself, the stars on its spot (the screenshot: small, faint, on open ground) |
+| The owner, behind the rock | the node hidden, the stars drawn on the rock face |
+
+So no client signal tells whether the node is in sight, or how high it stands above the ground
+under it. The approach step (the arrow's threshold) gave nothing: no height to set it against, and
+its record drifted to a farther node.
+
