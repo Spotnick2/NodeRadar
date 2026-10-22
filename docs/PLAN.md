@@ -1764,7 +1764,8 @@ is: the owner accepts the game's icons on interactables while the marker is on (
   Each put back alone lost the plate. `SoftTargetNameplateInteract`, `SoftTargetInteractArc` and
   `nameplateGameObjectMaxDistance` (30 already reaches 15) didn't matter: left as they are.
 - **Claimed only when the marker is turned on** (the setting, `/nr marker`, NodeRadar enabled with
-  it on), each one only if it differs; never by the ticker or the reconciler. The old value is saved
+  it on, or a login with it on and no `softCVars` ever: on since #61, the owner's first run, #79),
+  each one only if it differs; never by the ticker or the reconciler. The old value is saved
   per CVar in `NodeRadarDB.softCVars = { [name] = { old, ours } }`, and only once the game accepts
   the new one (read back). A claim is kept until the marker or NodeRadar goes off.
 - **Put back** when the marker or NodeRadar goes off and at `/nr reset`; a CVar is put back only

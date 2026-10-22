@@ -338,11 +338,14 @@ end
 -- while it waits.
 local loginDriver = CreateFrame("Frame")
 local loginRead
+-- On at login: each claim read again. Never any `softCVars` (the marker on
+-- since #61, or set by hand): a first turn-on, claimed now (the owner, #79:
+-- no stars, nothing claimed).
 local function readAtLogin()
-    if Marker.On() then
-        judge(true)
-        if NR.db.softClaim then claim() end
-    end
+    if not Marker.On() then return end
+    if NR.db.softCVars == nil then NR.db.softClaim = true end
+    judge(true)
+    if NR.db.softClaim then claim() end
 end
 local function deferLogin()
     loginRead, wasPad = true, true

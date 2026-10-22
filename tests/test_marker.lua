@@ -269,6 +269,24 @@ eq(shown(), false, "...no stars")
 NR.Set("enabled", true)
 eq(cv("softTargetInteract"), "3", "...on again: claimed")
 
+-- On since #61, nothing ever claimed (the owner, #79): a first turn-on at login.
+NR.Set("marker", false)
+WoW.cvars.softTargetInteract = "1"
+NR.db.marker, NR.db.softCVars = true, nil
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+eq(cv("softTargetInteract"), "3", "on from before, never claimed: claimed at login")
+eq(claims().softTargetInteract and claims().softTargetInteract.old, "1", "...the old value kept")
+setPlates({ soft() })
+frames(0.6)
+eq(shown(), true, "...the stars")
+-- Claimed already, all of them cancelled: a login claims nothing again.
+NR.db.softCVars = { softTargetInteract = { cancelled = true } }
+WoW.cvars.softTargetInteract = "2"
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+eq(cv("softTargetInteract"), "2", "a claim cancelled before: not taken at login")
+
 checkMethods({ "AnimationGroup:SetLooping", "Alpha:SetFromAlpha", "Alpha:SetToAlpha", "Scale:SetScaleFrom",
     "Scale:SetScaleTo", "Alpha:SetStartDelay", "Alpha:SetSmoothing", "Scale:SetSmoothing",
     "Translation:SetOffset", "Translation:SetDuration", "Translation:SetOrder", "Texture:SetBlendMode",
