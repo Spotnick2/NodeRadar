@@ -1788,8 +1788,10 @@ is: the owner accepts the game's icons on interactables while the marker is on (
   `PLAYER_LOGIN`, all three were overwritten a moment later by the client's own values, and the
   `CVAR_UPDATE` cancelled every claim. From `PLAYER_LOGIN` until `Marker.SETTLE` (5) seconds after
   the first `PLAYER_ENTERING_WORLD`, nothing is written or judged (a `CVAR_UPDATE`, the ticker's
-  claims and restores); then the login's read runs. Only with something to read (the marker on, or a
-  claim left).
+  claims and restores); then the login's read runs, polled only with something to read (the marker
+  on, or a claim left). **A toggle inside that window waits too** (Codex, PR #79): on, a claim the
+  ticker makes once it's over; off, the stars hidden at once and the claims put back by the ticker
+  then, after the client's values are in.
 - **Nothing written in combat:** a set or restore that falls in `InCombatLockdown()` waits for
   `PLAYER_REGEN_ENABLED`.
 - **A restore that has to wait runs later, the marker off or not** (Codex): the marker turned off in

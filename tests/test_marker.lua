@@ -61,6 +61,7 @@ eq(M.driver._scripts.OnUpdate, nil, "...nothing per frame")
 eq(M.loginDriver._scripts.OnUpdate, nil, "...nor waiting for a login read")
 eq(cv("softTargetInteract"), "1", "...the CVars untouched")
 eq(next(claims()), nil, "...nothing claimed")
+frames(NR.Marker.SETTLE)                                   -- past the login window
 
 --------------------------------------------------------------------------------
 -- On: the CVars claimed, the stars on the soft target's plate
@@ -295,6 +296,38 @@ M.reset()
 WoW.fire("PLAYER_LOGIN")
 WoW.fire("PLAYER_ENTERING_WORLD", true, false)
 eq(M.loginDriver._scripts.OnUpdate, nil, "off, nothing claimed: no settling wait")
+
+-- Toggled inside the login window (Codex, PR #79): the CVars wait for its read.
+-- On, the marker off at login: nothing written before the client's values are in.
+NR.Set("marker", false)
+WoW.cvars.softTargetInteract = "1"
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+eq(M.loginDriver._scripts.OnUpdate, nil, "off at login, nothing claimed: no wait")
+NR.Set("marker", true)
+eq(cv("softTargetInteract"), "1", "on inside the window: nothing written yet")
+setPlates({ soft() })
+frames(1)
+C_CVar.SetCVar("softTargetInteract", "1")                  -- the client's synced value
+frames(NR.Marker.SETTLE)
+eq(cv("softTargetInteract"), "3", "...claimed once the window is over")
+eq(claims().softTargetInteract and claims().softTargetInteract.old, "1", "...the synced value kept to put back")
+-- Off inside the window, claims left: put back once it's over, after the sync.
+WoW.fire("PLAYER_LOGOUT")
+WoW.cvars.softTargetInteract = "3"                         -- the logout's restore didn't stick
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+NR.Set("marker", false)
+eq(shown(), false, "off inside the window: the stars hidden at once")
+eq(cv("softTargetInteract"), "3", "...the CVars wait")
+check(claims().softTargetInteract ~= nil, "...the claim kept")
+frames(1.2)
+C_CVar.SetCVar("softTargetInteract", "3")                  -- the client's synced value: ours
+frames(NR.Marker.SETTLE + 0.6)
+eq(cv("softTargetInteract"), "1", "...put back once it's over")
+eq(next(claims()), nil, "...nothing left")
 
 -- On since #61, nothing ever claimed (the owner, #79): a first turn-on at login.
 NR.Set("marker", false)

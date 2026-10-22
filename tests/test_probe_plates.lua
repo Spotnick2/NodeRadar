@@ -131,9 +131,9 @@ check(detail(11):find("in combat: SetCVar %-> true, read 59; back %-> true, read
 WoW.fire("PLAYER_LOGOUT")
 FP.run = FP.run + 1
 WoW.cvars.SoftTargetIconGameObject = "0"
+WoW.fire("PLAYER_LOGIN")                                   -- the client's order: the login, then entering the world
 WoW.fire("PLAYER_ENTERING_WORLD")
 WoW.drainTimers()
-WoW.fire("PLAYER_LOGIN")
 S.Resume()
 eq(result(12).status, "done", "reloaded")
 tick(0.5)
@@ -236,9 +236,11 @@ check(mdetail(9):find("on again: softTargetInteract 3 %(claimed, old 1%)"), "...
 WoW.fire("PLAYER_LOGOUT")
 FP.run = FP.run + 1
 WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD")
 S.Resume()
 tick(0.5)
 eq(mres(11).status, "done", "after the reload: " .. mdetail(11))
+tick(NR.Marker.SETTLE + 0.5)                               -- NodeRadar's login window over
 fp("steps stop")
 tick(1)
 eq(NR.db.marker, false, "stopped: NodeRadar's marker as it was")
