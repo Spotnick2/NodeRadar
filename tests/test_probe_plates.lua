@@ -166,6 +166,36 @@ eq(WoW.cvars.SoftTargetInteractArc, "1", "...the player's change kept")
 eq(NR.db.compass, false, "...NodeRadar's compass as it was")
 eq(db.plates.saved, nil, "...nothing left to put back")
 
+-- The ablation: the plate here needs SoftTargetNameplateInteract and
+-- SoftTargetIconGameObject, nothing else; each CVar put back alone in turn.
+local function arec() return FP.db.steps.records["NodeRadarProbe/ablate"] end
+local function ares(i) return arec().results[i] or {} end
+local function adetail(i) return tostring(ares(i).detail or ares(i).lastError) end
+local function plateNeeds()
+    local on = WoW.cvars.SoftTargetNameplateInteract == "1" and WoW.cvars.SoftTargetIconGameObject == "1"
+    WoW.plates = on and { { unit = "nameplate4", name = "Silverleaf", object = true, soft = true } } or {}
+end
+WoW.pos = { a.north - 13, a.west, 1 }                     -- 13 yards from a
+WoW.cvars.SoftTargetNameplateInteract = "0"                -- this time the client has it
+fp("steps nr ablate")
+tick(1.2)
+eq(ares(1).status, "done", "the ablation set up: " .. adetail(1))
+for _ = 1, 120 do
+    if ares(2).status == nil then plateNeeds(); place(); NR.Step(WoW.now); tick(0.5) end
+end
+eq(ares(2).status, "done", "the ablation: " .. adetail(2))
+check(adetail(2):find("Silverleaf at 13%.%d yd"), "...at 13 yards")
+check(adetail(2):find("without SoftTargetNameplateInteract: NO PLATE"), "...the plate's CVar needed")
+check(adetail(2):find("without SoftTargetIconGameObject: NO PLATE"), "...the object icon's needed")
+check(adetail(2):find("without SoftTargetInteractArc: the plate kept"), "...the arc not")
+check(adetail(2):find("without nameplateGameObjectMaxDistance: the plate kept"), "...the plates' distance not")
+check(not adetail(2):find("come back"), "...the plate back after each, ours set again")
+tick(1)
+eq(ares(3).status, "done", "the summary: " .. adetail(3))
+eq(WoW.cvars.softTargetInteract, "1", "...everything put back")
+eq(WoW.cvars.SoftTargetInteractRange, "10.000000", "...the range too")
+fp("steps stop")
+
 eq(errors(), 0, "no step threw")
 for _, l in ipairs(WoW.chat) do check(not l:find("plates"), "nothing of the probe in chat: " .. l) end
 done("test_probe_plates")

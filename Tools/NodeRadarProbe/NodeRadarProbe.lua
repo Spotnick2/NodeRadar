@@ -5258,15 +5258,18 @@ end)
 -- A round that changes NodeRadar's settings puts them back however it ends
 -- (Codex, PR #77): its summary, a Stop, another round started, a timeout. While
 -- `pending()` (saved, so a reload keeps it) and the round isn't the active one,
--- `restore()` runs; checked every half second from the probe's load.
+-- `restore()` runs; checked every half second from the probe's load. `key`:
+-- one round's, or a list of the rounds sharing that state.
 local function guardRound(key, pending, restore)
+    local keys = type(key) == "table" and key or { key }
     local f, tick = CreateFrame("Frame"), 0
     f:SetScript("OnUpdate", function(_, elapsed)
         tick = tick + elapsed
         if tick < 0.5 then return end
         tick = 0
         local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
-        local active = type(st) == "table" and st.active == key
+        local active = false
+        for _, k in ipairs(keys) do active = active or (type(st) == "table" and st.active == k) end
         if not active and type(NodeRadarProbeDB) == "table" and nr() and pending() then restore() end
     end)
     return f
@@ -5952,6 +5955,7 @@ end)()
 --------------------------------------------------------------------------------
 
 local KEY = Probe.name .. "/plates"
+local ABLATE = Probe.name .. "/ablate"   -- the ablation round (#78's plan), the same state
 local HOLD = 10
 local WANTED = {
     { "softTargetInteract", "3" }, { "SoftTargetIconGameObject", "1" }, { "SoftTargetNameplateInteract", "1" },
@@ -5973,7 +5977,7 @@ local function note(text)
 end
 local function running()
     local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
-    return type(st) == "table" and st.active == KEY
+    return type(st) == "table" and (st.active == KEY or st.active == ABLATE)
 end
 local function get(name) return wpRead(C_CVar.GetCVar, name) end
 -- CVars can read back reformatted ("60.000000" for 60).
@@ -6009,7 +6013,7 @@ local function restore()
     if uninstall then uninstall() end
     if #kept > 0 then note("left as you changed them: " .. table.concat(kept, ", ")) end
 end
-local guard = guardRound(KEY, pending, restore)
+local guard = guardRound({ KEY, ABLATE }, pending, restore)
 
 -- The nearest node record of a name: its distance in yards.
 local function yardsTo(name)
@@ -6202,40 +6206,44 @@ local function starOn()
 end
 local function starOff() if star then star:Hide(); star:ClearAllPoints(); star.on = nil end end
 
+-- The round's set-up: out of combat, NodeRadar's compass on and its marker off, the
+-- CVars set and read back, each old value kept only once the game took ours.
+local function setup()
+    local n = nr()
+    if not n then return false, "NodeRadar isn't loaded" end
+    if InCombatLockdown() then return false, "in combat" end
+    if pending() then restore() end                 -- a round before this one, cut short
+    NodeRadarProbeDB.plates = nil
+    holds = {}
+    local s = db()
+    s.nr = { compass = n.db.compass, marker = n.db.marker }
+    n.Set("marker", false)
+    n.Set("compass", true)
+    s.saved, s.applied = {}, {}
+    local out = {}
+    for _, c in ipairs(WANTED) do
+        local name, v = c[1], c[2]
+        local old = get(name)
+        if type(old) ~= "string" or old:find("^[A-Z][A-Z]") then
+            out[#out + 1] = name .. " " .. str(old)
+        else
+            if not same(old, v) then wpRead(C_CVar.SetCVar, name, v) end
+            local now = get(name)
+            if same(now, v) and not same(old, v) then s.saved[name], s.applied[name] = old, v end
+            out[#out + 1] = ("%s %s -> %s"):format(name, str(old), str(now))
+        end
+    end
+    for _, name in ipairs(WATCHED) do out[#out + 1] = name .. " " .. str(get(name)) end
+    install()
+    return true, note("set: " .. table.concat(out, "; "))
+end
+
 local steps = {
     rev = 1,
     title = "Soft-interact nameplates on herbs and ores (#78)",
     { text = "Out of combat, with Find Herbs or Find Minerals on. The round turns NodeRadar's compass on and its "
           .. "marker off, and the game's interact targeting on, and puts everything back at the end.",
-      wait = function()
-          local n = nr()
-          if not n then return false, "NodeRadar isn't loaded" end
-          if InCombatLockdown() then return false, "in combat" end
-          if pending() then restore() end                 -- a round before this one, cut short
-          NodeRadarProbeDB.plates = nil
-          holds = {}
-          local s = db()
-          s.nr = { compass = n.db.compass, marker = n.db.marker }
-          n.Set("marker", false)
-          n.Set("compass", true)
-          s.saved, s.applied = {}, {}
-          local out = {}
-          for _, c in ipairs(WANTED) do
-              local name, v = c[1], c[2]
-              local old = get(name)
-              if type(old) ~= "string" or old:find("^[A-Z][A-Z]") then
-                  out[#out + 1] = name .. " " .. str(old)
-              else
-                  if not same(old, v) then wpRead(C_CVar.SetCVar, name, v) end
-                  local now = get(name)
-                  if same(now, v) and not same(old, v) then s.saved[name], s.applied[name] = old, v end
-                  out[#out + 1] = ("%s %s -> %s"):format(name, str(old), str(now))
-              end
-          end
-          for _, name in ipairs(WATCHED) do out[#out + 1] = name .. " " .. str(get(name)) end
-          install()
-          return true, note("set: " .. table.concat(out, "; "))
-      end },
+      wait = setup },
     { text = "Stand still with two or more herbs or ores you can gather in view, within 40 yards (NodeRadar has "
           .. "to have seen them on the minimap), and hold still 10 seconds.", wait = hold("near"),
       screenshot = "plates: near", timeout = 900 },
@@ -6302,6 +6310,71 @@ local steps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("plates", steps)
+
+-- The ablation (#78's plan): which of the CVars the plate needs. Standing at
+-- 12-14 yards from a herb whose plate shows (inside the measured 15, past the
+-- default range of 10), each CVar the round set is put back alone for two
+-- polls, the plate looked for, then ours set again for two.
+local ablation
+local function ablate()
+    if not nr() then return false, "NodeRadar isn't loaded" end
+    if InCombatLockdown() then return false, "in combat" end
+    local s = db()
+    if not ablation then
+        local e = softPlate()
+        if not e then return false, "no herb or ore targeted: stand 12-14 yards from one, facing it" end
+        if not e.yards or e.yards < 11 or e.yards > 15 then
+            return false, ("%s at %s yards: stand 12-14 yards off"):format(str(e.name), fmt(e.yards))
+        end
+        local list = {}
+        for _, c in ipairs(WANTED) do if s.saved and s.saved[c[1]] then list[#list + 1] = c[1] end end
+        ablation = { list = list, i = 0, phase = "next", out = {}, name = e.name, yards = e.yards }
+    end
+    local a = ablation
+    local cur = a.list[a.i]
+    if a.phase == "without" then
+        a.polls = a.polls + 1
+        if a.polls < 2 then return false, cur .. " put back: watching" end
+        local e = softPlate()
+        a.out[#a.out + 1] = ("without %s: %s"):format(cur, e and ("the plate kept (%s yd)"):format(fmt(e.yards)) or "NO PLATE")
+        wpRead(C_CVar.SetCVar, cur, s.applied[cur])
+        a.phase, a.polls = "back", 0
+        return false, cur .. " ours again"
+    elseif a.phase == "back" then
+        a.polls = a.polls + 1
+        if a.polls < 2 then return false, cur .. " ours again: watching" end
+        if not softPlate() then a.out[#a.out + 1] = "(the plate didn't come back after " .. cur .. ")" end
+        a.phase = "next"
+    end
+    if a.i >= #a.list then
+        local line = ("%s at %s yd: %s"):format(str(a.name), fmt(a.yards), table.concat(a.out, "; "))
+        ablation = nil
+        return true, note("ablation: " .. line)
+    end
+    a.i = a.i + 1
+    cur = a.list[a.i]
+    wpRead(C_CVar.SetCVar, cur, s.saved[cur])
+    a.phase, a.polls = "without", 0
+    return false, cur .. " put back"
+end
+
+Probe:Steps("ablate", {
+    rev = 1,
+    title = "Which interact CVars the plate needs (#78)",
+    { text = "Out of combat, with Find Herbs or Find Minerals on. The round turns NodeRadar's compass on and its "
+          .. "marker off, and the game's interact targeting on, and puts everything back at the end.",
+      wait = function() ablation = nil; return setup() end },
+    { text = "Stand 12 to 14 yards from a herb or ore, facing it, until the game's icon shows over it; then hold "
+          .. "still about 30 seconds while the probe turns each setting back in turn.", wait = ablate,
+      timeout = 900 },
+    { text = "The summary; your settings put back.", auto = true, run = function()
+          restore()
+          local out = {}
+          for _, c in ipairs(WANTED) do out[#out + 1] = c[1] .. " " .. str(get(c[1])) end
+          return note("put back: " .. table.concat(out, ", "))
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+})
 NS._platesTest = { watch = watch, guard = guard, star = function() return star end }
 end)()
 
