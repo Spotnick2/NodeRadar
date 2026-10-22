@@ -164,6 +164,34 @@ eq(NR.db.marker, true, "...the marker on again, as it was")
 eq(db.sight.lift, nil, "...nothing left to put back")
 NR.Set("marker", false)
 
+-- A reload in the height step (Codex, PR #77): the probe's waypoint cleared,
+-- NodeRadar's marker back on, the step started again and finished.
+NR.Set("marker", true)
+fp("steps nr sight")
+tick(1.2)
+for _ = 2, 11 do S.Skip() end
+run(12, 2)
+S.Run()                                                    -- 12: Test
+for _ = 1, 8 do if not db.sight.lift then tick(1) end end
+check(db.sight.lift and WoW.superTracked == "waypoint" and NR.db.marker == false, "the probe's waypoint set, the marker off")
+WoW.fire("PLAYER_LOGOUT")
+FP.run = FP.run + 1
+NS._sightTest.reload()
+NR.Marker._test.reset()
+WoW.fire("PLAYER_LOGIN")
+S.Resume()
+tick(1.2)
+eq(db.sight.lift, nil, "reloaded mid-step: the probe's waypoint forgotten")
+eq(WoW.waypoint == nil or not WoW.waypoint.z, true, "...and cleared")
+eq(NR.db.marker, true, "...NodeRadar's marker back on")
+eq(result(13).status, nil, "...the step still running")
+run(13, 20)
+eq(result(13).status, "done", "...started again and finished: " .. detail(13))
+eq(NR.db.marker, true, "...the marker on after it")
+fp("steps stop")
+tick(1)
+NR.Set("marker", false)
+
 eq(errors(), 0, "no step threw")
 for _, l in ipairs(WoW.chat) do check(not l:find("sight"), "nothing of the probe in chat: " .. l) end
 done("test_probe_sight")

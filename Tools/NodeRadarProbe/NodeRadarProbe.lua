@@ -5769,18 +5769,22 @@ local lift
 -- and the probe's own waypoint (the height step's, s.lift) cleared if it's
 -- still the one set.
 local function pending() local s = NodeRadarProbeDB.sight; return s ~= nil and (s.saved ~= nil or s.lift ~= nil) end
+-- The height step's own waypoint (s.lift) cleared if it's still the one set.
+local function clearLift()
+    local s = db()
+    local p = s.lift
+    if not p then return end
+    local pt = wpRead(C_Map.GetUserWaypoint)
+    local pos = type(pt) == "table" and not secret(pt) and pt.position
+    if pos and pt.uiMapID == p.map and num(pos.x) and math.abs(pos.x - p.x) < 1e-6 and math.abs(pos.y - p.y) < 1e-6 then
+        pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
+        pcall(C_Map.ClearUserWaypoint)
+    end
+    s.lift, lift = nil, nil
+end
 local function restore()
     local n, s = nr(), db()
-    local p = s.lift
-    if p then
-        local pt = wpRead(C_Map.GetUserWaypoint)
-        local pos = type(pt) == "table" and not secret(pt) and pt.position
-        if pos and pt.uiMapID == p.map and num(pos.x) and math.abs(pos.x - p.x) < 1e-6 and math.abs(pos.y - p.y) < 1e-6 then
-            pcall(C_SuperTrack.SetSuperTrackedUserWaypoint, false)
-            pcall(C_Map.ClearUserWaypoint)
-        end
-        s.lift, lift = nil, nil
-    end
+    clearLift()
     local saved = s.saved
     if not saved then return end
     s.saved = nil
@@ -5796,6 +5800,13 @@ local function liftWait()
     local n = nr()
     if not n then return false, "NodeRadar isn't loaded" end
     install()
+    if not lift and db().lift then
+        -- A reload in the middle of the step (Codex, PR #77): the sequence is
+        -- lost with the reload; ours cleared, NodeRadar's marker back, again.
+        clearLift()
+        n.Set("marker", true)
+        return false, "a reload in the height step: starting it again"
+    end
     if not lift then
         local o, r = ours(), target()
         if not (o and r) then return false, "no waypoint of NodeRadar's yet: face a node 30-60 yards off" end
@@ -5924,7 +5935,8 @@ local steps = {
     { text = "Type /reload (or press Reload now) to save the results.", reload = true },
 }
 Probe:Steps("sight", steps)
-NS._sightTest = { sampler = sampler, uninstall = uninstall, guard = guard }
+NS._sightTest = { sampler = sampler, uninstall = uninstall, guard = guard,
+    reload = function() lift = nil end }        -- what a /reload loses
 end)()
 
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }
