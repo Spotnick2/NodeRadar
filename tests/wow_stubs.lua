@@ -198,6 +198,7 @@ function Methods.GetScale(w) return w._scale or 1 end
 function Methods.AddMaskTexture(t, m) t._mask = m end
 function Methods.SetAlpha(w, a) w._alpha = a end
 function Methods.GetAlpha(w) return w._alpha or 1 end
+function Methods.GetEffectiveAlpha(w) return (w._alpha or 1) * (w._parent and Methods.GetEffectiveAlpha(w._parent) or 1) end
 function Methods.GetParent(w) return w._parent end
 function Methods.SetParent(w, p) w._parent = p end
 function Methods.GetFrameLevel(w) return w._level end
@@ -588,6 +589,45 @@ C_Navigation = {
     WasClampedToScreen = function() return WoW.navClamped == true end,
     GetTargetState = function() return WoW.navState or 0 end,
 }
+
+-- Nameplates (#78): WoW.plates = { { unit = "nameplate1", name, object = true,
+-- soft = true (the soft-interact target), alpha }, ... }; each a plate frame
+-- with namePlateUnitToken and a UnitFrame, kept by unit.
+WoW.plates = {}
+local plateFrames = {}
+local function plateOf(unit)
+    for _, p in ipairs(WoW.plates) do
+        if p.unit == unit or (unit == "softinteract" and p.soft) then return p end
+    end
+end
+local function plateFrame(p)
+    local f = plateFrames[p.unit]
+    if not f then
+        f = newWidget("Frame", nil)
+        f.namePlateUnitToken = p.unit
+        f.UnitFrame = newWidget("Frame", f)
+        f.UnitFrame.unit = p.unit
+        f._width, f._height = 110, 45
+        plateFrames[p.unit] = f
+    end
+    f._alpha = p.alpha or 1
+    return f
+end
+C_NamePlate = {
+    GetNamePlates = function()
+        local out = {}
+        for _, p in ipairs(WoW.plates) do out[#out + 1] = plateFrame(p) end
+        return out
+    end,
+    GetNamePlateForUnit = function(unit) local p = plateOf(unit); return p and plateFrame(p) or nil end,
+}
+function UnitIsGameObject(unit) local p = plateOf(unit); return p ~= nil and p.object == true end
+function UnitName(unit) local p = plateOf(unit); if p then return p.name end end
+function UnitExists(unit) return plateOf(unit) ~= nil end
+function UnitIsUnit(a, b)
+    local pa, pb = plateOf(a), plateOf(b)
+    return pa ~= nil and pa == pb
+end
 
 WoW.mounted = false
 function IsMounted() return WoW.mounted end

@@ -727,3 +727,21 @@ So no client signal tells whether the node is in sight, or how high it stands ab
 under it. The approach step (the arrow's threshold) gave nothing: no height to set it against, and
 its record drifted to a farther node.
 
+### Soft-interact nameplates on herbs and ores: `/fp steps nr plates` (70450, 2026-10-22) (#78)
+
+Durotar, Razormane Grounds; Silverleaf and Peacebloom; 855 samples, every half second.
+
+| Measured | Result |
+|---|---|
+| The CVars | all set and read back: `softTargetInteract` 1 -> 3, `SoftTargetIconGameObject` 0 -> 1, `SoftTargetNameplateInteract` 0 -> 1, `SoftTargetInteractArc` 0 -> 2, `SoftTargetInteractRange` 10 -> 60, `nameplateGameObjectMaxDistance` 30 -> 60 (`SoftTargetInteractOnlyInRange` and `...RangeIsHard` already 0). Still as set after a `/reload` |
+| How far | a node's plate appeared at 15.4-15.6 yd and went at 15.3-15.7 yd, every time, with the range at 60: **about 15 yards, whatever the CVars** |
+| How many | **one object plate at a time: the soft target's.** Two Silverleafs in view at 33 yd: no plate. Other interactables compete for it: a Prickly Pear Fruit (Durotar's cactus) took it once, the game's gear icon over it |
+| Reading it | `UnitName` on the plate's unit and on `"softinteract"` reads the node's name (Silverleaf, Peacebloom); `UnitIsUnit(plate unit, "softinteract")` is true; `UnitExists("softinteract")` is **false** for a game object (true for an NPC); `UnitIsGameObject` true |
+| The height | a star of ours anchored to the plate's `BOTTOM` (parented to `UIParent`) sat on a Silverleaf up a slope at 15 yd: the owner, "yes", and the screenshot: the plate is on the object, at its height |
+| The plate's alpha | 0.3-1.0 on a node's plate (fading in as it appears, among others); the rock view was beyond 15 yd, so occlusion is unmeasured |
+| `PLAYER_SOFT_INTERACT_CHANGED` | never fired, though the target changed (plates added and removed): use `NAME_PLATE_UNIT_ADDED` / `_REMOVED` |
+| Combat | not measured (the fight ended before the probe's poll saw it) |
+| Taint | no `ADDON_ACTION_BLOCKED` / `_FORBIDDEN` |
+
+So the soft-interact plate marks the node exactly, height included, but only the one the game
+targets and only within about 15 yards: where the compass hides.

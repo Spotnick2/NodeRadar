@@ -5939,4 +5939,370 @@ NS._sightTest = { sampler = sampler, uninstall = uninstall, guard = guard,
     reload = function() lift = nil end }        -- what a /reload loses
 end)()
 
+;(function()
+--------------------------------------------------------------------------------
+-- Soft-interact nameplates (#78): what the game gives a herb or ore while its
+-- soft-interact targeting is on, before NodeRadar puts stars there. Which
+-- plates exist (the target's only, or every object near), how far, whether the
+-- node's name reads, whether a plate fades behind scenery, where a frame of
+-- ours anchored to a plate sits against the node, whether the client resets the
+-- CVars at a reload, what combat refuses. NodeRadar's compass is on for the
+-- round (its records give each node's distance), its marker off. Everything put
+-- back however the round ends (guardRound).
+--------------------------------------------------------------------------------
+
+local KEY = Probe.name .. "/plates"
+local HOLD = 10
+local WANTED = {
+    { "softTargetInteract", "3" }, { "SoftTargetIconGameObject", "1" }, { "SoftTargetNameplateInteract", "1" },
+    { "SoftTargetInteractArc", "2" }, { "SoftTargetInteractRange", "60" }, { "SoftTargetInteractOnlyInRange", "0" },
+    { "SoftTargetInteractRangeIsHard", "0" }, { "nameplateGameObjectMaxDistance", "60" },
+}
+local WATCHED = { "nameplateMaxDistance", "SoftTargetIconInteract", "SoftTargetWorldtextSize", "nameplateShowAll" }
+local STAR = "Interface\\AddOns\\NodeRadar\\Media\\MarkerStar.tga"
+
+local function db()
+    NodeRadarProbeDB.plates = NodeRadarProbeDB.plates or { log = {}, samples = {} }
+    return NodeRadarProbeDB.plates
+end
+local function note(text)
+    local s = db()
+    if #s.log < 300 then s.log[#s.log + 1] = ("%.1f %s"):format(GetTime(), text) end
+    say("plates: " .. text)
+    return text
+end
+local function running()
+    local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+    return type(st) == "table" and st.active == KEY
+end
+local function get(name) return wpRead(C_CVar.GetCVar, name) end
+-- CVars can read back reformatted ("60.000000" for 60).
+local function same(a, b) return a == b or (tonumber(a) ~= nil and tonumber(a) == tonumber(b)) end
+local function fmt(v) return num(v) and ("%.1f"):format(v) or "?" end
+local function readable(v)
+    if secret(v) then return "SECRET" end
+    return v
+end
+
+-- The player's settings changed for the round, kept to put back: the CVars
+-- (only those still at our value: a change of the player's wins), NodeRadar's
+-- compass and marker.
+local function pending()
+    local s = NodeRadarProbeDB.plates
+    return s ~= nil and (s.saved ~= nil or s.nr ~= nil)
+end
+local star
+local uninstall
+local function restore()
+    local s, n = db(), nr()
+    local kept = {}
+    for name, old in pairs(s.saved or {}) do
+        if same(get(name), s.applied[name]) then wpRead(C_CVar.SetCVar, name, old) else kept[#kept + 1] = name end
+    end
+    s.saved, s.applied = nil, nil
+    if s.nr and n then
+        n.Set("marker", s.nr.marker or false)
+        n.Set("compass", s.nr.compass or false)
+    end
+    s.nr = nil
+    if star then star:Hide(); star:ClearAllPoints() end
+    if uninstall then uninstall() end
+    if #kept > 0 then note("left as you changed them: " .. table.concat(kept, ", ")) end
+end
+local guard = guardRound(KEY, pending, restore)
+
+-- The nearest node record of a name: its distance in yards.
+local function yardsTo(name)
+    local n = nr()
+    local ok, pn, pw = pcall(UnitPosition, "player")
+    pn, pw = ok and num(pn), ok and num(pw)
+    if not (n and pn and type(name) == "string") then return nil end
+    local best
+    for _, r in ipairs(n.Icons.Records()) do
+        if r.name == name then
+            local d = math.sqrt((r.north - pn) ^ 2 + (r.west - pw) ^ 2)
+            if not best or d < best then best = d end
+        end
+    end
+    return best
+end
+
+-- Every plate now: { unit, name, object, soft, known, yards, shown, alpha, effective, frameAlpha, x, y, w, h, plate }.
+local function plates()
+    local out = {}
+    local ok, list = pcall(C_NamePlate.GetNamePlates)
+    if not ok or type(list) ~= "table" then return out end
+    local n = nr()
+    for _, p in ipairs(list) do
+        local uf = p.UnitFrame
+        local unit = p.namePlateUnitToken or (uf and uf.unit)
+        if type(unit) == "string" and not secret(unit) then
+            local e = { unit = unit, plate = p }
+            e.object = readable(wpRead(UnitIsGameObject, unit))
+            e.name = readable(wpRead(UnitName, unit))
+            e.soft = readable(wpRead(UnitIsUnit, unit, "softinteract"))
+            e.known = type(e.name) == "string" and n and n.Learn.Kind(e.name) or nil
+            e.yards = e.known and yardsTo(e.name)
+            e.shown = readable(wpRead(p.IsShown, p))
+            e.alpha = num(wpRead(p.GetAlpha, p))
+            e.effective = num(wpRead(p.GetEffectiveAlpha, p))
+            e.frameAlpha = uf and num(wpRead(uf.GetAlpha, uf))
+            local okC, x, y = pcall(p.GetCenter, p)
+            e.x, e.y = okC and num(x), okC and num(y)
+            e.w, e.h = num(wpRead(p.GetWidth, p)), num(wpRead(p.GetHeight, p))
+            out[#out + 1] = e
+        end
+    end
+    return out
+end
+local function line(e)
+    return ("%s %s%s%s %s yd, shown %s, alpha %s/%s, frame %s"):format(e.unit, str(e.name),
+        e.object == true and " (object)" or "", e.soft == true and " SOFT" or "", fmt(e.yards), str(e.shown),
+        fmt(e.alpha), fmt(e.effective), fmt(e.frameAlpha))
+end
+
+-- The sampler and the plates' comings and goings, while the round runs.
+local watch = { frame = CreateFrame("Frame"), tick = 0, units = {} }
+local function sample()
+    local s = db().samples
+    if #s >= 1500 then return end
+    local parts = {}
+    for _, e in ipairs(plates()) do
+        parts[#parts + 1] = line(e)
+        watch.units[e.unit] = { name = e.name, yards = e.yards, known = e.known }
+    end
+    s[#s + 1] = ("%.1f %s | soft %s %s | %s"):format(GetTime(), watch.tag or "-",
+        str(readable(wpRead(UnitExists, "softinteract"))), str(readable(wpRead(UnitName, "softinteract"))),
+        #parts > 0 and table.concat(parts, "; ") or "no plates")
+end
+local function install()
+    if watch.on then return end
+    watch.on, watch.tick = true, 0
+    watch.frame:SetScript("OnUpdate", function(_, elapsed)
+        if not running() then uninstall(); return end
+        watch.tick = watch.tick + elapsed
+        if watch.tick < 0.5 then return end
+        watch.tick = 0
+        sample()
+    end)
+    watch.frame:SetScript("OnEvent", function(_, event, a1, a2)
+        if event == "NAME_PLATE_UNIT_ADDED" or event == "NAME_PLATE_UNIT_REMOVED" then
+            local u = watch.units[a1]
+            local name = readable(wpRead(UnitName, a1))
+            if event == "NAME_PLATE_UNIT_ADDED" then
+                local known = type(name) == "string" and nr() and nr().Learn.Kind(name)
+                if known then note(("added %s: %s at %s yd"):format(str(a1), name, fmt(yardsTo(name)))) end
+            elseif u and u.known then
+                watch.removed = { name = u.name, yards = u.yards, at = GetTime() }
+                note(("removed %s: %s, last seen at %s yd"):format(str(a1), str(u.name), fmt(u.yards)))
+            end
+        elseif event == "PLAYER_SOFT_INTERACT_CHANGED" then
+            watch.changes = (watch.changes or 0) + 1
+        elseif event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+            note(("%s by %s: %s"):format(event, str(a1), str(a2)))
+        elseif event == "PLAYER_REGEN_DISABLED" then
+            watch.fought = true
+        elseif event == "PLAYER_REGEN_ENABLED" then
+            if watch.fought then watch.foughtDone = true end
+        end
+    end)
+    Probe:RegisterEvents(watch.frame, { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED",
+        "PLAYER_SOFT_INTERACT_CHANGED", "ADDON_ACTION_BLOCKED", "ADDON_ACTION_FORBIDDEN",
+        "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" })
+end
+function uninstall()
+    watch.frame:SetScript("OnUpdate", nil)
+    watch.frame:SetScript("OnEvent", nil)
+    watch.frame:UnregisterAllEvents()
+    watch.on, watch.tag = nil, nil
+end
+
+-- What the client did with the CVars at the load: read at PLAYER_ENTERING_WORLD
+-- and 2 s after, while the round has them set (a beta client was seen setting
+-- one back after entering the world).
+local loader = CreateFrame("Frame")
+loader:RegisterEvent("PLAYER_ENTERING_WORLD")
+loader:SetScript("OnEvent", function()
+    if type(NodeRadarProbeDB) ~= "table" or not pending() then return end
+    local function read(label)
+        local s = db()
+        if not s.applied then return end
+        local off = {}
+        for name, v in pairs(s.applied) do
+            if not same(get(name), v) then off[#off + 1] = name .. " " .. str(get(name)) end
+        end
+        s.pew = s.pew or {}
+        s.pew[#s.pew + 1] = label .. ": " .. (#off > 0 and table.concat(off, ", ") or "all as set")
+    end
+    read("at entering the world")
+    C_Timer.After(2, function() read("2 s after") end)
+end)
+
+-- A view held still for HOLD seconds; moving more than 2 yards starts it again.
+local holds = {}
+local function hold(tag, seconds, need)
+    return function()
+        if not nr() then return false, "NodeRadar isn't loaded" end
+        install()
+        if need then
+            local ok, why = need()
+            if not ok then holds[tag] = nil; return false, why end
+        end
+        local okP, pn, pw = pcall(UnitPosition, "player")
+        pn, pw = okP and num(pn), okP and num(pw)
+        if not pn then return false, "no position" end
+        local h = holds[tag]
+        if not h or math.abs(pn - h.n) + math.abs(pw - h.w) > 2 then
+            holds[tag] = { at = GetTime(), n = pn, w = pw }
+            watch.tag = tag
+            return false, "holding still"
+        end
+        local left = (seconds or HOLD) - (GetTime() - h.at)
+        if left > 0 then watch.tag = tag; return false, ("holding still: %.0f s"):format(left) end
+        holds[tag], watch.tag = nil, nil
+        local seen = {}
+        for _, e in ipairs(plates()) do seen[#seen + 1] = line(e) end
+        return true, note(("%s: %d plates: %s"):format(tag, #seen, #seen > 0 and table.concat(seen, "; ") or "none"))
+    end
+end
+
+-- The soft target's plate, a known herb or ore.
+local function softPlate()
+    for _, e in ipairs(plates()) do
+        if e.soft == true and e.known then return e end
+    end
+end
+local function needSoft()
+    local e = softPlate()
+    if not e then return false, "no herb or ore targeted: face the nearest one" end
+    return true
+end
+-- Our star at the bottom of the soft target's plate, anchored (parented to
+-- UIParent): where it sits against the node is the screenshot's.
+local function starOn()
+    local e = softPlate()
+    if not star then
+        star = CreateFrame("Frame", nil, UIParent)
+        star:SetSize(48, 48)
+        star:EnableMouse(false)
+        star.tex = star:CreateTexture(nil, "OVERLAY")
+        star.tex:SetAllPoints(star)
+        star.tex:SetTexture(STAR)
+        star.tex:SetBlendMode("ADD")
+    end
+    if not e then star:Hide(); return false, "no herb or ore targeted: face the nearest one" end
+    if star.on ~= e.plate then
+        star:ClearAllPoints()
+        local ok, err = pcall(star.SetPoint, star, "CENTER", e.plate, "BOTTOM", 0, 0)
+        if not ok then return false, "anchoring: " .. str(err) end
+        star.on = e.plate
+    end
+    star:Show()
+    return true
+end
+local function starOff() if star then star:Hide(); star:ClearAllPoints(); star.on = nil end end
+
+local steps = {
+    rev = 1,
+    title = "Soft-interact nameplates on herbs and ores (#78)",
+    { text = "Out of combat, with Find Herbs or Find Minerals on. The round turns NodeRadar's compass on and its "
+          .. "marker off, and the game's interact targeting on, and puts everything back at the end.",
+      wait = function()
+          local n = nr()
+          if not n then return false, "NodeRadar isn't loaded" end
+          if InCombatLockdown() then return false, "in combat" end
+          if pending() then restore() end                 -- a round before this one, cut short
+          NodeRadarProbeDB.plates = nil
+          holds = {}
+          local s = db()
+          s.nr = { compass = n.db.compass, marker = n.db.marker }
+          n.Set("marker", false)
+          n.Set("compass", true)
+          s.saved, s.applied = {}, {}
+          local out = {}
+          for _, c in ipairs(WANTED) do
+              local name, v = c[1], c[2]
+              local old = get(name)
+              if type(old) ~= "string" or old:find("^[A-Z][A-Z]") then
+                  out[#out + 1] = name .. " " .. str(old)
+              else
+                  if not same(old, v) then wpRead(C_CVar.SetCVar, name, v) end
+                  local now = get(name)
+                  if same(now, v) and not same(old, v) then s.saved[name], s.applied[name] = old, v end
+                  out[#out + 1] = ("%s %s -> %s"):format(name, str(old), str(now))
+              end
+          end
+          for _, name in ipairs(WATCHED) do out[#out + 1] = name .. " " .. str(get(name)) end
+          install()
+          return true, note("set: " .. table.concat(out, "; "))
+      end },
+    { text = "Stand still with two or more herbs or ores you can gather in view, within 40 yards (NodeRadar has "
+          .. "to have seen them on the minimap), and hold still 10 seconds.", wait = hold("near"),
+      screenshot = "plates: near", timeout = 900 },
+    { text = "Did the game draw its interact icon (or a name) over every node, or over one? (Note box: what you saw.)",
+      ask = true },
+    { text = "Face the nearest node: the probe draws a NodeRadar star at the bottom of its plate. Hold still 5 "
+          .. "seconds.", wait = hold("star", 5, starOn), screenshot = "plates: star", timeout = 900 },
+    { text = "Where was the star against the herb or ore: on it, above it (by how much), below? (Note box.)",
+      ask = true },
+    { text = "Behind a rock: move so a rock, a tree or a building hides a node within 40 yards, and hold still "
+          .. "10 seconds. (Skip if you can't.)", wait = hold("rock", nil, function() starOn(); return true end),
+      screenshot = "plates: rock", timeout = 900 },
+    { text = "Was the node hidden, and were the game's icon and the probe's star still drawn over it?", ask = true },
+    { text = "Up a slope or a ledge: face a node above or below you, the star on it, and hold still 10 seconds. "
+          .. "(Skip if there's none.)", wait = hold("slope", nil, starOn), screenshot = "plates: slope",
+      timeout = 900 },
+    { text = "Was the star on the node, up there?", ask = true },
+    { text = "How far: walk away from a node, watching it, until the game's icon over it goes. (Skip if you "
+          .. "can't tell.)", wait = function()
+          starOff()
+          install()
+          if not watch.rangeFrom then watch.rangeFrom, watch.removed = GetTime(), nil end
+          local r = watch.removed
+          if not r then return false, "walking away" end
+          watch.rangeFrom = nil
+          return true, note(("the plate went: %s at %s yd"):format(str(r.name), fmt(r.yards)))
+      end, timeout = 900 },
+    { text = "Optional: fight a creature; in the fight the probe changes one of the settings and back.",
+      wait = function()
+          install()
+          if InCombatLockdown() and not watch.combatTry then
+              local a = wpRead(C_CVar.SetCVar, "SoftTargetInteractRange", "59")
+              local back = get("SoftTargetInteractRange")
+              local b = wpRead(C_CVar.SetCVar, "SoftTargetInteractRange", "60")
+              watch.combatTry = ("in combat: SetCVar -> %s, read %s; back -> %s, read %s"):format(str(a), str(back),
+                  str(b), str(get("SoftTargetInteractRange")))
+          end
+          if not watch.foughtDone then return false, watch.fought and "in the fight" or "no fight yet" end
+          local line = watch.combatTry or "the fight ended before the probe saw it"
+          watch.fought, watch.foughtDone, watch.combatTry = nil, nil, nil
+          return true, note(line)
+      end, timeout = 900 },
+    { text = "Press Reload (or type /reload).", reload = true },
+    { text = "After the reload: the settings as the client left them.", auto = true, run = function()
+          local s = db()
+          local off = {}
+          for name, v in pairs(s.applied or {}) do
+              if not same(get(name), v) then off[#off + 1] = name .. " " .. str(get(name)) end
+          end
+          return note(("after the reload: %s; %s"):format(#off > 0 and table.concat(off, ", ") or "all as set",
+              s.pew and table.concat(s.pew, "; ") or "nothing read at entering the world"))
+      end },
+    { text = "The summary; your settings put back.", auto = true, run = function()
+          local changes = watch.changes or 0
+          restore()
+          local n = nr()
+          return note(("PLAYER_SOFT_INTERACT_CHANGED %d times; put back: %s; NodeRadar's compass %s, marker %s"):format(
+              changes, (function()
+                  local out = {}
+                  for _, c in ipairs(WANTED) do out[#out + 1] = c[1] .. " " .. str(get(c[1])) end
+                  return table.concat(out, ", ")
+              end)(), str(n and n.db.compass), str(n and n.db.marker)))
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("plates", steps)
+NS._platesTest = { watch = watch, guard = guard, star = function() return star end }
+end)()
+
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }
