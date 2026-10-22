@@ -1556,6 +1556,9 @@ a grey node gets is the owner's choice.
 
 ## A marker in the world (#61), experimental
 
+**Superseded by #78** (the owner, 2026-10-21): the waypoint's spot is at the player's height, short
+of a node up any slope. What follows is kept as the record of #61.
+
 The node the compass would point at, marked out in the world: twinkling stars on its spot, seen
 through the scenery at any distance, as gathering points sparkle in Final Fantasy XIV (the owner's
 reference video). Off by default, labelled experimental, its own setting (`marker`, `/nr marker`,
@@ -1701,6 +1704,135 @@ itself, the marker would rarely show), and a quest accepted with the marker off 
 player's own pin and quest; combat, and the map opened and used after our calls; a reload and a
 logout (does the clear at logout stick); the CVar from 0; `GetMapPosFromWorldPos` against our
 point.
+
+## The marker on the node's soft-interact plate (#78), experimental
+
+**Replaces #61's waypoint marker** (the owner, 2026-10-21). That marker's spot is drawn at the
+player's height, so on any slope it lands short of the node, at any distance (PR #77's sight
+round). Nothing an addon can read gives the node's height or line of sight. The new marker puts
+#61's stars (the art and animation the owner accepted) on the nameplate the game itself gives
+its soft-interact target. That plate sits on the object, at its real height. Still `marker`,
+experimental, off by default; off, nothing of it runs and nothing is touched.
+
+**Measured** (docs/FOREVER-PROBE.md, "Soft-interact nameplates", 70450, 2026-10-22):
+- With `softTargetInteract` 3, `SoftTargetIconGameObject` 1, `SoftTargetNameplateInteract` 1,
+  `SoftTargetInteractArc` 2, `SoftTargetInteractRange` 60 and `nameplateGameObjectMaxDistance` 60,
+  all read back and kept across a reload, the soft target gets a nameplate.
+- **One object plate at a time**, the soft target's, within **about 15 yards** (15.3-15.7, whatever
+  the range CVars). Other interactables compete for it (a cactus's Prickly Pear Fruit did).
+- `UnitName(unit)` reads the node's name, `UnitIsGameObject` and
+  `UnitIsUnit(unit, "softinteract")` are true, and `UnitExists("softinteract")` is false for an object.
+- `NAME_PLATE_UNIT_ADDED` / `_REMOVED` fire as the target comes and goes;
+  `PLAYER_SOFT_INTERACT_CHANGED` never did.
+- A frame of ours, a child of `UIParent` anchored `CENTER` to the plate's `BOTTOM`, sat on a
+  Silverleaf up a slope. No `ADDON_ACTION_*`.
+- **Unmeasured:** a plate behind scenery (fades? hides?), a `SetCVar` in combat, the gamepad UI.
+
+**So it covers the last 15 yards**, where the compass hides (`Compass.NEAR`). The compass guides
+from farther off; nothing is drawn in the world beyond the plate's reach.
+
+**Which plate:** one reconciler, `Marker.Reconcile()`. It runs at `NAME_PLATE_UNIT_ADDED` and on a
+0.5 s ticker while the marker is on (Codex: what `Alert.Wanted` reads changes from many paths,
+`/nr skill`, a skip, Cultivation's cooldown, a forgotten name, a skill-up, and the radar step can
+be absent; a ticker reading a few plates costs less than wiring each path). The stars go on the
+one plate where:
+- the unit is a game object and the soft-interact target (`UnitIsGameObject`, `UnitIsUnit`);
+- its name is a node NodeRadar knows (`Learn.Kind`) and the player wants (`Alert.Wanted`: gatherable
+  and not skipped);
+- every read passes the secret test first, and a secret, an error or no plate means no stars.
+
+Each pass checks again that the bound plate is shown and still carries the qualifying unit: a plate
+frame is reused for another unit. **The bound unit's `NAME_PLATE_UNIT_REMOVED` hides the stars at
+once** (animations stopped, the point cleared, the unit dropped) before anything else, since
+Blizzard clears the plate's unit in its own handler and the order isn't ours (Codex); the next pass
+or add finds the new one.
+
+No record, sweep or compass target is involved, so `Icons.Keeping` and `Compass.Choosing` drop
+`marker`.
+
+**The stars:** #61's (`Media/MarkerStar.tga`, the `SonarGlow` haze, the engine animation groups),
+one frame, a child of `UIParent`, never of Blizzard's plate, no mouse, anchored `CENTER` to the
+plate's `BOTTOM`. Hidden and the animations stopped when the plate goes or stops qualifying. One
+fixed scale (the plate only exists within 15 yards). Blizzard's own icon on the plate is left as it
+is: the owner accepts the game's icons on interactables while the marker is on (2026-10-22).
+
+**The CVars are the player's** (the same rule as gathering tracking):
+- **Only the CVars the plate needs** (Codex: the probe changed six together, and the arc and range
+  change the player's interact targeting too). The probe round below takes them away one at a time;
+  the set kept is what it shows the plate needs at 15 yards.
+- **Claimed only when the marker is turned on** (the setting, `/nr marker`, NodeRadar enabled with
+  it on), each one only if it differs; never by the ticker or the reconciler. The old value is saved
+  per CVar in `NodeRadarDB.softCVars = { [name] = { old, ours } }`, and only once the game accepts
+  the new one (read back). A claim is kept until the marker or NodeRadar goes off.
+- **Put back** when the marker or NodeRadar goes off and at `/nr reset`; a CVar is put back only
+  if it still reads `ours`. A change by anyone else (`CVAR_UPDATE` to a value that isn't ours: the
+  player, another addon) cancels that CVar's claim, and theirs stands. **A cancelled claim stays
+  cancelled** (`{ cancelled = true }` in `softCVars`) while the marker stays on, across reloads and
+  logins: nothing claims that CVar again until the player turns the marker off and on (Codex). The
+  marker may then lack a CVar it needs: no plate, no stars, nothing forced.
+- **Across a session end, best effort:** put back at `PLAYER_LOGOUT` and applied again at
+  `PLAYER_LOGIN`, so that removing NodeRadar shouldn't leave the player's interact targeting
+  changed. A read-back at logout doesn't prove the value reached the saved configuration (Codex),
+  so `softCVars` is kept, never cleared at logout: it goes only when the marker or NodeRadar is
+  turned off and each CVar is put back. **At login, each claimed entry is read first** (Codex: a
+  value changed while NodeRadar wasn't loaded raises no `CVAR_UPDATE` for us): still `old` (the
+  logout restore stuck), `ours` set again; already `ours` (it didn't), kept; anything else, someone
+  else's newer choice: that entry is cancelled (and stays so) and the value left alone. A cancelled
+  entry is never read nor set at login. The probe round checks a full client exit. A player who
+  removes NodeRadar after a logout restore that didn't stick keeps our values: said in the README.
+- **Nothing written in combat:** a set or restore that falls in `InCombatLockdown()` waits for
+  `PLAYER_REGEN_ENABLED`.
+- **A restore that has to wait runs later, the marker off or not** (Codex): the marker turned off in
+  combat or in the gamepad UI leaves its claims pending in `softCVars`. The 0.5 s ticker runs while
+  the marker is on **or** a claim is left in `softCVars`, and puts each pending one back as soon as
+  it's out of combat and out of the gamepad UI (still `ours`: put back; else someone else's: dropped),
+  then stops. At login with the marker off, claims left from an earlier session are put back the
+  same way.
+- **The gamepad UI:** soft targeting is the gamepad's own. On entering it, Blizzard sets temporary
+  values on these same CVars (`Blizzard_Gamepad/Core.lua`, `C_CVar.SetTempCVar`: the interact
+  plate off among them) and removes them on leaving. While `API.Gamepad()` is on (seen by the
+  ticker): the stars hidden, nothing set or put back, and a `CVAR_UPDATE` is never taken as
+  someone else's change. On leaving, each claimed CVar is read again: still ours, kept; otherwise
+  someone else's, its claim cancelled (Codex). **The general rule: ownership is never judged while
+  the gamepad UI is on.** Every check that could cancel, reclaim or put back (a `CVAR_UPDATE`, the
+  login read, the turn-on claim, a pending restore) waits while it's on and runs once it's off; a
+  login inside the gamepad UI defers its read to that moment (Codex).
+
+**Removed with #61's waypoint marker:**
+- the user waypoint and its super-track (`NodeRadarCharDB.marker`), the reconciler and its retry;
+- `showInGameNavigation` and `NodeRadarDB.markerCVar`;
+- the `SuperTrackedFrame.UpdateAlpha` post-hook, `Compass.lua`'s `Marker.TargetGone`;
+- the probe's world and sight rounds (git history keeps them).
+
+**Migration** (only the owner ran #61, never released): at `ADDON_LOADED`,
+- a `markerCVar` left saved puts `showInGameNavigation` back if it still reads 1 (a change of
+  someone else's already cancelled it under #61's rule), then the key goes;
+- a `NodeRadarCharDB.marker` left saved is only dropped: a matching point isn't proof the waypoint
+  is ours (Codex), so a stale one is the player's to clear.
+- The user-facing text goes with it: the Options note, `/nr help`, CLAUDE.md's `Marker.lua` entry,
+  the CHANGELOG's #61 entry rewritten for #78.
+
+**Tests:** the plate chosen (an object, the soft target, known, wanted; each failing alone: no
+stars); a secret name or unit; plates added and removed (the bound one's removal hiding the stars
+before any search), a plate reused for another unit; a skip, `/nr skill` and a skill-up turning the
+stars on or off within a tick; the CVars set and read back, put back, a change of someone else's
+kept, in combat deferred; the gamepad UI in and out (its temporary values never cancelling a
+restore), the marker turned off in combat or in the gamepad UI and put back once out; logout and login, `softCVars` kept across them, a value changed while unloaded left
+alone at login, a login inside the gamepad UI keeping every claim and after the reconciler's next passes; a cancelled claim never taken again until
+the marker is turned off and on; `/nr reset`; the migration; off: nothing runs and nothing is set.
+Every widget method checked against the dump.
+
+**Probe round** (`/fp steps nr softmark`), in game:
+- **before the code**, the ablation: each of the six CVars put back alone, a herb within 15 yards,
+  whether its plate stays;
+- the marker on: the stars on a herb within 15 yards, up a slope, behind a rock (does the plate fade
+  or hide), a skipped herb (none), a competing interactable, combat (the stars and a deferred set),
+  the gamepad UI in and out if it can be tried;
+- a reload, then a full client exit with the marker on, the CVars checked in both;
+- the marker off, everything put back.
+
+**Not in this issue:** hiding Blizzard's icon on other interactables; following the plate's alpha
+(waits for the rock measurement); more than the one soft target (the game gives one).
 
 ## A public API (#4), after #3
 
