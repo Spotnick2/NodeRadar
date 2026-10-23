@@ -1888,6 +1888,9 @@ on a single-node beacon with the following safeguards.
   rejected writes, and unreadable restoration readbacks. The existing ticker
   retries while off; unrelated CVar notifications cannot cancel an unreadable
   claim. A confirmed restore or a readable external change releases it (#79 follow-up).
+  On a quick off/on, a retained claim is reconciled before skipping it: the
+  saved old value is reapplied, an unreadable value waits for a later pass,
+  and an external readable value cancels the claim.
 - Occupying supertracking can prevent newly accepted quests from auto-tracking;
   the option and README disclose this existing #61 limitation.
 - Suppression/state transitions are recorded in the existing marker decision

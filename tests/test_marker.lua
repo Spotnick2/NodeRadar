@@ -252,6 +252,68 @@ for _, mode in ipairs({ "unreadable", "rejected", "unconfirmed" }) do
     eq(M.driver._scripts.OnUpdate, nil, mode .. ": no idle ticker after cleanup")
 end
 
+-- Turning back on before a deferred restore retries must reconcile its claim.
+WoW.cvars.softTargetInteract = "1"
+NR.Set("marker", true)
+local old = claims().softTargetInteract.old
+local realGet = C_CVar.GetCVar
+local unreadable = false
+C_CVar.GetCVar = function(name)
+    if name == "softTargetInteract" and unreadable then return nil end
+    return realGet(name)
+end
+local realSet = C_CVar.SetCVar
+C_CVar.SetCVar = function(name, value)
+    local result = realSet(name, value)
+    if name == "softTargetInteract" and value == old then unreadable = true end
+    return result
+end
+NR.Set("marker", false)
+eq(cv("softTargetInteract"), old, "quick toggle: off writes the original")
+eq(claims().softTargetInteract.old, old, "quick toggle: unconfirmed restore retains ownership")
+C_CVar.GetCVar, C_CVar.SetCVar = realGet, realSet
+NR.Set("marker", true)
+eq(cv("softTargetInteract"), "3", "quick toggle: on reapplies the interact value")
+eq(claims().softTargetInteract.old, old, "quick toggle: original survives reapply")
+eq(NR.db.softClaim, nil, "quick toggle: reapply is confirmed")
+NR.Set("marker", false)
+eq(cv("softTargetInteract"), old, "quick toggle: later off restores original")
+eq(next(claims()), nil, "quick toggle: no claim left after confirmed restore")
+
+-- A temporarily unreadable retained claim waits, then reapplies on the ticker.
+NR.Set("marker", true)
+C_CVar.GetCVar = function(name)
+    if name == "softTargetInteract" then return nil end
+    return realGet(name)
+end
+NR.Set("marker", false)
+NR.Set("marker", true)
+eq(claims().softTargetInteract.old, old, "unreadable on re-enable: original retained")
+eq(NR.db.softClaim, true, "unreadable on re-enable: retry armed")
+C_CVar.GetCVar = realGet
+frames(0.6)
+eq(cv("softTargetInteract"), "3", "readable retry reapplies interact value")
+eq(NR.db.softClaim, nil, "readable retry clears pending claim")
+NR.Set("marker", false)
+eq(cv("softTargetInteract"), old, "readable retry: later off restores original")
+
+-- A readable third-party value ends ownership rather than being overwritten.
+NR.Set("marker", true)
+C_CVar.GetCVar = function(name)
+    if name == "softTargetInteract" then return nil end
+    return realGet(name)
+end
+NR.Set("marker", false)
+C_CVar.GetCVar = realGet
+WoW.cvars.softTargetInteract = "2"
+NR.Set("marker", true)
+eq(cv("softTargetInteract"), "2", "quick toggle: external value left alone")
+eq(claims().softTargetInteract and claims().softTargetInteract.cancelled, true,
+    "quick toggle: external value cancels saved ownership")
+NR.Set("marker", false)
+eq(next(claims()), nil, "quick toggle: off forgets cancellation")
+WoW.cvars.softTargetInteract = old
+
 NR.Set("marker", false)
 WoW.cvars.SoftTargetIconGameObject = "0"
 NR.Set("marker", true)

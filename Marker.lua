@@ -108,7 +108,8 @@ end
 local function blocked() return InCombatLockdown() or API.Gamepad() end
 
 -- The marker turned on: each CVar that differs set, its old value kept once
--- the game takes ours. One already claimed or cancelled is left as it is.
+-- the game takes ours. A claim retained from an unconfirmed off-time restore
+-- can have the old value again: reconcile it before calling it "kept".
 local function claim()
     if blocked() then NR.db.softClaim = true; return end
     NR.db.softClaim = nil
@@ -116,9 +117,26 @@ local function claim()
     for _, cv in ipairs(Marker.CVARS) do
         local name, ours = cv[1], cv[2]
         local old = get(name)
-        if c[name] ~= nil then
-            decision(name, c[name].cancelled and "claim skipped" or "kept",
-                c[name].cancelled and "cancelled until marker off/on" or "already claimed")
+        local e = c[name]
+        if e and e.cancelled then
+            decision(name, "claim skipped", "cancelled until marker off/on")
+        elseif e then
+            if old == nil then
+                NR.db.softClaim = true
+                decision(name, "claim deferred", "retained claim unreadable on turn-on")
+            elseif same(old, e.ours) then
+                decision(name, "kept", "retained claim still ours")
+            elseif same(old, e.old) then
+                if put(name, e.ours) then
+                    decision(name, "claimed", "retained original reapplied on turn-on")
+                else
+                    NR.db.softClaim = true
+                    decision(name, "claim deferred", "retained original reapply unconfirmed")
+                end
+            else
+                c[name] = { cancelled = true }
+                decision(name, "given up", "retained claim changed externally on turn-on")
+            end
         elseif old == nil then
             decision(name, "claim skipped", "current value unreadable")
         elseif same(old, ours) then
