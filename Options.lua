@@ -252,14 +252,16 @@ local function build()
     compassSize = note(page, compassLock, "Hold Alt and drag the compass to move it. /nr compass reset puts it back "
         .. "under your character.")
 
-    -- #61: experimental, off by default, its own heading.
+    -- #78: experimental, off by default, its own heading.
     local markerHead = heading(page, compassSize, "The marker in the world (experimental)")
-    local marker = checkbox(page, markerHead, "Mark the compass's node in the world with twinkling stars", "marker")
-    local markerWhy = note(page, marker, "Experimental, off by default. Puts your map waypoint on the node and "
-        .. "tracks it, so the stars show on its spot through the scenery, with Blizzard's distance under them "
-        .. "(the compass gives it when it's on). It steps aside "
-        .. "while you have a waypoint of your own or track a quest, and while it shows, a quest you accept isn't "
-        .. "tracked by itself. The spot is at your height: on a slope, a little above or below the node.")
+    local marker = checkbox(page, markerHead, "A distant beacon and nearby stars on gathering nodes", "marker")
+    local markerWhy = note(page, marker, "Experimental, off by default. Animated stars name the nearest wanted "
+        .. "node within 60 yards, growing as you approach and fading out between 45 and 60 yards. An above/below "
+        .. "hint helps with slopes. Their height is approximate and they can "
+        .. "show through terrain. Within about 15 yards, stars sit on the nearby node itself. Your map pin or "
+        .. "tracked objective takes priority; while the beacon is active, newly accepted quests may not "
+        .. "auto-track. Interact targeting and in-game navigation settings are restored when no longer needed; "
+        .. "a change of yours is kept.")
 
     local learning = heading(page, markerWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")

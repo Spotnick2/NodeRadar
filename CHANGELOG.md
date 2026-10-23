@@ -2,13 +2,18 @@
 
 ## Unreleased
 
-- **Experimental: a marker in the world** (#61): the compass's node marked out on its spot with
-  twinkling stars, seen through the scenery, with Blizzard's distance under them (or the
-  compass's, when it's on). It puts your map
-  waypoint on the node and tracks it, and steps aside whenever you have a waypoint of your own or
-  track a quest. Off by default: `/nr marker`, or Options.
-  The sparkle follows the FFXIV reference: diagonal white flares with mint and blue halos,
-  staggered sizes and timing, gentle drift, and a faint background haze.
+- **Experimental: a marker in the world** (#61, #78): an animated beacon within 60 yards, with the nearest
+  wanted node's name and above/below hint. It shrinks with distance and fades out from 45 to 60 yards,
+  leaving the distance readout to the compass; nearby stars take over at the
+  node's real height when its interact plate appears (about 15 yards). The beacon's height is
+  approximate and it can show through terrain. Your waypoint and tracked objective take priority;
+  while the beacon is active, newly accepted quests may not auto-track. Navigation and interact
+  settings are put back when no longer needed, and a change of yours is kept. Unreadable settings
+  and unconfirmed restores retain the saved original and retry cleanup; a quick off/on
+  reapplies a retained claim when its old value is still present. Off by default:
+  `/nr marker`, or Options. The sparkle follows the FFXIV reference: diagonal white flares with
+  mint and blue halos, staggered sizes and timing, gentle drift, and layered teal vapor that rises,
+  expands, and dissolves around both the approach beacon and the nearby marker.
 
 ## v1.4.0
 

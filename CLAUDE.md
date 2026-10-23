@@ -37,11 +37,13 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call does
   (measured on 70450; the fix offline only, no node was in view at a swap).
 
-- Unreleased: the marker in the world (#61), experimental; its first round on the beta (70450,
-  2026-10-20): stepping aside, the reload and logout clears, no taint; the stars too small then, and
-  a waypoint churn found and fixed. The rest waits for the live client after November 4.
+- Unreleased: the marker in the world, experimental: #78's exact nearby stars plus a distant
+  beacon using #61's measured waypoint anchor. The beacon is explicitly approximate in height,
+  with independently animated stars and drifting teal vapor, node label, and above/below hint. It scales with distance
+  and fades out between 45 and 60 yards; no duplicate distance text. Offline checked; the owner
+  accepted the scaling and final vapor-and-sparkle appearance in game (docs/PLAN.md, "Combined marker").
 
-Next: the public API for minimap skins (#4); #61's round in game; #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+Next: the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
@@ -63,7 +65,7 @@ live game, WoWInterface (#37).
 
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Track.lua` → `Icons.lua` → `Compass.lua` → `Marker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
+`Track.lua` → `Icons.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
 `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -122,28 +124,30 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   through), `compassSize`; Alt-drag moves it (#57, as Apotheca: a grip over its footprint while Alt is
   held over it, from live input; `compassX, compassY` clamped on screen, `compassLock`); chosen again every sweep with a 5-yard hysteresis and after a gather,
   among the wanted records not snoozed (#46);
-  hidden within 15 yards (the glow is Lueur's). Records are kept while icons, the compass or the marker
-  is on (`Icons.Keeping`); the target is chosen while the compass or the marker is (`Compass.Choosing`,
-  `Compass.Chosen`), the ring shown only with the compass. `Icons.On` alone draws icons. `NR.Step`:
-  `Icons.Update` → `Compass.Reconcile` → `Marker.Update` → `Alert.Update` → `Learn.Consider`, then a
+  hidden within 15 yards (the marker's stars take over, #78). Records are kept while icons or the compass
+  is on (`Icons.Keeping`); the target is chosen while the compass is (`Compass.Choosing`,
+  `Compass.Chosen`). `Icons.On` alone draws icons. `NR.Step`:
+  `Icons.Update` → `Compass.Reconcile` → `Alert.Update` → `Learn.Consider`, then a
   learner experiment just started clears the records.
-- `Marker.lua` (#61, `marker`, experimental, off by default): twinkling stars in the world on the
-  compass's target (FFXIV's gathering sparkle: diagonal white flares with mint/blue halos,
-  `Media/MarkerStar.tga` from `Tools/make_media.py`, faint teal `SonarGlow`, engine alpha/scale/drift
-  animation groups), on the navigation frame (`C_Navigation.GetFrame()`)
-  of a user waypoint we set on the node and super-track. One reconciler (`Marker.Reconcile`: what
-  should be against what is, read again each run) from the sweeps, the waypoint and super-track
-  events, combat's end, the frame's life and the toggles. It **steps aside**: never the player's
-  waypoint (ours is only a point read back right after our own set, `NodeRadarCharDB.marker`), never
-  while anything else is super-tracked, a half-cleared state left alone; nothing written in combat or
-  with the world map open; a clear checked again as it happens, the super-track first, retried
-  every 0.5 s while it's held; the point dropped with the compass's target and stale without a sweep
-  for the idle interval and 2 s. Cleared at logout; at login only the saved point is adopted. `showInGameNavigation` held at 1 while on
-  (`NodeRadarDB.markerCVar` to put back; someone else's change cancels that). The stars wait 0.3 s
-  after a new waypoint and need the navigation's distance within 10 yards of ours; hidden within 15
-  yards, on a taxi, clamped at the screen's edge. Blizzard's own marker while ours covers the spot: its
-  diamond hidden, its distance kept (the whole marker hidden with the compass on), a post-hook on
-  `SuperTrackedFrame.UpdateAlpha`. docs/PLAN.md has every rule. Not yet in game.
+- `Marker.lua` (#78, `marker`, experimental, off by default; replaced #61's waypoint marker, whose spot
+  is at the player's height): twinkling stars (FFXIV's gathering sparkle: `Media/MarkerStar.tga` from
+  `Tools/make_media.py`, faint teal `SonarGlow`, engine animation groups) on the **nameplate the game
+  gives its soft-interact target**, on the object at its real height, one at a time, within about 15
+  yards (measured): a child of `UIParent` anchored to the plate's `BOTTOM`, when the target is a game
+  object, a node known and `Alert.Wanted`. `Marker.Reconcile` at `NAME_PLATE_UNIT_ADDED` and on a
+  0.5 s ticker; the bound unit's `NAME_PLATE_UNIT_REMOVED` hides at once. The three interact CVars
+  it needs (`Marker.CVARS`, the ablation round) are the player's: claimed only when the marker is
+  turned on (`NodeRadarDB.softCVars = { [name] = { old, ours } }`), put back when it or NodeRadar goes
+  off (only if still ours), someone else's change cancels a claim for good (until off and on);
+  nothing written in combat, **nothing judged inside the gamepad UI** (Blizzard's temporary values);
+  put back at logout, best effort, the claims kept and read again at login. docs/PLAN.md has every rule.
+- `FarMarker.lua`: the combined marker's distant beacon, driven by `Compass.Chosen()` and the
+  scan's map geometry. Records are kept and a target chosen with `marker` alone. The waypoint
+  and navigation CVar use separate saved ownership (`farMarker`, `farNavigation`), conservative
+  readbacks, deferred cleanup in combat/map/gamepad, and the marker's login settling guard.
+  Any exact nearby stars suppress it. No occlusion inference or terrain-height estimate.
+  State transitions go through the marker decision log. `test_farmarker` covers the handoff,
+  ownership races, failed cleanup, CVar cancellation, and reload/logout.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

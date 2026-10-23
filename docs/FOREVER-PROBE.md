@@ -727,3 +727,136 @@ So no client signal tells whether the node is in sight, or how high it stands ab
 under it. The approach step (the arrow's threshold) gave nothing: no height to set it against, and
 its record drifted to a farther node.
 
+### Soft-interact nameplates on herbs and ores: `/fp steps nr plates` (70450, 2026-10-22) (#78)
+
+Durotar, Razormane Grounds; Silverleaf and Peacebloom; 855 samples, every half second.
+
+| Measured | Result |
+|---|---|
+| The CVars | all set and read back: `softTargetInteract` 1 -> 3, `SoftTargetIconGameObject` 0 -> 1, `SoftTargetNameplateInteract` 0 -> 1, `SoftTargetInteractArc` 0 -> 2, `SoftTargetInteractRange` 10 -> 60, `nameplateGameObjectMaxDistance` 30 -> 60 (`SoftTargetInteractOnlyInRange` and `...RangeIsHard` already 0). Still as set after a `/reload` |
+| How far | a node's plate appeared at 15.4-15.6 yd and went at 15.3-15.7 yd, every time, with the range at 60: **about 15 yards, whatever the CVars** |
+| How many | **one object plate at a time: the soft target's.** Two Silverleafs in view at 33 yd: no plate. Other interactables compete for it: a Prickly Pear Fruit (Durotar's cactus) took it once, the game's gear icon over it |
+| Reading it | `UnitName` on the plate's unit and on `"softinteract"` reads the node's name (Silverleaf, Peacebloom); `UnitIsUnit(plate unit, "softinteract")` is true; `UnitExists("softinteract")` is **false** for a game object (true for an NPC); `UnitIsGameObject` true |
+| The height | a star of ours anchored to the plate's `BOTTOM` (parented to `UIParent`) sat on a Silverleaf up a slope at 15 yd: the owner, "yes", and the screenshot: the plate is on the object, at its height |
+| The plate's alpha | 0.3-1.0 on a node's plate (fading in as it appears, among others); the rock view was beyond 15 yd, so occlusion is unmeasured |
+| `PLAYER_SOFT_INTERACT_CHANGED` | never fired, though the target changed (plates added and removed): use `NAME_PLATE_UNIT_ADDED` / `_REMOVED` |
+| Combat | not measured (the fight ended before the probe's poll saw it) |
+| Taint | no `ADDON_ACTION_BLOCKED` / `_FORBIDDEN` |
+
+So the soft-interact plate marks the node exactly, height included, but only the one the game
+targets and only within about 15 yards: where the compass hides.
+
+### Which interact CVars the plate needs: `/fp steps nr ablate` (70450, 2026-10-22) (#78)
+
+A Peacebloom at 14.3 yards, its plate shown with the plates round's six CVars set. Each one put back
+alone to the owner's value for two polls, the plate looked for, then ours set again (the plate back
+each time).
+
+| Put back alone | The plate |
+|---|---|
+| `softTargetInteract` 3 -> 1 | **gone** |
+| `SoftTargetIconGameObject` 1 -> 0 | **gone** |
+| `SoftTargetInteractRange` 60 -> 10 | **gone** (14.3 yards is past 10) |
+| `SoftTargetNameplateInteract` 1 -> 0 | kept |
+| `SoftTargetInteractArc` 2 -> 0 | kept (facing it) |
+| `nameplateGameObjectMaxDistance` 60 -> 30 | kept |
+
+The marker claims the three it needs, and only those.
+
+### The marker's first run: the CVars overwritten after login (70450, 2026-10-22) (#78, PR #79)
+
+The owner's first runs of #78's marker: no stars. `NodeRadarDB.softCVars` read all three claims
+`cancelled`, and `Config.wtf` held none of them (the game's defaults). NodeRadar had set them at
+`PLAYER_LOGIN`; a moment later the client put its own values back, and the `CVAR_UPDATE` that fired
+was taken as someone else's change. Another addon's source says the same of these CVars on this
+client: synced settings can arrive after `PLAYER_LOGIN` and overwrite an addon's, so it sets them
+again at `VARIABLES_LOADED` and `PLAYER_ENTERING_WORLD`. The marker now waits 5 seconds after
+entering the world before it writes or judges anything. The exact timing is unmeasured: the
+`softmark` round reads the claims after a reload and a full exit.
+
+For the next marker run, NodeRadarProbe saves NodeRadar's CVar decisions in
+`NodeRadarProbeDB.markerLog` (claim, restore, or give-up with the reason and value).
+Its existing `cvarlog` records the client calls and `CVAR_UPDATE` events. Both
+logs are in NodeRadarProbe's SavedVariables after a full exit.
+
+The 2026-10-22 12:54 softmark run started with all three claims already
+cancelled (`1 / 0 / 10`); every subsequent claim was skipped for that reason.
+The probe had only set the already-enabled marker to true. Its setup now turns
+the marker off and on explicitly so a fresh round clears those cancellations.
+This run does not establish what originally cancelled them.
+
+The 2026-10-22 13:00 saved run (#475, softmark revision 2) did claim all three
+settings and recorded stars on Silverleaf at 11.8 yards. The near and slope
+questions were answered yes. In step 9 the probe deliberately disabled the
+marker during combat; completing that step by hand bypassed its callback that
+would enable it again. The marker stayed off and restored its CVars after combat.
+Revision 3 restores that temporary toggle independently of the current step,
+keeps the pending restore across reloads, and clears combat state between rounds.
+Offline regression checks cover Done, Skip, and stopping the round in combat;
+the revised procedure still needs an in-game check.
+
+The 2026-10-22 19:30 saved run (#481–482, revision 3) recorded Peacebloom's
+stars at 14.0 yards (near, answered yes) and 10.3 yards (slope, unsure).
+The owner's note says the sparkles require facing directly through the node,
+rock or not; the rock sample had no plates, so it does not establish occlusion.
+Skipped-node and combat steps were skipped; the saved round is at step 10.
+
+This run identifies a cancellation cause: at 397541.30 all three settings were
+restored by NodeRadar at logout with their claims retained, then all three were
+cancelled by delayed CVAR_UPDATE events for those restored values. Login at
+397564.91 kept those cancellations. The earlier 377411.90 logout shows the same
+sequence. The marker now suspends claim judging from PLAYER_LOGOUT until the
+next login's settling window finishes. A regression reproduces the delayed
+events and checks that claims survive and are reapplied at login; client
+verification of this fix is still pending.
+
+The next saved run (#495–498, 2026-10-22 22:32) confirmed near and slope
+placement on Silverleaf at 12.2 yards; the rock sample held its plate at 14.2
+yards, but the combined visibility question was answered no (no occlusion
+conclusion). Skipped-node and combat checks were skipped. Settings remained
+cancelled after reload and full exit. This time the logout restores at 408377.38
+retained claims, but CVAR_UPDATE at 408389.41 cancelled them in the next load,
+before PLAYER_LOGIN. The guard now starts at file load, not PLAYER_LOGIN; its
+regression delivers those pre-login events before checking login reapplication.
+
+The owner also reported Find Herbs off on returning to the game. `softmark`
+does not call SetTracking, and saved `NodeRadarDB.learn` is false. Existing logs
+show herbs enabled after login but do not identify an earlier disabling caller.
+The passive `cvarlog` recorder now includes SetTracking/ClearAllTracking caller
+stacks and gathering-state snapshots at load, login, entering world, logout, and
+MINIMAP_UPDATE_TRACKING. It never changes tracking. Cause remains unconfirmed.
+
+The underlying waypoint-anchor approach was already implemented and tested in
+NodeRadar #61 (the marker/world/sight rounds above, October 19–21): stars at
+144 yards, incorrect height on slopes, and no usable node-visibility signal.
+PLAN.md records its replacement by #78. Repeating that approach alone would
+repeat a known limitation. Reference-addon comparisons are kept in local notes.
+
+### Combined beacon implementation (2026-10-22; appearance accepted in game)
+
+Following the owner's request, the distant marker is now a readable pulsing
+column with node name, approximate distance, and the minimap's above/below hint.
+The exact close-range stars suppress it when a qualifying plate appears.
+This reuses #61's measured camera-following anchor with explicit height
+uncertainty; it does not claim a solution to the terrain or occlusion limits.
+See PLAN.md, "Combined marker", for ownership and acceptance criteria.
+The offline suite and mutation checks cover behavior; no live screenshot or
+in-game success is implied by those checks.
+
+The owner's first combined-marker screenshot confirmed a visible Peacebloom
+beacon at about 90 yards, with the compass also showing 90 yards. Feedback:
+too large at that distance, needs distance scaling and animation, and no
+duplicate distance readout. The revision uses independently twinkling/drifting
+stars, scales the art with distance, fades from 45 to 60 yards, and releases
+navigation outside 60 yards. The label keeps the name and height hint only.
+The owner subsequently confirmed this was "quite an improvement" in game.
+
+The next visual pass follows the owner's six-second FFXIV video (2026-10-18
+23-12-09): a compact group of diagonal white flares over pale teal vapor, with
+quick flashes and a slower dissolve. Both markers now use three staggered
+wisps that drift upward, expand, and fade; the approach stars occupy a compact
+ellipse. Range, distance scaling, ownership, and the nearby handoff are unchanged.
+The vapor texture is generated by Tools/make_media.py. The owner confirmed
+that this final vapor-and-sparkle appearance works in game and approved committing
+it to the PR. Offline checks cover its lifecycle; this acceptance does not establish
+terrain occlusion or remove the known approximate-height limitation.

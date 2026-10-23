@@ -26,6 +26,7 @@ Track.lua
 Icons.lua
 Compass.lua
 Marker.lua
+FarMarker.lua
 Options.lua
 TrackOptions.lua
 Tooltip.lua

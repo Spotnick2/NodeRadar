@@ -69,18 +69,23 @@ turn on Find Herbs or Find Minerals.
   an arrow circling it toward the node and the distance below; hover it for the item's tooltip (clicks go through it). Small,
   medium or large (`/nr compasssize`). It moves on as you gather, points only at nodes NodeRadar has
   measured (where nodes of one name crowd together, it may miss some), and hides within 15 yards
-  (for a glow on the node itself, Lueur does that well). It follows your character's facing, not the
+  (the optional nearby marker covers the node itself). It follows your character's facing, not the
   camera's: turning the camera alone doesn't turn it. Hold Alt and drag it to move it (lock it in
   Options, `/nr compass reset` puts it back). A node out of reach (on a ledge, among mobs too
   strong)? Snooze it, and the compass moves on: from NodeRadar's minimap button, for 15 minutes,
   30 minutes, an hour or the session, or with a key binding. A reload clears them.
-- **Experimental: a marker in the world** (`/nr marker`, off by default). The compass's node,
-  marked out on its spot with twinkling stars you see through the scenery, and Blizzard's distance
-  under them (the compass's own, when the compass is on). It works through your map waypoint: NodeRadar puts one on the node and tracks it, and
-  steps aside whenever you have a waypoint of your own or track a quest (it never touches yours).
-  While it shows, a quest you accept isn't tracked by itself. The spot is at your own height, so on
-  a slope it sits a little above or below the node, and it hides within 15 yards and while the node
-  is behind you.
+- **Experimental: a marker in the world** (`/nr marker`, off by default). Independently twinkling,
+  drifting stars in soft teal vapor name the nearest wanted herb or ore within 60 yards, with an above/below hint.
+  They shrink with distance and fade out between 45 and 60 yards; the compass supplies the
+  distance readout. Their height is approximate, and they can show through terrain. Nearby, when the game supplies
+  the node's interact plate (about 15 yards), twinkling stars take over at the node's real spot.
+  The beacon works with the compass off. Your own map pin or tracked objective takes priority;
+  while the beacon is active, a newly accepted quest may not automatically become tracked.
+  Interact targeting and in-game navigation settings are restored when no longer needed, and
+  changes of yours are kept. Distance scaling and the vapor-and-sparkle appearance have been checked in game.
+
+  ![Approach a Peacebloom with the compass and animated world marker, gather it, then see the compass point to the next node](docs/images/experimental-compass-marker.gif)
+
 - **A minimap button.** Left-click: quick settings (the radar, the icons, the compass) and the
   compass's snooze; right-click: the Options page. It drags around the minimap, and button
   collectors take it. Also in the AddOns compartment.
@@ -120,7 +125,7 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
 - `/nr compass`: the experimental compass toward the nearest node (off by default);
   `/nr compasssize small | medium | large`; `/nr compass lock | unlock | reset`: its position (Alt-drag
   moves it)
-- `/nr marker`: the experimental marker in the world on the compass's node (off by default)
+- `/nr marker`: the experimental distant beacon and nearby stars (off by default)
 - `/nr snooze [15 | 30 | 60 | session]`: snooze the compass's node (the key binding's length, in
   Key Bindings > NodeRadar); `/nr snooze clear`
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)

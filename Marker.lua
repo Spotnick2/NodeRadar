@@ -1,11 +1,15 @@
--- Marker.lua: a marker in the world on the compass's node (#61, experimental,
--- off by default; docs/PLAN.md, "A marker in the world").
+-- Marker.lua: the marker on the node's soft-interact plate (#78, experimental,
+-- off by default; docs/PLAN.md, "The marker on the node's soft-interact plate").
 --
--- Twinkling stars on the node's spot, seen through the scenery, as gathering
--- points sparkle in Final Fantasy XIV. The spot is the engine's navigation
--- frame, placed by the user waypoint we set on the node and super-track. We
--- step aside: never the player's waypoint, never while anything else is
--- super-tracked, and nothing written in combat or with the world map open.
+-- Twinkling stars on the herb or ore itself, as gathering points sparkle in
+-- Final Fantasy XIV. The game gives its soft-interact target a nameplate that
+-- sits on the object at its real height, within about 15 yards (measured): the
+-- stars go on it when the target is a node NodeRadar knows and the player
+-- wants. That needs three of the player's interact CVars changed while the
+-- marker is on; they're the player's, so each is claimed only when the marker
+-- is turned on, put back when it goes off, and given up to anyone who changes
+-- it meanwhile. Nothing is judged inside the gamepad UI (Blizzard puts its own
+-- temporary values on these CVars there), nothing written in combat.
 
 NodeRadar = NodeRadar or {}
 local NR = NodeRadar
@@ -13,40 +17,58 @@ local API = NR.API
 local Marker = {}
 NR.Marker = Marker
 
-Marker.MATCH = 1e-6    -- a waypoint read back is ours within this, in map units
-Marker.SETTLE = 0.3    -- seconds hidden after a new waypoint (Blizzard's SuperTrackedFrame waits 0.2)
-Marker.AGREE = 10      -- yards: the navigation's distance must agree with ours this well
-Marker.NEAR = 15       -- yards: hidden this close, as the compass (Lueur's glow takes over)
-Marker.CVAR = "showInGameNavigation"
+-- The CVars the plate needs, and ours: the ablation round (70450, 2026-10-22).
+Marker.CVARS = {
+    { "softTargetInteract", "3" },       -- interact targeting always on
+    { "SoftTargetIconGameObject", "1" }, -- without the object's icon, no plate
+    { "SoftTargetInteractRange", "60" }, -- past the default 10 (the plate reaches about 15 whatever this is)
+}
+Marker.TICK = 0.5      -- seconds between passes while on, or while a claim is left to put back
+Marker.SETTLE = 5      -- seconds after entering the world before the login's read: the client's synced
+                       -- CVars arrive after PLAYER_LOGIN and overwrite ours (the owner's run, #79)
 Marker.STAR = 48       -- the reference's long diagonal rays, varied per flare
 Marker.SPREAD = 30     -- how far from the spot a star can light
 Marker.GLOW = 96
 Marker.STARS = 4
 Marker.TEAL = { 0.35, 0.9, 0.75 } -- a faint haze, not a bright central orb
 Marker.WHITE = { 1, 1, 1 }       -- the star texture carries its mint/blue halo
-Marker.NEAR_SCALE, Marker.FAR_SCALE = 1.3, 0.7   -- the scale near and far (60 / yards between them)
-Marker.HIDDEN_EVERY = 0.1  -- seconds between checks while armed but hidden (behind, settling)
-Marker.RETRY = 0.5     -- seconds between tries while ours is installed but not wanted (the map open, combat)
-Marker.GRACE = 2       -- seconds past the idle interval without a sweep before the target is stale
 
-local want       -- { map, x, y, record, north, west, at }: the target's point at the last sweep
-local ours       -- { map, x, y }: the waypoint we set and read back
-local writing    -- inside our own waypoint or super-track calls
-local cvarExpect -- the value we set the CVar to, while a restore is pending
-local nav        -- the navigation frame (NAVIGATION_FRAME_CREATED)
-local settledAt = 0
-local reconciling
+local bound      -- { unit, plate }: the plate the stars are on
+local writing    -- inside our own SetCVar: its CVAR_UPDATE is ours
+local loggingOut -- logout restores can raise CVAR_UPDATE after SetCVar returns
+local wasPad     -- the gamepad UI on at the last pass
+local loginPhase = true -- from file load to the first PLAYER_ENTERING_WORLD; sync events can precede PLAYER_LOGIN
+local settleUntil -- then SETTLE seconds: the client's synced CVars still coming
+local readDue    -- a login read waiting (the window, the gamepad UI)
+-- No CVar written or judged in the login window nor while its read waits.
+local function waiting()
+    return loggingOut or loginPhase or readDue or (settleUntil ~= nil and GetTime() < settleUntil) and true or false
+end
+function Marker.Settled() return not waiting() end
+function Marker.Nearby() return bound ~= nil end
+
+-- Recent CVar decisions stay in memory until NodeRadarProbe loads; its sink
+-- saves them across reloads. Logging must never interrupt the marker.
+Marker.Decisions = {}
+local decisionSink
+local function decision(name, action, why)
+    local line = ("%.2f %s: %s; %s"):format(GetTime(), name, action, why)
+    local log = Marker.Decisions
+    log[#log + 1] = line
+    if #log > 100 then table.remove(log, 1) end
+    if decisionSink then pcall(decisionSink, line) end
+end
+Marker.Note = decision
+function Marker.SetDecisionSink(sink)
+    decisionSink = type(sink) == "function" and sink or nil
+    if decisionSink then
+        for _, line in ipairs(Marker.Decisions) do pcall(decisionSink, line) end
+    end
+end
 
 function Marker.On()
     local db = NR.db
     return db and db.marker and db.enabled and true or false
-end
-
--- The last sweep's target, while sweeps confirm it: none for longer than the
--- idle interval and a grace (the radar held: tracking off, the gamepad, a
--- learner's experiment), and it's no longer the target (Codex, PR #74).
-local function fresh()
-    return want ~= nil and GetTime() - want.at <= NR.db.interval + Marker.GRACE
 end
 
 --------------------------------------------------------------------------------
@@ -58,91 +80,157 @@ local function call(fn, ...)
     local ok, v = pcall(fn, ...)
     if ok then return v end
 end
-local function yes(fn) return API.Yes(call(fn)) end
+local function text(v) if type(v) == "string" and not API.IsSecret(v) then return v end end
+local function yes(fn, ...) return API.Yes(call(fn, ...)) end
 
--- The waypoint now: map, x, y; nil when none or unreadable.
-local function point()
-    local p = call(C_Map.GetUserWaypoint)
-    if type(p) ~= "table" or API.IsSecret(p) then return nil end
-    local pos = p.position
-    local map = API.Num(p.uiMapID)
-    local x, y = type(pos) == "table" and API.Num(pos.x), type(pos) == "table" and API.Num(pos.y)
-    if map and x and y then return map, x, y end
+-- CVars can read back reformatted ("60.000000" for 60).
+local function get(name)
+    local value = text(call(C_CVar.GetCVar, name))
+    return value -- exactly one result, including nil for unreadable diagnostic reads
 end
-local function same(a, map, x, y)
-    return a ~= nil and map == a.map and math.abs(x - a.x) <= Marker.MATCH and math.abs(y - a.y) <= Marker.MATCH
-end
-local function isOurs()
-    if not ours then return false end
-    local map, x, y = point()
-    return map ~= nil and same(ours, map, x, y)
-end
-local function hasWaypoint() return yes(C_Map.HasUserWaypoint) end
-local function tracking() return yes(C_SuperTrack.IsSuperTrackingAnything) end
-local function trackingWaypoint() return yes(C_SuperTrack.IsSuperTrackingUserWaypoint) end
--- Something other than the user waypoint super-tracked: the navigation frame is shared.
-local OTHERS = { "IsSuperTrackingQuest", "IsSuperTrackingCorpse", "IsSuperTrackingContent",
-                 "IsSuperTrackingMapPin" }
-local function trackingOther()
-    if tracking() and not trackingWaypoint() then return true end
-    for _, f in ipairs(OTHERS) do if yes(C_SuperTrack[f]) then return true end end
-    return call(C_SuperTrack.GetSuperTrackedVignette) ~= nil
-end
--- Nothing is written in combat or with the world map open (taint: the map
--- builds its waypoint pin as it's set).
-local function busy()
-    if InCombatLockdown() then return true end
-    local map = rawget(_G, "WorldMapFrame")
-    local ok, shown = pcall(function() return map and map:IsShown() end)
-    return not ok or API.Yes(shown)
-end
-
-local function here()
-    local ok, n, w = pcall(UnitPosition, "player")
-    if not ok then return nil end
-    n, w = API.Num(n), API.Num(w)
-    if n and w then return n, w end
-end
-
---------------------------------------------------------------------------------
--- Ours, saved: NodeRadarCharDB.marker = { map, x, y } while our waypoint is set
--- and not yet cleared (cleared at logout, so a waypoint at login is never
--- taken for ours unless that clear didn't happen).
---------------------------------------------------------------------------------
-
-local function save()
-    NR.charDb.marker = ours and { map = ours.map, x = ours.x, y = ours.y } or nil
-end
-local function forget()
-    ours = nil
-    save()
-end
-
--- Ours, the super-track first if it's the waypoint's, then the waypoint, each
--- checked again at that moment.
-local function clear()
-    if not isOurs() then forget(); return end
+local function same(a, b) return a == b or (tonumber(a) ~= nil and tonumber(a) == tonumber(b)) end
+local function put(name, value)
     writing = true
-    if trackingWaypoint() then call(C_SuperTrack.SetSuperTrackedUserWaypoint, false) end
-    if isOurs() then call(C_Map.ClearUserWaypoint) end
+    call(C_CVar.SetCVar, name, value)
     writing = false
-    forget()
+    return same(get(name), value)
 end
 
--- Set on the point, read back, and super-tracked only if it's ours: anything
--- else inside our call (another addon answering USER_WAYPOINT_UPDATED) isn't.
-local function set(d)
-    writing = true
-    local made = call(UiMapPoint.CreateFromCoordinates, d.map, d.x, d.y)
-    local ok = made and API.Yes(call(C_Map.SetUserWaypoint, made))
-    local map, x, y = point()
-    if ok and map and same(d, map, x, y) then
-        ours = { map = map, x = x, y = y }
-        save()
-        call(C_SuperTrack.SetSuperTrackedUserWaypoint, true)
-        settledAt = GetTime() + Marker.SETTLE
+--------------------------------------------------------------------------------
+-- The CVars: NodeRadarDB.softCVars = { [name] = { old, ours } or { cancelled = true } },
+-- NodeRadarDB.softClaim while a turn-on claim waits (combat, the gamepad UI).
+--------------------------------------------------------------------------------
+
+local function claims()
+    NR.db.softCVars = NR.db.softCVars or {}
+    return NR.db.softCVars
+end
+local function blocked() return InCombatLockdown() or API.Gamepad() end
+
+-- The marker turned on: each CVar that differs set, its old value kept once
+-- the game takes ours. A claim retained from an unconfirmed off-time restore
+-- can have the old value again: reconcile it before calling it "kept".
+local function claim()
+    if blocked() then NR.db.softClaim = true; return end
+    NR.db.softClaim = nil
+    local c = claims()
+    for _, cv in ipairs(Marker.CVARS) do
+        local name, ours = cv[1], cv[2]
+        local old = get(name)
+        local e = c[name]
+        if e and e.cancelled then
+            decision(name, "claim skipped", "cancelled until marker off/on")
+        elseif e then
+            if old == nil then
+                NR.db.softClaim = true
+                decision(name, "claim deferred", "retained claim unreadable on turn-on")
+            elseif same(old, e.ours) then
+                decision(name, "kept", "retained claim still ours")
+            elseif same(old, e.old) then
+                if put(name, e.ours) then
+                    decision(name, "claimed", "retained original reapplied on turn-on")
+                else
+                    NR.db.softClaim = true
+                    decision(name, "claim deferred", "retained original reapply unconfirmed")
+                end
+            else
+                c[name] = { cancelled = true }
+                decision(name, "given up", "retained claim changed externally on turn-on")
+            end
+        elseif old == nil then
+            decision(name, "claim skipped", "current value unreadable")
+        elseif same(old, ours) then
+            decision(name, "claim skipped", "already at " .. ours .. "; player's value")
+        else
+            if put(name, ours) then
+                c[name] = { old = old, ours = ours }
+                decision(name, "claimed", "turn-on: " .. old .. " -> " .. ours)
+            else
+                decision(name, "claim failed", "turn-on: " .. old .. " -> " .. ours .. ", read-back " .. tostring(get(name)))
+            end
+        end
     end
-    writing = false
+end
+
+-- Each claim given back: ours still there, the old value; anything else is
+-- someone else's, left. Cancelled ones just go. Held in combat and in the
+-- gamepad UI, done by a later pass. Unreadable values and unconfirmed restores
+-- retain the saved original and keep the cleanup ticker alive.
+local function release()
+    NR.db.softClaim = nil
+    if blocked() then return end
+    local c = claims()
+    for name, e in pairs(c) do
+        if e.cancelled then
+            decision(name, "given up", "marker off: cancelled claim forgotten")
+            c[name] = nil
+        else
+            local now = get(name)
+            if now == nil then
+                decision(name, "restore deferred", "marker off: current value unreadable; claim retained")
+            elseif same(now, e.ours) then
+                local restored = put(name, e.old)
+                decision(name, restored and "put back" or "restore failed",
+                    "marker off: " .. tostring(e.ours) .. " -> " .. tostring(e.old)
+                    .. ", read-back " .. tostring(get(name)))
+                if restored then c[name] = nil end
+            else
+                decision(name, "given up", "marker off: current " .. tostring(now)
+                    .. " differs from ours " .. tostring(e.ours))
+                c[name] = nil
+            end
+        end
+    end
+end
+
+-- Each claim read again, the marker on: still ours, kept; the old value (a
+-- logout restore that stuck), ours set again (`fromOld`, at login only);
+-- anything else, someone else's: cancelled, and it stays so until the marker
+-- is turned off and on.
+local function judge(fromOld)
+    for name, e in pairs(claims()) do
+        if e.cancelled then
+            decision(name, "claim skipped", "prior cancellation kept at login/gamepad read")
+        else
+            local now = get(name)
+            if same(now, e.ours) then
+                decision(name, "kept", "login/gamepad read: still ours " .. tostring(now))
+            elseif fromOld and same(now, e.old) then
+                if put(name, e.ours) then
+                    decision(name, "claimed", "login read: restored " .. tostring(e.old)
+                        .. " -> " .. tostring(e.ours))
+                else
+                    decision(name, "given up", "login read: reapply failed; old " .. tostring(e.old)
+                        .. ", read-back " .. tostring(get(name)))
+                    claims()[name] = { cancelled = true }
+                end
+            else
+                decision(name, "given up", (fromOld and "login read" or "gamepad exit")
+                    .. ": current " .. tostring(now) .. ", ours " .. tostring(e.ours)
+                    .. ", old " .. tostring(e.old))
+                claims()[name] = { cancelled = true }
+            end
+        end
+    end
+end
+
+-- At logout, best effort: ours put back so that removing NodeRadar leaves the
+-- player's values, the claims kept (a read-back doesn't prove the file got it).
+local function atLogout()
+    if blocked() or not NR.db.softCVars then return end
+    for name, e in pairs(NR.db.softCVars) do
+        if e.cancelled then
+            decision(name, "restore skipped", "logout: claim cancelled")
+        elseif not same(get(name), e.ours) then
+            decision(name, "restore skipped", "logout: current " .. tostring(get(name))
+                .. " differs from ours " .. tostring(e.ours))
+        else
+            local restored = put(name, e.old)
+            decision(name, restored and "put back" or "restore failed",
+                "logout: " .. tostring(e.ours) .. " -> " .. tostring(e.old)
+                .. ", claim retained; read-back " .. tostring(get(name)))
+        end
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -155,7 +243,7 @@ root:SetSize(1, 1)
 root:EnableMouse(false)
 root:SetFrameStrata("BACKGROUND")
 root:Hide()
-local glow, stars = nil, {}
+local glow, vapor, stars = nil, nil, {}
 
 local function part(file, size, layer, tint)
     local f = CreateFrame("Frame", nil, root)
@@ -181,6 +269,55 @@ local function anim(group, kind, from, to, duration, order, delay)
     return a
 end
 
+-- The same drifting vapor surrounds the nearby object and the approach beacon.
+-- Three staggered wisps expand and dissolve; only the engine animates them.
+function Marker.CreateVapor(parent)
+    local cloud = CreateFrame("Frame", nil, parent)
+    cloud:SetSize(1, 1)
+    cloud:EnableMouse(false)
+    cloud.wisps = {}
+    local playing = false
+    local function placeWisp(w, delay)
+        w:ClearAllPoints()
+        w:SetPoint("CENTER", cloud, "CENTER", math.random(-10, 10), math.random(-12, -4))
+        w.tex:SetRotation(math.random() * 0.8 - 0.4)
+        w.wait:SetStartDelay(delay or math.random() * 0.2)
+        w.drift:SetOffset(math.random(-12, 12), 18 + math.random() * 12)
+    end
+    for i = 1, 3 do
+        local w = CreateFrame("Frame", nil, cloud)
+        w:SetSize(112, 70)
+        w:EnableMouse(false)
+        w:SetAlpha(0)
+        w.tex = w:CreateTexture(nil, "ARTWORK")
+        w.tex:SetTexture(MEDIA .. "MarkerVapor.tga")
+        w.tex:SetAllPoints(w)
+        w.tex:SetBlendMode("ADD")
+        w.tex:SetVertexColor(0.4, 0.9, 0.75)
+        local ag = w:CreateAnimationGroup()
+        w.wait = anim(ag, "Alpha", 0, 0, 0.01, 1)
+        anim(ag, "Alpha", 0, 0.38, 0.65, 2):SetSmoothing("OUT")
+        anim(ag, "Alpha", 0.38, 0, 1.6, 2, 0.65):SetSmoothing("IN")
+        anim(ag, "Scale", 0.65, 1.2, 2.25, 2)
+        w.drift = ag:CreateAnimation("Translation")
+        w.drift:SetDuration(2.25); w.drift:SetOrder(2)
+        ag:SetScript("OnFinished", function()
+            if playing then placeWisp(w); ag:Play() end
+        end)
+        w.anim = ag
+        cloud.wisps[i] = w
+    end
+    function cloud:Play()
+        playing = true
+        for i, w in ipairs(self.wisps) do placeWisp(w, (i - 1) * 0.75); w.anim:Play() end
+    end
+    function cloud:Stop()
+        playing = false
+        for _, w in ipairs(self.wisps) do w.anim:Stop() end
+    end
+    return cloud
+end
+
 -- The reference: diagonal flares of different sizes, a little upward drift,
 -- and independent pauses. The engine handles the motion between flares.
 local function place(s, delay)
@@ -200,6 +337,8 @@ local function build()
     anim(g, "Alpha", 0.06, 0.14, 1.6, 1)
     g:SetLooping("BOUNCE")
     glow.anim = g
+    vapor = Marker.CreateVapor(root)
+    vapor:SetPoint("CENTER", root, "CENTER", 0, 0)
     for i = 1, Marker.STARS do
         local s = part("MarkerStar", Marker.STAR, "OVERLAY", Marker.WHITE)
         s:SetAlpha(0)                                  -- seen only while its animation runs
@@ -212,7 +351,7 @@ local function build()
         s.drift = ag:CreateAnimation("Translation")
         s.drift:SetDuration(0.54)
         s.drift:SetOrder(3)
-        ag:SetScript("OnFinished", function() place(s); ag:Play() end)
+        ag:SetScript("OnFinished", function() if root:IsShown() then place(s); ag:Play() end end)
         s.anim = ag
         stars[i] = s
     end
@@ -228,262 +367,229 @@ local function play(on)
         end
     end
     if glow then if on then glow.anim:Play() else glow.anim:Stop() end end
+    if vapor then if on then vapor:Play() else vapor:Stop() end end
 end
 
-local function hideStars()
-    if root:IsShown() then
+-- The stars off their plate: hidden, still, unanchored.
+local function unbind()
+    if bound or root:IsShown() then
         root:Hide()
         play(false)
-    end
-end
-
--- Whether the stars may show now, and how far the node is.
-local function showable()
-    if not (Marker.On() and ours and want and nav and same(ours, want.map, want.x, want.y)) then return nil end
-    if GetTime() < settledAt or not trackingWaypoint() or trackingOther() then return nil end
-    if not yes(C_Navigation.HasValidScreenPosition) or yes(C_Navigation.WasClampedToScreen) then return nil end
-    local pn, pw = here()
-    local r = want.record
-    if not pn then return nil end
-    local mine = math.sqrt((r.north - pn) ^ 2 + (r.west - pw) ^ 2)
-    local theirs = API.Num(call(C_Navigation.GetDistance))
-    if not theirs or math.abs(theirs - mine) > Marker.AGREE then return nil end
-    local ok, taxi = pcall(UnitOnTaxi, "player")
-    if mine < Marker.NEAR or (ok and API.Yes(taxi)) then return nil end
-    return mine
-end
-
-local since = 0
-local function onUpdate(_, elapsed)
-    if not fresh() then Marker.Reconcile(); return end    -- stale: dropped, ours cleared
-    if not root:IsShown() then
-        since = since + elapsed
-        if since < Marker.HIDDEN_EVERY then return end
-    end
-    since = 0
-    local d = showable()
-    if not d then hideStars(); return end
-    root:SetScale(math.max(Marker.FAR_SCALE, math.min(Marker.NEAR_SCALE, 60 / d)))
-    if not root:IsShown() then
-        root:Show()
-        play(true)
-    end
-end
-
--- While ours is installed but not the target's (a clear held by combat or the
--- map, the frame not made yet): tried again, sweeps or none, until it's done.
-local retried = 0
-local function onRetry(_, elapsed)
-    retried = retried + elapsed
-    if retried < Marker.RETRY then return end
-    retried = 0
-    Marker.Reconcile()
-end
-
--- Armed (our waypoint on the target, the frame there): checked every frame
--- while shown, ten times a second while hidden; ours otherwise, the retry;
--- nothing of ours, nothing runs.
-local driver = CreateFrame("Frame")
-local function arm()
-    local armed = Marker.On() and ours and want and nav and same(ours, want.map, want.x, want.y)
-    if armed then
-        build()
         root:ClearAllPoints()
-        root:SetPoint("CENTER", nav, "CENTER")
-        driver:SetScript("OnUpdate", onUpdate)
-    else
-        driver:SetScript("OnUpdate", ours and onRetry or nil)
-        hideStars()
     end
+    bound = nil
 end
 
 --------------------------------------------------------------------------------
--- The reconciler: what should be against what is, read again each time
+-- The plate
 --------------------------------------------------------------------------------
 
+-- A plate's unit token, or nil.
+local function unitOf(plate)
+    if type(plate) ~= "table" then return nil end
+    local u = text(plate.namePlateUnitToken)
+    if u then return u end
+    local uf = plate.UnitFrame
+    return type(uf) == "table" and text(uf.unit) or nil
+end
+
+-- The stars' plate: a game object, the soft-interact target, a node known and
+-- wanted. Every read secret-tested; a secret or an error: no.
+local function qualifies(unit)
+    if not (yes(UnitIsGameObject, unit) and yes(UnitIsUnit, unit, "softinteract")) then return false end
+    local name = text(call(UnitName, unit))
+    return name ~= nil and NR.Learn.Kind(name) ~= nil and NR.Alert.Wanted(name)
+end
+
+local function shownPlate(plate) return yes(plate.IsShown, plate) end
+
+-- What should be against what is: the bound plate checked again (it's reused
+-- for another unit), then a new one looked for.
 function Marker.Reconcile()
-    if reconciling or not NR.db or not NR.charDb then return end
-    reconciling = true
-    if want and not fresh() then want = nil end
-    if ours and not isOurs() then forget() end         -- replaced (theirs now) or gone
-    if not busy() then
-        local on = Marker.On()
-        local desire = on and want or nil
-        -- No target known (a fresh load before its first sweep included): ours
-        -- goes, and the next sweep sets it again (Codex, PR #74: a hold till a
-        -- sweep could last forever with tracking off).
-        local onTarget = desire ~= nil and same(ours, desire.map, desire.x, desire.y)
-        if ours and (not on or not onTarget or trackingOther()) then clear() end
-        if desire and not ours and not hasWaypoint() and not tracking() then set(desire) end
+    if not (NR.db and Marker.On()) or API.Gamepad() then unbind(); return end
+    if bound and not (shownPlate(bound.plate) and unitOf(bound.plate) == bound.unit and qualifies(bound.unit)) then
+        unbind()
     end
-    reconciling = false
-    arm()
+    if bound then return end
+    local list = call(C_NamePlate.GetNamePlates)
+    if type(list) ~= "table" then return end
+    for _, plate in ipairs(list) do
+        local unit = unitOf(plate)
+        if unit and shownPlate(plate) and qualifies(unit) then
+            build()
+            root:ClearAllPoints()
+            if pcall(root.SetPoint, root, "CENTER", plate, "BOTTOM", 0, 0) then
+                bound = { unit = unit, plate = plate }
+                root:Show()
+                play(true)
+            end
+            return
+        end
+    end
 end
 
--- After each radar sweep: the target's point from this sweep's map and the
--- player's position in the same frame (as Scan.MapPosition does for a blip).
--- The same record, not moved: its point is kept, since one computed again
--- from a moving player differs by a hair and would set the waypoint anew every
--- sweep (the world round, 70450).
-Marker.KEEP = 1        -- yards: a record moved less than this keeps its point
-function Marker.Update(result)
-    if not Marker.On() then return end
-    local r = NR.Compass.Chosen()
-    local where = result and result.where
-    if r and want and want.record == r and where and where.map == want.map
-        and math.abs(r.north - want.north) < Marker.KEEP and math.abs(r.west - want.west) < Marker.KEEP then
-        want.at = GetTime()
-        Marker.Reconcile()
+--------------------------------------------------------------------------------
+-- The ticker: while on, or while a claim is left to put back
+--------------------------------------------------------------------------------
+
+local driver = CreateFrame("Frame")
+local since = 0
+local function pending()
+    return NR.db and (NR.db.softClaim or (NR.db.softCVars and next(NR.db.softCVars) ~= nil)) and true or false
+end
+local function pass()
+    if waiting() then Marker.Reconcile(); return end
+    local pad = API.Gamepad()
+    if pad then
+        wasPad = true
+        unbind()
         return
     end
-    local pn, pw = here()
-    want = nil
-    if r and where and pn and where.w and where.h and where.w > 0 and where.h > 0 then
-        local x = where.x + (pw - r.west) / where.w
-        local y = where.y - (r.north - pn) / where.h
-        if x >= 0 and x <= 1 and y >= 0 and y <= 1 then
-            want = { map = where.map, x = x, y = y, record = r, north = r.north, west = r.west, at = GetTime() }
-        end
+    if wasPad then
+        wasPad = nil
+        if Marker.On() then judge(false) end           -- Blizzard's temporary values gone: read again
     end
-    Marker.Reconcile()
+    if Marker.On() then
+        if NR.db.softClaim and not InCombatLockdown() then claim() end
+        Marker.Reconcile()
+    else
+        release()
+    end
+end
+local function arm()
+    local run = NR.db and (Marker.On() or pending())
+    driver:SetScript("OnUpdate", run and function(_, elapsed)
+        since = since + elapsed
+        if since < Marker.TICK then return end
+        since = 0
+        pass()
+        if not (Marker.On() or pending()) then driver:SetScript("OnUpdate", nil) end
+    end or nil)
+    if not Marker.On() then unbind() end
 end
 
---------------------------------------------------------------------------------
--- showInGameNavigation: on while the marker is (Blizzard's frame needs it),
--- put back after, unless someone else changed it meanwhile.
---------------------------------------------------------------------------------
-
-local function cvar() return call(C_CVar.GetCVar, Marker.CVAR) end
-local function setCVar(v)
-    cvarExpect = v
-    return API.Yes(call(C_CVar.SetCVar, Marker.CVAR, v))
-end
-
-local function cvarOn()
-    if NR.db.markerCVar ~= nil or cvar() ~= "0" then return end
-    if setCVar("1") then NR.db.markerCVar = "0" else cvarExpect = nil end
-end
-local function cvarBack()
-    local old = NR.db.markerCVar
-    if old == nil then return end
-    NR.db.markerCVar = nil
-    if cvar() == "1" then setCVar(old) end
-    cvarExpect = nil
-end
-
--- The compass's target gone (its records cleared: tracking off, a loading
--- screen, death, Compass.Reset): no point now, ours cleared (Codex, PR #74).
-function Marker.TargetGone()
-    want = nil
-    Marker.Reconcile()
-end
-
--- The setting or NodeRadar turned on or off (NR.Set, /nr reset).
+-- The setting or NodeRadar turned on or off (NR.Set, /nr reset). Inside the
+-- login window the CVars wait (Codex, PR #79): on, a claim the ticker makes
+-- once it's over; off, the claims the ticker puts back then. The stars follow
+-- at once.
 function Marker.Toggle()
-    if Marker.On() then cvarOn() else cvarBack(); want = nil end
-    Marker.Reconcile()
-end
-
---------------------------------------------------------------------------------
--- Blizzard's own marker (a small gold diamond, its distance under it: the world
--- round, 70450), while our stars are on the spot: the diamond hidden (the stars mark
--- it), its distance kept, unless the compass shows the distance already, then
--- the whole marker hidden (Codex's choice, the owner's leave, 2026-10-20). Only
--- while our waypoint is the one tracked and on screen: behind, its edge arrow
--- stays; anything the player tracks, theirs is untouched. A post-hook on its
--- UpdateAlpha (its OnUpdate calls it every frame): the frame's alpha set to 0
--- after Blizzard's own, so it fades back in by itself; the diamond's (Icon,
--- whose alpha Blizzard never sets) put back once when we stop.
---------------------------------------------------------------------------------
-
--- Only while the stars are actually on the spot, and our waypoint is still the
--- one tracked, alone, read now: a quest the player tracks while our clear is
--- held (combat, the map) keeps its own marker (Codex, PR #75).
-local function covered()
-    return root:IsShown() and isOurs() and trackingWaypoint() and not trackingOther()
-        and not yes(C_Navigation.WasClampedToScreen)
-end
-Marker.Covered = covered
-
-local hooked
-local function hookBlizzard()
-    local f = rawget(_G, "SuperTrackedFrame")
-    if hooked or type(f) ~= "table" or type(f.UpdateAlpha) ~= "function" then return end
-    hooked = true
-    local iconHidden
-    hooksecurefunc(f, "UpdateAlpha", function(self)
-        local c = covered()
-        if c and NR.Compass.On() then self:SetAlpha(0) end
-        local icon = self.Icon
-        if type(icon) ~= "table" then return end
-        if c then
-            icon:SetAlpha(0)
-            iconHidden = true
-        elseif iconHidden then
-            icon:SetAlpha(1)
-            iconHidden = nil
+    if waiting() then
+        if not Marker.On() and NR.db.softCVars then
+            for name, e in pairs(NR.db.softCVars) do
+                if e.cancelled then
+                    NR.db.softCVars[name] = nil
+                    decision(name, "given up", "marker off during login wait: cancellation forgotten")
+                end
+            end
         end
-    end)
+        NR.db.softClaim = Marker.On() or nil
+    elseif Marker.On() then
+        claim()
+    else
+        release()
+    end
+    arm()
+    Marker.Reconcile()
 end
 
 --------------------------------------------------------------------------------
 -- Events
 --------------------------------------------------------------------------------
 
-local events = CreateFrame("Frame")
-API.RegisterEvents(events, { "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_REGEN_ENABLED", "USER_WAYPOINT_UPDATED",
-    "SUPER_TRACKING_CHANGED", "NAVIGATION_FRAME_CREATED", "NAVIGATION_FRAME_DESTROYED", "CVAR_UPDATE",
-    "ADDON_LOADED" })
-events:SetScript("OnEvent", function(_, event, ...)
-    if event == "ADDON_LOADED" then
-        if ... == "Blizzard_QuestNavigation" then hookBlizzard() end
-        return
+-- #61's waypoint marker, gone (never released): the navigation option it held
+-- at 1 put back if it still reads 1; its saved waypoint only dropped, since a
+-- matching point isn't proof it's ours (Codex, #78).
+local function migrate()
+    local old = NR.db.markerCVar
+    if old ~= nil then
+        if get("showInGameNavigation") == "1" then call(C_CVar.SetCVar, "showInGameNavigation", old) end
+        NR.db.markerCVar = nil
     end
-    if not (NR.db and NR.charDb) then return end
+    if NR.charDb then NR.charDb.marker = nil end
+end
+
+-- On at login: each claim read again. Never any `softCVars` (the marker on
+-- since #61, or set by hand): a first turn-on, claimed now (the owner, #79:
+-- no stars, nothing claimed).
+local function readAtLogin()
+    if not Marker.On() then return end
+    if NR.db.softCVars == nil then NR.db.softClaim = true end
+    judge(true)
+    if NR.db.softClaim then claim() end
+end
+
+-- The login's read waits for the client's synced CVars: SETTLE seconds after
+-- the first PLAYER_ENTERING_WORLD, and out of the gamepad UI. Polled only while
+-- it waits, and only with something to read (or a toggle in the window).
+local loginDriver = CreateFrame("Frame")
+local function startRead()
+    readDue = true
+    loginDriver:SetScript("OnUpdate", function()
+        if loggingOut or loginPhase or (settleUntil and GetTime() < settleUntil) or API.Gamepad() then return end
+        loginDriver:SetScript("OnUpdate", nil)
+        readDue, settleUntil = nil, nil
+        readAtLogin()
+        arm()
+        Marker.Reconcile()
+    end)
+end
+
+local events = CreateFrame("Frame")
+API.RegisterEvents(events, { "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_LOGOUT", "CVAR_UPDATE",
+    "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED" })
+events:SetScript("OnEvent", function(_, event, ...)
+    if not NR.db then return end
     if event == "PLAYER_LOGIN" then
-        hookBlizzard()
-        -- A waypoint left from before is ours only if it's the saved one
-        -- (within MATCH, as saved), its clear at logout never done (a crash,
-        -- a disconnect).
-        local s = NR.charDb.marker
-        local map, x, y = point()
-        if type(s) == "table" and map and API.Num(s.map) and API.Num(s.x) and API.Num(s.y) and same(s, map, x, y) then
-            ours = { map = map, x = x, y = y }
-        else
-            NR.charDb.marker = nil
+        loggingOut = nil
+        migrate()
+        -- A value changed while NodeRadar wasn't loaded raises no CVAR_UPDATE
+        -- for us: each claim read first (Codex, #78), once the client's synced
+        -- values are in and out of the gamepad UI; nothing judged till then.
+        loginPhase = true
+        arm()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if loginPhase then
+            loginPhase, settleUntil = nil, GetTime() + Marker.SETTLE
+            if Marker.On() or pending() then startRead() end
         end
-        nav = call(C_Navigation.GetFrame)
-        if Marker.On() then cvarOn() else cvarBack() end
-        Marker.Reconcile()
     elseif event == "PLAYER_LOGOUT" then
-        if ours and not busy() then clear() end         -- a reload sets it again
-    elseif event == "USER_WAYPOINT_UPDATED" then
-        if writing then return end
-        if ours and not isOurs() then forget() end
-        Marker.Reconcile()
-    elseif event == "NAVIGATION_FRAME_CREATED" then
-        nav = call(C_Navigation.GetFrame)
-        Marker.Reconcile()
-    elseif event == "NAVIGATION_FRAME_DESTROYED" then
-        nav = nil
-        root:ClearAllPoints()
-        Marker.Reconcile()
+        -- Keep claims through the queued notifications from our own restore.
+        -- Login will compare the final values after the client's sync window.
+        loggingOut = true
+        atLogout()
     elseif event == "CVAR_UPDATE" then
-        local name = ...
-        if type(name) == "string" and name:lower() == Marker.CVAR:lower() and NR.db.markerCVar ~= nil
-            and cvar() ~= cvarExpect then
-            NR.db.markerCVar = nil                     -- someone else's change: theirs stands
-            cvarExpect = nil
+        -- Someone else's change (the player, another addon): theirs stands.
+        -- Ours inside put(), and anything inside the gamepad UI, never counts.
+        if writing or waiting() or API.Gamepad() or not NR.db.softCVars then return end
+        for name, e in pairs(NR.db.softCVars) do
+            if not e.cancelled then
+                local now = get(name)
+                if now ~= nil and not same(now, e.ours) then
+                    decision(name, "given up", "CVAR_UPDATE: current " .. tostring(now)
+                        .. " differs from ours " .. tostring(e.ours))
+                    NR.db.softCVars[name] = Marker.On() and { cancelled = true } or nil
+                end
+            end
         end
-    else
-        Marker.Reconcile()                             -- SUPER_TRACKING_CHANGED, PLAYER_REGEN_ENABLED
+    elseif event == "NAME_PLATE_UNIT_ADDED" then
+        Marker.Reconcile()
+    elseif event == "NAME_PLATE_UNIT_REMOVED" then
+        -- The bound one goes at once: Blizzard clears the plate's unit in its
+        -- own handler, and the next pass or add finds the new one (Codex, #78).
+        if bound and ... == bound.unit then unbind() end
     end
 end)
 
 Marker._test = {
-    root = root, stars = stars, driver = driver, hooked = function() return hooked end,
-    ours = function() return ours end,
-    want = function() return want end,
-    nav = function() return nav end,
-    reset = function() ours, want, nav = nil, nil, nil end,   -- a fresh load
+    root = root, stars = stars, driver = driver,
+    vapor = function() return vapor end,
+    bound = function() return bound end,
+    pass = pass, loginDriver = loginDriver,
+    reset = function()                                 -- a fresh load
+        bound, writing, wasPad, loginPhase, settleUntil, readDue = nil, nil, nil, nil, nil, nil
+        loginPhase = true
+        loggingOut = nil
+        since = 0
+        loginDriver:SetScript("OnUpdate", nil)
+    end,
 }
