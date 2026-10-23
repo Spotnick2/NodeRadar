@@ -8,7 +8,8 @@
   node's real height when its interact plate appears (about 15 yards). The beacon's height is
   approximate and it can show through terrain. Your waypoint and tracked objective take priority;
   while the beacon is active, newly accepted quests may not auto-track. Navigation and interact
-  settings are put back when no longer needed, and a change of yours is kept. Off by default:
+  settings are put back when no longer needed, and a change of yours is kept. Unreadable settings
+  and unconfirmed restores retain the saved original and retry cleanup. Off by default:
   `/nr marker`, or Options. The sparkle follows the FFXIV reference: diagonal white flares with
   mint and blue halos, staggered sizes and timing, gentle drift, and layered teal vapor that rises,
   expands, and dissolves around both the approach beacon and the nearby marker.

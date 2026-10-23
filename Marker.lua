@@ -84,7 +84,10 @@ local function text(v) if type(v) == "string" and not API.IsSecret(v) then retur
 local function yes(fn, ...) return API.Yes(call(fn, ...)) end
 
 -- CVars can read back reformatted ("60.000000" for 60).
-local function get(name) return text(call(C_CVar.GetCVar, name)) end
+local function get(name)
+    local value = text(call(C_CVar.GetCVar, name))
+    return value -- exactly one result, including nil for unreadable diagnostic reads
+end
 local function same(a, b) return a == b or (tonumber(a) ~= nil and tonumber(a) == tonumber(b)) end
 local function put(name, value)
     writing = true
@@ -133,7 +136,8 @@ end
 
 -- Each claim given back: ours still there, the old value; anything else is
 -- someone else's, left. Cancelled ones just go. Held in combat and in the
--- gamepad UI, done by a later pass.
+-- gamepad UI, done by a later pass. Unreadable values and unconfirmed restores
+-- retain the saved original and keep the cleanup ticker alive.
 local function release()
     NR.db.softClaim = nil
     if blocked() then return end
@@ -141,19 +145,23 @@ local function release()
     for name, e in pairs(c) do
         if e.cancelled then
             decision(name, "given up", "marker off: cancelled claim forgotten")
+            c[name] = nil
         else
             local now = get(name)
-            if same(now, e.ours) then
+            if now == nil then
+                decision(name, "restore deferred", "marker off: current value unreadable; claim retained")
+            elseif same(now, e.ours) then
                 local restored = put(name, e.old)
                 decision(name, restored and "put back" or "restore failed",
                     "marker off: " .. tostring(e.ours) .. " -> " .. tostring(e.old)
                     .. ", read-back " .. tostring(get(name)))
+                if restored then c[name] = nil end
             else
                 decision(name, "given up", "marker off: current " .. tostring(now)
                     .. " differs from ours " .. tostring(e.ours))
+                c[name] = nil
             end
         end
-        c[name] = nil
     end
 end
 
@@ -538,7 +546,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         for name, e in pairs(NR.db.softCVars) do
             if not e.cancelled then
                 local now = get(name)
-                if not same(now, e.ours) then
+                if now ~= nil and not same(now, e.ours) then
                     decision(name, "given up", "CVAR_UPDATE: current " .. tostring(now)
                         .. " differs from ours " .. tostring(e.ours))
                     NR.db.softCVars[name] = Marker.On() and { cancelled = true } or nil

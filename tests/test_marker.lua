@@ -216,6 +216,42 @@ eq(claims().SoftTargetInteractRange and claims().SoftTargetInteractRange.cancell
 -- Logout and login, the claims kept
 --------------------------------------------------------------------------------
 
+-- A failed or unreadable off-time restore keeps its original and retries.
+-- An unrelated CVar notification must not erase an unreadable pending claim.
+for _, mode in ipairs({ "unreadable", "rejected", "unconfirmed" }) do
+    NR.Set("marker", false)
+    local name = "softTargetInteract"
+    WoW.cvars[name] = "1"
+    NR.Set("marker", true)
+    local original = claims()[name].old
+    local getCVar, setCVar = C_CVar.GetCVar, C_CVar.SetCVar
+    local unreadable = mode == "unreadable"
+    C_CVar.GetCVar = function(key)
+        if key == name and unreadable then return nil end
+        return getCVar(key)
+    end
+    C_CVar.SetCVar = function(key, value)
+        if key == name and value == original then
+            if mode == "rejected" then return false end
+            local result = setCVar(key, value)
+            if mode == "unconfirmed" then unreadable = true end
+            return result
+        end
+        return setCVar(key, value)
+    end
+    NR.Set("marker", false)
+    eq(claims()[name] and claims()[name].old, original, mode .. ": original retained after off")
+    check(M.driver._scripts.OnUpdate ~= nil, mode .. ": cleanup ticker stays armed")
+    WoW.fire("CVAR_UPDATE", "unrelatedSetting", "1")
+    frames(0.6)
+    eq(claims()[name] and claims()[name].old, original, mode .. ": pending restore survives notifications and retries")
+    C_CVar.GetCVar, C_CVar.SetCVar = getCVar, setCVar
+    frames(0.6)
+    eq(cv(name), original, mode .. ": player's value confirmed on retry")
+    eq(next(claims()), nil, mode .. ": confirmed cleanup drops claims")
+    eq(M.driver._scripts.OnUpdate, nil, mode .. ": no idle ticker after cleanup")
+end
+
 NR.Set("marker", false)
 WoW.cvars.SoftTargetIconGameObject = "0"
 NR.Set("marker", true)

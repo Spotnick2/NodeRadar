@@ -1884,6 +1884,10 @@ on a single-node beacon with the following safeguards.
   possible; a failed cleanup remains saved. External CVar changes cancel until
   an explicit marker off/on. The native marker is covered only while our own
   beacon is actually visible; a tracked quest's display remains untouched.
+- Interact CVar cleanup also retains the original across unreadable reads,
+  rejected writes, and unreadable restoration readbacks. The existing ticker
+  retries while off; unrelated CVar notifications cannot cancel an unreadable
+  claim. A confirmed restore or a readable external change releases it (#79 follow-up).
 - Occupying supertracking can prevent newly accepted quests from auto-tracking;
   the option and README disclose this existing #61 limitation.
 - Suppression/state transitions are recorded in the existing marker decision
