@@ -203,6 +203,11 @@ local function mdetail(i) return tostring(mres(i).detail or mres(i).lastError) e
 local function mrun(i, s) for _ = 1, s * 2 do if mres(i).status == nil then place(); NR.Step(WoW.now); tick(0.5) end end end
 WoW.cvars.SoftTargetIconGameObject = "0"
 WoW.plates = {}
+-- A previous run left the marker on with cancelled claims. Starting the
+-- round must request a fresh off/on cycle before waiting for its stars.
+NR.db.marker = true
+NR.db.softCVars = {}
+for _, cv in ipairs(NR.Marker.CVARS) do NR.db.softCVars[cv[1]] = { cancelled = true } end
 fp("steps nr softmark")
 tick(1.2)
 eq(mres(1).status, "done", "softmark set up: " .. mdetail(1))
@@ -243,10 +248,57 @@ eq(mres(11).status, "done", "after the reload: " .. mdetail(11))
 tick(NR.Marker.SETTLE + 0.5)                               -- NodeRadar's login window over
 fp("steps stop")
 tick(1)
-eq(NR.db.marker, false, "stopped: NodeRadar's marker as it was")
-eq(WoW.cvars.softTargetInteract, "1", "...its CVars put back by NodeRadar")
+eq(NR.db.marker, true, "stopped: NodeRadar's marker as it was")
+NR.Set("marker", false)
+eq(WoW.cvars.softTargetInteract, "1", "off afterwards: its CVars put back by NodeRadar")
 eq(NR.db.compass, false, "...the compass as it was")
+local markerLog = NodeRadarProbeDB.markerLog or {}
+local savedClaim, savedRestore
+for _, line in ipairs(markerLog) do
+    if line:find("softTargetInteract: claimed") then savedClaim = true end
+    if line:find("softTargetInteract: put back") then savedRestore = true end
+end
+check(savedClaim, "the probe saved NodeRadar's CVar decision notes")
+check(savedRestore, "the probe kept later restore decisions")
+
+-- Leaving the combat step by hand must not abandon its temporary off toggle.
+for _, advance in ipairs({ "done", "skip", "stop" }) do
+    WoW.plates = {}
+    fp("steps nr softmark")
+    tick(1.2)
+    for _ = 2, 8 do S.Skip() end
+    WoW.combat = true
+    WoW.fire("PLAYER_REGEN_DISABLED")
+    tick(1.2)
+    eq(NR.db.marker, false, advance .. ": the combat step turned the marker off")
+    if advance == "done" then S.DoneByHand()
+    elseif advance == "skip" then S.Skip()
+    else fp("steps stop") end
+    if advance ~= "stop" then eq(mrec().at, 10, advance .. ": moved past the combat callback") end
+    WoW.combat = false
+    WoW.fire("PLAYER_REGEN_ENABLED")
+    tick(1.2)
+    eq(NR.db.marker, advance ~= "stop", advance .. ": the marker restored after combat anyway")
+    eq(WoW.cvars.softTargetInteract, advance == "stop" and "1" or "3", advance .. ": interact targeting restored")
+    fp("steps stop")
+    tick(1)
+    eq(NR.db.marker, false, advance .. ": stopping still restores the original setting")
+end
 
 eq(errors(), 0, "no step threw")
+-- Passive login diagnostics must preserve tracking, and name calls that change it.
+WoW.tracking[1].active = true
+WoW.fire("PLAYER_LOGIN")
+eq(WoW.tracking[1].active, true, "login diagnostics leave Find Herbs on")
+C_Minimap.SetTracking(1, false)
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+local trackedCall, trackedState
+for _, line in ipairs(NodeRadarProbeDB.cvarlog or {}) do
+    if line:find("TRACKING C_Minimap.SetTracking%(1, false%); from ") then trackedCall = true end
+    if line:find("TRACKING MINIMAP_UPDATE_TRACKING: gathering on none", 1, true) then trackedState = true end
+end
+check(trackedCall, "tracking diagnostics record the disabling call and caller")
+check(trackedState, "tracking diagnostics record the resulting off state")
+C_Minimap.SetTracking(1, true)
 for _, l in ipairs(WoW.chat) do check(not l:find("plates"), "nothing of the probe in chat: " .. l) end
 done("test_probe_plates")

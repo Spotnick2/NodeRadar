@@ -80,6 +80,7 @@ check(M.root._points[1] and M.root._points[1][1] == "CENTER" and M.root._points[
     and M.root._points[1][3] == "BOTTOM", "...on the plate's bottom")
 eq(M.root._parent, UIParent, "...a child of UIParent, never of Blizzard's plate")
 eq(M.stars[1].anim._playing, true, "...twinkling")
+for _, w in ipairs(M.vapor().wisps) do eq(w.anim._playing, true, "nearby vapor starts with the stars") end
 check(M.driver._scripts.OnUpdate ~= nil, "...the ticker on")
 
 -- Each condition alone.
@@ -111,6 +112,11 @@ WoW.fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 eq(shown(), false, "the plate removed: hidden at once")
 eq(M.bound(), nil, "...unbound")
 eq(M.stars[1].anim._playing, false, "...the animations stopped")
+for _, w in ipairs(M.vapor().wisps) do
+    eq(w.anim._playing, false, "plate removal stops vapor")
+    w.anim._scripts.OnFinished()
+    eq(w.anim._playing, false, "a late vapor completion cannot restart a hidden marker")
+end
 eq(#M.root._points, 0, "...the anchor cleared")
 -- Another unit's removal leaves ours.
 setPlates({ soft() })
@@ -211,11 +217,27 @@ eq(claims().SoftTargetInteractRange and claims().SoftTargetInteractRange.cancell
 --------------------------------------------------------------------------------
 
 NR.Set("marker", false)
+WoW.cvars.SoftTargetIconGameObject = "0"
 NR.Set("marker", true)
 WoW.fire("PLAYER_LOGOUT")
 eq(cv("softTargetInteract"), "1", "logout: ours put back, best effort")
 check(claims().softTargetInteract ~= nil, "...the claim kept")
+-- The client queues these until after SetCVar returns (run #481, 70450).
+for _, entry in ipairs(NR.Marker.CVARS) do
+    WoW.fire("CVAR_UPDATE", entry[1], cv(entry[1]))
+end
+frames(0.6)
+for _, entry in ipairs(NR.Marker.CVARS) do
+    eq(claims()[entry[1]] and claims()[entry[1]].ours, entry[2],
+        "logout's delayed notification retains " .. entry[1])
+end
 M.reset()
+-- The next load receives synced CVar events before PLAYER_LOGIN (#496).
+for _, entry in ipairs(NR.Marker.CVARS) do
+    WoW.fire("CVAR_UPDATE", entry[1], cv(entry[1]))
+    eq(claims()[entry[1]] and claims()[entry[1]].ours, entry[2],
+        "before PLAYER_LOGIN: retains " .. entry[1])
+end
 login()
 eq(cv("softTargetInteract"), "3", "login, the restore stuck: ours again")
 -- The restore didn't stick: ours read at login, kept.
@@ -346,9 +368,37 @@ WoW.cvars.softTargetInteract = "2"
 M.reset()
 login()
 eq(cv("softTargetInteract"), "2", "a claim cancelled before: not taken at login")
+local skipped
+for _, line in ipairs(NR.Marker.Decisions or {}) do
+    if line:find("softTargetInteract: claim skipped; prior cancellation") then skipped = true end
+end
+check(skipped, "the login note explains why the cancelled claim had no write")
+
+-- Off then on during the next login window starts a fresh claim. Discarding
+-- the cancellation on the off toggle needs no CVar write.
+M.reset()
+WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+NR.Set("marker", false)
+eq(claims().softTargetInteract, nil, "off in the window: the cancelled claim forgotten")
+NR.Set("marker", true)
+eq(cv("softTargetInteract"), "2", "on in the window: no early CVar write")
+frames(NR.Marker.SETTLE + 0.6)
+eq(cv("softTargetInteract"), "3", "after the window: claimed again")
+eq(claims().softTargetInteract and claims().softTargetInteract.old, "2", "...the current value kept to restore")
+C_CVar.SetCVar("softTargetInteract", "2")                  -- another change, with its reason recorded
+
+local decisions = NR.Marker.Decisions or {}
+local function decisionHas(pattern)
+    for _, line in ipairs(decisions) do if line:find(pattern) then return true end end
+end
+check(decisionHas("softTargetInteract: claimed"), "decisions record a claim")
+check(decisionHas("softTargetInteract: put back"), "decisions record a restore")
+check(decisionHas("softTargetInteract: given up"), "decisions record why a claim was cancelled")
+check(decisionHas("softTargetInteract: given up; CVAR_UPDATE"), "a CVar change names its cause")
 
 checkMethods({ "AnimationGroup:SetLooping", "Alpha:SetFromAlpha", "Alpha:SetToAlpha", "Scale:SetScaleFrom",
     "Scale:SetScaleTo", "Alpha:SetStartDelay", "Alpha:SetSmoothing", "Scale:SetSmoothing",
     "Translation:SetOffset", "Translation:SetDuration", "Translation:SetOrder", "Texture:SetBlendMode",
-    "Frame:IsShown" })
+    "Frame:IsShown", "Texture:SetRotation" })
 done("test_marker")

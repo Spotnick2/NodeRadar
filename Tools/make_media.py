@@ -246,6 +246,18 @@ def marker_star(x, y):
             min(1.0, a))
 
 
+def marker_vapor(x, y):
+    """Soft curling filaments, without a solid centre or visible sprite edge."""
+    u, v = (x - 64.0) / 64.0, (y - 64.0) / 64.0
+    envelope = (1 - smooth(0.55, 1.0, abs(u))) * (1 - smooth(0.6, 1.0, abs(v)))
+    haze = 0.10 * math.exp(-2.8 * (u * u + v * v))
+    for i in range(4):
+        spine = 0.26 * math.sin(u * 4.0 + i * 1.7) + (i - 1.5) * 0.22
+        width = 0.07 + 0.035 * (1 + math.cos(u * 5 + i))
+        haze += 0.23 * math.exp(-((v - spine) / width) ** 2) * math.exp(-u * u * 2)
+    return 1.0, 1.0, 1.0, min(1.0, haze * envelope)
+
+
 def main():
     os.makedirs(MEDIA, exist_ok=True)
     for name, fn in (("SonarRing", ring), ("SonarGlow", glow)):
@@ -255,7 +267,8 @@ def main():
     for name, w, h, fn in (("CompassShadow", 128, 128, compass_shadow), ("CompassLens", 128, 128, compass_lens),
                            ("CompassRim", 128, 128, compass_rim), ("CompassArc", 128, 128, compass_arc),
                            ("CompassArrow", 64, 64, compass_arrow), ("CompassPill", 128, 64, compass_pill),
-                           ("IconRing", 64, 64, icon_ring), ("MarkerStar", 64, 64, marker_star)):
+                           ("IconRing", 64, 64, icon_ring), ("MarkerStar", 64, 64, marker_star),
+                           ("MarkerVapor", 128, 128, marker_vapor)):
         path = os.path.join(MEDIA, name + ".tga")
         write_rgba(path, w, h, fn)
         print("wrote", os.path.relpath(path, ROOT))

@@ -254,12 +254,14 @@ local function build()
 
     -- #78: experimental, off by default, its own heading.
     local markerHead = heading(page, compassSize, "The marker in the world (experimental)")
-    local marker = checkbox(page, markerHead, "Twinkling stars on the herb or ore in front of you", "marker")
-    local markerWhy = note(page, marker, "Experimental, off by default. Within about 15 yards, the stars sit on the "
-        .. "node itself, a herb or ore you want, on the spot the game marks for its interact key; farther off, the "
-        .. "compass points the way. While on, the game's interact targeting is on (three of your settings: it "
-        .. "marks the object you'd interact with, a cactus or a mailbox too). They're put back when it's off, and "
-        .. "a change of yours to one of them is kept.")
+    local marker = checkbox(page, markerHead, "A distant beacon and nearby stars on gathering nodes", "marker")
+    local markerWhy = note(page, marker, "Experimental, off by default. Animated stars name the nearest wanted "
+        .. "node within 60 yards, growing as you approach and fading out between 45 and 60 yards. An above/below "
+        .. "hint helps with slopes. Their height is approximate and they can "
+        .. "show through terrain. Within about 15 yards, stars sit on the nearby node itself. Your map pin or "
+        .. "tracked objective takes priority; while the beacon is active, newly accepted quests may not "
+        .. "auto-track. Interact targeting and in-game navigation settings are restored when no longer needed; "
+        .. "a change of yours is kept.")
 
     local learning = heading(page, markerWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")

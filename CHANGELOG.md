@@ -2,13 +2,16 @@
 
 ## Unreleased
 
-- **Experimental: a marker in the world** (#61, #78): twinkling stars on the herb or ore itself,
-  within about 15 yards, at its real height, for a node you want: on the spot the game marks for
-  its interact key. Farther off, the compass points the way. While it's on, three of your
-  interact settings are changed (the game then also marks other objects you could interact
-  with); they're put back when it's off, and a change of yours is kept. Off by default:
+- **Experimental: a marker in the world** (#61, #78): an animated beacon within 60 yards, with the nearest
+  wanted node's name and above/below hint. It shrinks with distance and fades out from 45 to 60 yards,
+  leaving the distance readout to the compass; nearby stars take over at the
+  node's real height when its interact plate appears (about 15 yards). The beacon's height is
+  approximate and it can show through terrain. Your waypoint and tracked objective take priority;
+  while the beacon is active, newly accepted quests may not auto-track. Navigation and interact
+  settings are put back when no longer needed, and a change of yours is kept. Off by default:
   `/nr marker`, or Options. The sparkle follows the FFXIV reference: diagonal white flares with
-  mint and blue halos, staggered sizes and timing, gentle drift, and a faint background haze.
+  mint and blue halos, staggered sizes and timing, gentle drift, and layered teal vapor that rises,
+  expands, and dissolves around both the approach beacon and the nearby marker.
 
 ## v1.4.0
 

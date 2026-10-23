@@ -60,10 +60,10 @@ function Compass.On()
     return db and db.compass and db.enabled and true or false
 end
 
--- The target is chosen for the ring (the marker, #78, finds its node itself).
+-- The ring and distant beacon share a target; nearby stars find their own plate.
 function Compass.Choosing()
     local db = NR.db
-    return db and db.enabled and db.compass and true or false
+    return db and db.enabled and (db.compass or db.marker) and true or false
 end
 
 local function wrap(a) return (a + math.pi) % TAU - math.pi end
@@ -453,7 +453,9 @@ local function choose()
 end
 
 local function refresh()
+    local previous = target
     choose()
+    if previous ~= target and NR.FarMarker then NR.FarMarker.TargetGone() end
     if not (target and Compass.On()) then hide(); return end
     dress()
     root:Show()
@@ -497,6 +499,7 @@ end
 -- The records cleared (Icons.Clear), or the compass turned off: no target.
 function Compass.Reset()
     target = nil
+    if NR.FarMarker then NR.FarMarker.TargetGone() end
     hide()
 end
 

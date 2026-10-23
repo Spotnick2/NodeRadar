@@ -24,7 +24,7 @@ local DEFAULTS = {
     compass  = false,   -- experimental (#29): a ring under the character toward the nearest node
     compassSize = "medium", -- its disc: small, medium or large (Compass.SIZES)
     compassLock = false, -- its position locked (#57; else Alt-drag moves it); compassX, compassY: where, nil home
-    marker   = false,   -- experimental (#78): stars on the node's soft-interact plate; softCVars: the
+    marker   = false,   -- experimental: distant beacon and nearby stars; softCVars: the
                         -- interact CVars claimed while it's on, to put back (Marker.lua)
     snoozeFor = "session", -- the key binding's snooze (#46): "15", "30", "60" minutes or "session"
     minimapButton = true, -- NodeRadar's minimap button (#46); NodeRadarDB.minimap is LibDBIcon's table
@@ -101,6 +101,7 @@ function NR.Step(now)
     Track.Follow()                                  -- smart: the list by the skill first (Codex, #47)
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
     Compass.Reconcile(result, now)                  -- the nearest node, before the learner (#29)
+    NR.FarMarker.Update(result)
     Alert.Update(result, now)
     Learn.Consider(result, now)
     -- An experiment just started turns tracking off: whenever the client
@@ -130,7 +131,7 @@ function NR.Set(key, value)
     if key == "enabled" then Alert.Reset() end
     if key == "enabled" then Icons.Clear() end
     -- The records serve the icons and the compass (#29): each setting does its own part.
-    if key == "icons" or key == "compass" then
+    if key == "icons" or key == "compass" or key == "marker" then
         if not Icons.Keeping() then
             Icons.Clear()
         elseif key == "icons" then
@@ -141,7 +142,7 @@ function NR.Set(key, value)
             Compass.Refresh()                       -- the ring shown or hidden, the target kept
         end
     end
-    if key == "marker" or key == "enabled" then NR.Marker.Toggle() end
+    if key == "marker" or key == "enabled" then NR.Marker.Toggle(); NR.FarMarker.Toggle() end
     if key == "iconStyle" or key == "iconSize" then Icons.Restyle() end
     if key == "ignoredIcon" then Icons.Refilter() end
     -- The compass follows the icons' frame (#29), with the icons on or off.
@@ -309,8 +310,8 @@ local function help()
         .. "else bronze). /nr iconsize small | medium | large")
     API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
         .. "/nr compasssize small | medium | large. Hold Alt and drag it to move it; /nr compass lock | unlock | reset")
-    API.Say("/nr marker: experimental, twinkling stars on a herb or ore you want within about 15 yards (off by "
-        .. "default; while on, the game's interact targeting is on, put back when it's off)")
+    API.Say("/nr marker: experimental, a distant beacon with approximate height, and exact nearby stars (off by "
+        .. "default; your map pin or tracked objective takes priority)")
     API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
@@ -436,6 +437,7 @@ SlashCmdList.NODERADAR = function(msg)
         Compass.ResetPosition()                    -- compassX, compassY: nil defaults, outside DEFAULTS (Codex)
         NR.Minimap.Apply()                         -- the button shown again, in LibDBIcon's table too (Codex, PR #65)
         NR.Marker.Toggle()                         -- off by default: ours cleared, the CVar put back (Codex, PR #74)
+        NR.FarMarker.Toggle()
         API.Say("settings reset (learned names kept)")
     else
         help()

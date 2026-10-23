@@ -954,8 +954,8 @@ off by default, labelled experimental in Options ("Experimental: show which way 
 `/nr compass`. It may never ship on by default: the owner decides after testing. Off, nothing of
 it runs.
 
-Within about 15 yards it stops: the glow on the node itself is Lueur's (the soft target, which
-Forever loses at 15 yards), and NodeRadar never touches the soft-targeting settings (owner,
+Within about 15 yards it stops: a nearby glow can use the soft target, which
+Forever loses at 15 yards, and NodeRadar never touches the soft-targeting settings (owner,
 2026-10-18). Blizzard's ping and waypoint marker were ruled out (#29: the ping is secure and needs
 a GUID; Forever draws no waypoint marker).
 
@@ -1313,7 +1313,7 @@ toggle icons/compass and the snooze there (contextual menu, not a full panel)".
 - **Shown** while there's a target and the position and facing read, a radar sweep ran within the
   idle interval plus 2 s, the player isn't dead or on a taxi (`UnitOnTaxi`).
 - **Hidden within 15 yards** of the target (horizontal, the record has no above/below height): the
-  glow there is Lueur's. Not dismissed: it's still the nearest, so walking away without gathering
+  glow there belongs to the nearby marker. Not dismissed: it's still the nearest, so walking away without gathering
   shows the ring again. A node above or below keeps the ring within 15 yards.
 - **Hidden** otherwise: no target; the compass or the radar off; the position or facing nil or
   secret; no recent sweep (the learner's pause, the Gamepad UI, every sweep failing); dead; on a taxi.
@@ -1384,7 +1384,7 @@ toggle icons/compass and the snooze there (contextual menu, not a full panel)".
 
 ### Not in this issue
 
-A glow on the node within 15 yards (Lueur's). Moving the ring. **A skip** ("not that one"),
+A glow on the node within 15 yards. Moving the ring. **A skip** ("not that one"),
 for the final version (owner). A target chosen by the player (clicking an icon). Several targets.
 
 ## The skill in the minimap's tooltip (#62)
@@ -1588,7 +1588,7 @@ waypoint and its super-track survive a reload. `USER_WAYPOINT_UPDATED` fires ins
 **Which node:** the compass's target (`choose()`: the nearest wanted record not snoozed, the 5-yard
 hysteresis), chosen while the compass **or** the marker is on (`Compass.Choosing()`); records kept
 while either is on (`Icons.Keeping` gains `marker`). The compass's ring still shows only with
-`compass`. Hidden within 15 yards (`Compass.NEAR`, where Lueur's glow takes over), on a taxi, in an
+`compass`. Hidden within 15 yards (`Compass.NEAR`, where a nearby glow takes over), on a taxi, in an
 instance where `Scan.Where` is nil, and while the spot is clamped to the screen's edge (behind or
 off screen: the compass covers direction).
 
@@ -1844,6 +1844,66 @@ Every widget method checked against the dump.
 
 **Not in this issue:** hiding Blizzard's icon on other interactables; following the plate's alpha
 (waits for the rock measurement); more than the one soft target (the game gives one).
+
+## Combined marker: distant beacon and exact nearby stars (owner, 2026-10-22)
+
+The owner found the 15-yard-only sparkle insufficient and requested a best-effort
+distant cue. This adds to #78; the previous #61 trials above remain the evidence
+for the waypoint anchor's limits. The adversarial design pass reached consensus
+on a single-node beacon with the following safeguards.
+
+- The existing `marker` toggle enables both. `Icons.Keeping` and
+  `Compass.Choosing` include the marker; the compass ring can remain off.
+- `FarMarker.Update` receives each successful sweep after target selection.
+  It keeps a stable waypoint for the same record, expires after the idle scan
+  interval plus two seconds, and drops immediately when the target is reset,
+  gathered, filtered, or snoozed. A replacement waits for a fresh sweep.
+- The native navigation frame supplies the camera-following screen anchor.
+  After the owner's first screenshot (90 yards: too large and static), four
+  independent twinkles flash, shrink, drift, and respawn at random positions.
+  The art scales with distance (24 / yards, bounded 0.35–1.2), fades between
+  45 and 60 yards, and is hidden outside 60 yards. The name and height hint remain;
+  the compass provides distance. The owner's FFXIV video refinement puts those
+  twinkles in a compact ellipse with three staggered wisps of teal vapor that
+  expand, rise, and dissolve (also used on the nearby marker). The minimap height hint biases the cluster
+  upward/downward. This is not recovered terrain height; it can show through
+  scenery. No occlusion gate or camera calibration is claimed.
+- A qualifying nearby plate suppresses the beacon and releases its waypoint,
+  even if the soft target differs from the compass choice. Without a plate,
+  the beacon remains available down to six yards, avoiding a blind 15-yard cutoff.
+  Beyond 60 yards the waypoint is released; while combat/map prevents cleanup,
+  its native marker is also suppressed so a distance label cannot leak through.
+- The player's waypoint and any tracked objective take priority. Every write
+  rechecks ownership and combat/map/gamepad gates, including after synchronous
+  handlers. Failed untracking prevents clearing the point; failed clears retain
+  ownership and retry. Unreadable slot/ownership state never permits a claim.
+- `NodeRadarCharDB.farMarker` saves a pending owned waypoint for reload cleanup,
+  using the previous documented matching-point assumption. `farNavigation`
+  holds the navigation CVar claim separately from the nearby interact claims.
+  Both wait for the marker's startup settling window. Logout restores them when
+  possible; a failed cleanup remains saved. External CVar changes cancel until
+  an explicit marker off/on. The native marker is covered only while our own
+  beacon is actually visible; a tracked quest's display remains untouched.
+- Occupying supertracking can prevent newly accepted quests from auto-tracking;
+  the option and README disclose this existing #61 limitation.
+- Suppression/state transitions are recorded in the existing marker decision
+  log. No guided probe is required to use the beacon.
+
+**Offline:** scanner/selector integration, marker with compass off, decreasing
+scale at 20/35/50/59 yards, outer fade and 60/90-yard cutoff, independent animation
+groups and respawn, above/below hints, plate handoff including a different node,
+near-without-plate fallback, competing pins/quests, unreadable availability,
+combat/map/gamepad deferral, failed untrack/clear, synchronous races, stale and
+snoozed targets, CVar cancellation, and reload/logout cleanup. Twelve deliberate
+mutations were caught; the restored code passes.
+
+**Live:** the owner accepted the distance scaling and final vapor-and-sparkle
+appearance on 2026-10-22 and approved committing it. The detailed acceptance
+criteria remain useful for regression checks: appropriately scaled at roughly 20, 40, and 55 yards,
+invisible beyond 60, with visible independent twinkling and no distance label; useful
+while approaching uphill/downhill and turning the camera; smooth handoff to
+nearby stars. The test is whether the beacon helps find the node despite its
+approximate elevation. Offline tests cannot establish that visual result.
 
 ## A public API (#4), after #3
 

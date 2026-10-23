@@ -37,9 +37,11 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call does
   (measured on 70450; the fix offline only, no node was in view at a swap).
 
-- Unreleased: the marker in the world, experimental: #61's waypoint marker measured and replaced
-  (its spot at the player's height, PR #77's sight round) by #78's stars on the soft-interact plate
-  (the plates and ablate rounds, 70450; the code offline only, its round in game next).
+- Unreleased: the marker in the world, experimental: #78's exact nearby stars plus a distant
+  beacon using #61's measured waypoint anchor. The beacon is explicitly approximate in height,
+  with independently animated stars and drifting teal vapor, node label, and above/below hint. It scales with distance
+  and fades out between 45 and 60 yards; no duplicate distance text. Offline checked; the owner
+  accepted the scaling and final vapor-and-sparkle appearance in game (docs/PLAN.md, "Combined marker").
 
 Next: the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
@@ -63,7 +65,7 @@ live game, WoWInterface (#37).
 
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Track.lua` → `Icons.lua` → `Compass.lua` → `Marker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
+`Track.lua` → `Icons.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
 `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -139,6 +141,13 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   off (only if still ours), someone else's change cancels a claim for good (until off and on);
   nothing written in combat, **nothing judged inside the gamepad UI** (Blizzard's temporary values);
   put back at logout, best effort, the claims kept and read again at login. docs/PLAN.md has every rule.
+- `FarMarker.lua`: the combined marker's distant beacon, driven by `Compass.Chosen()` and the
+  scan's map geometry. Records are kept and a target chosen with `marker` alone. The waypoint
+  and navigation CVar use separate saved ownership (`farMarker`, `farNavigation`), conservative
+  readbacks, deferred cleanup in combat/map/gamepad, and the marker's login settling guard.
+  Any exact nearby stars suppress it. No occlusion inference or terrain-height estimate.
+  State transitions go through the marker decision log. `test_farmarker` covers the handoff,
+  ownership races, failed cleanup, CVar cancellation, and reload/logout.
 - `Options.lua`: the page in Esc > Options > AddOns (GlassMail's recipe from the porting guide:
   hidden at creation, built on the first show, re-read on every show; radio groups). Refreshing only
   reads settings: a value it doesn't offer (`/nr cd 7`) shows and is kept.

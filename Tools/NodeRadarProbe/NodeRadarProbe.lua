@@ -5337,7 +5337,7 @@ local function restore()
     for name, old in pairs(s.saved or {}) do
         if same(get(name), s.applied[name]) then wpRead(C_CVar.SetCVar, name, old) else kept[#kept + 1] = name end
     end
-    s.saved, s.applied = nil, nil
+    s.saved, s.applied, s.combatMarker = nil, nil, nil
     if s.nr and n then
         n.Set("marker", s.nr.marker or false)
         n.Set("compass", s.nr.compass or false)
@@ -5401,6 +5401,16 @@ end
 
 -- The sampler and the plates' comings and goings, while the round runs.
 local watch = { frame = CreateFrame("Frame"), tick = 0, units = {} }
+-- Done/Skip can leave the combat step before its wait callback runs again.
+-- Keep its temporary toggle until combat ends, including across a reload.
+local function resumeCombatMarker()
+    local s, n = db(), nr()
+    local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+    if not (s.combatMarker and s.nr and n and st and st.active == SOFTMARK) or InCombatLockdown() then return end
+    s.combatMarker = nil
+    n.Set("marker", true)
+    note("combat over: NodeRadar's marker turned back on")
+end
 local function sample()
     local s = db().samples
     if #s >= 1500 then return end
@@ -5421,6 +5431,7 @@ local function install()
         watch.tick = watch.tick + elapsed
         if watch.tick < 0.5 then return end
         watch.tick = 0
+        resumeCombatMarker()
         sample()
     end)
     watch.frame:SetScript("OnEvent", function(_, event, a1, a2)
@@ -5453,6 +5464,7 @@ function uninstall()
     watch.frame:SetScript("OnEvent", nil)
     watch.frame:UnregisterAllEvents()
     watch.on, watch.tag = nil, nil
+    watch.fought, watch.foughtDone, watch.combatTry = nil, nil, nil
 end
 
 -- What the client did with the CVars at the load: read at PLAYER_ENTERING_WORLD
@@ -5462,6 +5474,7 @@ local loader = CreateFrame("Frame")
 loader:RegisterEvent("PLAYER_ENTERING_WORLD")
 loader:SetScript("OnEvent", function()
     if type(NodeRadarProbeDB) ~= "table" or not pending() then return end
+    if db().combatMarker and running() then install() end
     local function read(label)
         local s = db()
         if not s.applied then return end
@@ -5739,10 +5752,11 @@ local function starsWait(label)
     end
 end
 local markSteps = {
-    rev = 1,
+    rev = 3,
     title = "NodeRadar's marker on the soft-interact plate, in game (#78)",
-    { text = "Out of combat, with Find Herbs or Find Minerals on. The round turns NodeRadar's marker on (it sets "
-          .. "three interact settings itself) and its compass on, and puts both back at the end.", wait = function()
+    { text = "Out of combat, with Find Herbs or Find Minerals on. The round turns NodeRadar's marker off and on "
+          .. "to start fresh (it sets three interact settings itself), turns its compass on, and puts both "
+          .. "toggles back at the end.", wait = function()
           local n = nr()
           if not (n and n.Marker and n.Marker.CVARS) then return false, "NodeRadar (with #78's marker) isn't loaded" end
           if InCombatLockdown() then return false, "in combat" end
@@ -5753,6 +5767,9 @@ local markSteps = {
           local before = claimsLine()
           s.nr = { compass = n.db.compass, marker = n.db.marker }
           n.Set("compass", true)
+          -- Merely setting true keeps old cancellations. A new round is an
+          -- explicit fresh turn-on, even when the marker was already enabled.
+          n.Set("marker", false)
           n.Set("marker", true)
           install()
           return true, note(("before: %s; the marker on: %s"):format(before, claimsLine()))
@@ -5781,12 +5798,13 @@ local markSteps = {
           local n = nr()
           install()
           if InCombatLockdown() and not watch.combatTry then
+              db().combatMarker = true
               n.Set("marker", false)
               watch.combatTry = "off in combat: " .. claimsLine()
           end
           if not watch.foughtDone then return false, watch.fought and "in the fight" or "no fight yet" end
           local line = (watch.combatTry or "the fight ended before the probe saw it") .. "; after it: " .. claimsLine()
-          n.Set("marker", true)
+          resumeCombatMarker()
           watch.fought, watch.foughtDone, watch.combatTry = nil, nil, nil
           return true, note(line .. "; on again: " .. claimsLine())
       end, timeout = 900 },
@@ -5856,10 +5874,28 @@ hook(_G, "SetCVar", "SetCVar")
 hook(C_CVar, "SetCVar", "C_CVar.SetCVar")
 hook(C_CVar, "SetTempCVar", "SetTempCVar")
 hook(C_CVar, "RemoveTempCVar", "RemoveTempCVar")
+-- Find Herbs disappearing at login: observe setters without changing tracking.
+-- Keep these alongside the CVar timeline so load ordering is visible too.
+local function trackingState(label)
+    local ok, active = pcall(tracking, true)
+    record("TRACKING " .. label .. ": gathering on " .. (ok and
+        (#active > 0 and table.concat(active, ", ") or "none") or "unreadable"))
+end
+for _, method in ipairs({ "SetTracking", "ClearAllTracking" }) do
+    local name = method
+    if type(C_Minimap[name]) == "function" then
+        hooksecurefunc(C_Minimap, name, function(index, enabled)
+            record(("TRACKING C_Minimap.%s(%s, %s); from %s"):format(name, str(index), str(enabled), caller()))
+            trackingState("after " .. name)
+        end)
+    end
+end
 local f = CreateFrame("Frame")
 f:RegisterEvent("CVAR_UPDATE")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("PLAYER_LOGOUT")
+f:RegisterEvent("MINIMAP_UPDATE_TRACKING")
 f:RegisterEvent("ADDON_LOADED")
 f:SetScript("OnEvent", function(_, event, a1, a2)
     if event == "ADDON_LOADED" then
@@ -5869,11 +5905,16 @@ f:SetScript("OnEvent", function(_, event, a1, a2)
             for _, l in ipairs(early) do record(l) end
         end
         early = {}
+        trackingState("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         t0 = GetTime()
         record("PLAYER_LOGIN")
+        trackingState(event)
     elseif event == "PLAYER_ENTERING_WORLD" then
         record("PLAYER_ENTERING_WORLD")
+        trackingState(event)
+    elseif event == "PLAYER_LOGOUT" or event == "MINIMAP_UPDATE_TRACKING" then
+        trackingState(event)
     elseif watched(a1) then
         record(("CVAR_UPDATE %s %s -> now %s"):format(a1, str(a2), str(wpRead(C_CVar.GetCVar, a1))))
     end
@@ -5885,6 +5926,45 @@ Probe:Command("cvarwatch", function(arg)
         #(NodeRadarProbeDB.cvarlog or {})))
 end, "who changes the marker's interact CVars: on | off")
 NS._cvarTest = { record = record }
+end)()
+
+;(function()
+--------------------------------------------------------------------------------
+-- NodeRadar's own CVar decisions: the marker keeps a short backlog until this
+-- probe loads, then sends each new note here. Saved across reloads and exits.
+--------------------------------------------------------------------------------
+local early, attached = {}, nil
+local function save(line)
+    if type(line) ~= "string" then return end
+    if type(NodeRadarProbeDB) ~= "table" then
+        if #early < 100 then early[#early + 1] = line end
+        return
+    end
+    local log = NodeRadarProbeDB.markerLog or {}
+    NodeRadarProbeDB.markerLog = log
+    log[#log + 1] = line
+    while #log > 400 do table.remove(log, 1) end
+end
+local function attach()
+    local n = nr()
+    local marker = n and n.Marker
+    if marker and marker ~= attached and type(marker.SetDecisionSink) == "function" then
+        attached = marker
+        marker.SetDecisionSink(save)             -- saves the pre-probe backlog too
+    end
+end
+attach()
+local f = CreateFrame("Frame")
+f:RegisterEvent("ADDON_LOADED")
+f:SetScript("OnEvent", function(_, _, addon)
+    if addon == Probe.name then
+        for _, line in ipairs(early) do save(line) end
+        early = {}
+    elseif addon == "NodeRadar" then
+        attach()
+    end
+end)
+NS._markerDecisionsTest = { save = save }
 end)()
 
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }

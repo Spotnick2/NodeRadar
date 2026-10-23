@@ -35,13 +35,35 @@ Marker.WHITE = { 1, 1, 1 }       -- the star texture carries its mint/blue halo
 
 local bound      -- { unit, plate }: the plate the stars are on
 local writing    -- inside our own SetCVar: its CVAR_UPDATE is ours
+local loggingOut -- logout restores can raise CVAR_UPDATE after SetCVar returns
 local wasPad     -- the gamepad UI on at the last pass
-local loginPhase -- from PLAYER_LOGIN to the first PLAYER_ENTERING_WORLD
+local loginPhase = true -- from file load to the first PLAYER_ENTERING_WORLD; sync events can precede PLAYER_LOGIN
 local settleUntil -- then SETTLE seconds: the client's synced CVars still coming
 local readDue    -- a login read waiting (the window, the gamepad UI)
 -- No CVar written or judged in the login window nor while its read waits.
 local function waiting()
-    return loginPhase or readDue or (settleUntil ~= nil and GetTime() < settleUntil) and true or false
+    return loggingOut or loginPhase or readDue or (settleUntil ~= nil and GetTime() < settleUntil) and true or false
+end
+function Marker.Settled() return not waiting() end
+function Marker.Nearby() return bound ~= nil end
+
+-- Recent CVar decisions stay in memory until NodeRadarProbe loads; its sink
+-- saves them across reloads. Logging must never interrupt the marker.
+Marker.Decisions = {}
+local decisionSink
+local function decision(name, action, why)
+    local line = ("%.2f %s: %s; %s"):format(GetTime(), name, action, why)
+    local log = Marker.Decisions
+    log[#log + 1] = line
+    if #log > 100 then table.remove(log, 1) end
+    if decisionSink then pcall(decisionSink, line) end
+end
+Marker.Note = decision
+function Marker.SetDecisionSink(sink)
+    decisionSink = type(sink) == "function" and sink or nil
+    if decisionSink then
+        for _, line in ipairs(Marker.Decisions) do pcall(decisionSink, line) end
+    end
 end
 
 function Marker.On()
@@ -91,8 +113,20 @@ local function claim()
     for _, cv in ipairs(Marker.CVARS) do
         local name, ours = cv[1], cv[2]
         local old = get(name)
-        if c[name] == nil and old ~= nil and not same(old, ours) and put(name, ours) then
-            c[name] = { old = old, ours = ours }
+        if c[name] ~= nil then
+            decision(name, c[name].cancelled and "claim skipped" or "kept",
+                c[name].cancelled and "cancelled until marker off/on" or "already claimed")
+        elseif old == nil then
+            decision(name, "claim skipped", "current value unreadable")
+        elseif same(old, ours) then
+            decision(name, "claim skipped", "already at " .. ours .. "; player's value")
+        else
+            if put(name, ours) then
+                c[name] = { old = old, ours = ours }
+                decision(name, "claimed", "turn-on: " .. old .. " -> " .. ours)
+            else
+                decision(name, "claim failed", "turn-on: " .. old .. " -> " .. ours .. ", read-back " .. tostring(get(name)))
+            end
         end
     end
 end
@@ -105,7 +139,20 @@ local function release()
     if blocked() then return end
     local c = claims()
     for name, e in pairs(c) do
-        if not e.cancelled and same(get(name), e.ours) then put(name, e.old) end
+        if e.cancelled then
+            decision(name, "given up", "marker off: cancelled claim forgotten")
+        else
+            local now = get(name)
+            if same(now, e.ours) then
+                local restored = put(name, e.old)
+                decision(name, restored and "put back" or "restore failed",
+                    "marker off: " .. tostring(e.ours) .. " -> " .. tostring(e.old)
+                    .. ", read-back " .. tostring(get(name)))
+            else
+                decision(name, "given up", "marker off: current " .. tostring(now)
+                    .. " differs from ours " .. tostring(e.ours))
+            end
+        end
         c[name] = nil
     end
 end
@@ -116,13 +163,25 @@ end
 -- is turned off and on.
 local function judge(fromOld)
     for name, e in pairs(claims()) do
-        if not e.cancelled then
+        if e.cancelled then
+            decision(name, "claim skipped", "prior cancellation kept at login/gamepad read")
+        else
             local now = get(name)
             if same(now, e.ours) then
-                -- ours
-            elseif fromOld and same(now, e.old) and put(name, e.ours) then
-                -- set again after the logout's restore
+                decision(name, "kept", "login/gamepad read: still ours " .. tostring(now))
+            elseif fromOld and same(now, e.old) then
+                if put(name, e.ours) then
+                    decision(name, "claimed", "login read: restored " .. tostring(e.old)
+                        .. " -> " .. tostring(e.ours))
+                else
+                    decision(name, "given up", "login read: reapply failed; old " .. tostring(e.old)
+                        .. ", read-back " .. tostring(get(name)))
+                    claims()[name] = { cancelled = true }
+                end
             else
+                decision(name, "given up", (fromOld and "login read" or "gamepad exit")
+                    .. ": current " .. tostring(now) .. ", ours " .. tostring(e.ours)
+                    .. ", old " .. tostring(e.old))
                 claims()[name] = { cancelled = true }
             end
         end
@@ -134,7 +193,17 @@ end
 local function atLogout()
     if blocked() or not NR.db.softCVars then return end
     for name, e in pairs(NR.db.softCVars) do
-        if not e.cancelled and same(get(name), e.ours) then put(name, e.old) end
+        if e.cancelled then
+            decision(name, "restore skipped", "logout: claim cancelled")
+        elseif not same(get(name), e.ours) then
+            decision(name, "restore skipped", "logout: current " .. tostring(get(name))
+                .. " differs from ours " .. tostring(e.ours))
+        else
+            local restored = put(name, e.old)
+            decision(name, restored and "put back" or "restore failed",
+                "logout: " .. tostring(e.ours) .. " -> " .. tostring(e.old)
+                .. ", claim retained; read-back " .. tostring(get(name)))
+        end
     end
 end
 
@@ -148,7 +217,7 @@ root:SetSize(1, 1)
 root:EnableMouse(false)
 root:SetFrameStrata("BACKGROUND")
 root:Hide()
-local glow, stars = nil, {}
+local glow, vapor, stars = nil, nil, {}
 
 local function part(file, size, layer, tint)
     local f = CreateFrame("Frame", nil, root)
@@ -174,6 +243,55 @@ local function anim(group, kind, from, to, duration, order, delay)
     return a
 end
 
+-- The same drifting vapor surrounds the nearby object and the approach beacon.
+-- Three staggered wisps expand and dissolve; only the engine animates them.
+function Marker.CreateVapor(parent)
+    local cloud = CreateFrame("Frame", nil, parent)
+    cloud:SetSize(1, 1)
+    cloud:EnableMouse(false)
+    cloud.wisps = {}
+    local playing = false
+    local function placeWisp(w, delay)
+        w:ClearAllPoints()
+        w:SetPoint("CENTER", cloud, "CENTER", math.random(-10, 10), math.random(-12, -4))
+        w.tex:SetRotation(math.random() * 0.8 - 0.4)
+        w.wait:SetStartDelay(delay or math.random() * 0.2)
+        w.drift:SetOffset(math.random(-12, 12), 18 + math.random() * 12)
+    end
+    for i = 1, 3 do
+        local w = CreateFrame("Frame", nil, cloud)
+        w:SetSize(112, 70)
+        w:EnableMouse(false)
+        w:SetAlpha(0)
+        w.tex = w:CreateTexture(nil, "ARTWORK")
+        w.tex:SetTexture(MEDIA .. "MarkerVapor.tga")
+        w.tex:SetAllPoints(w)
+        w.tex:SetBlendMode("ADD")
+        w.tex:SetVertexColor(0.4, 0.9, 0.75)
+        local ag = w:CreateAnimationGroup()
+        w.wait = anim(ag, "Alpha", 0, 0, 0.01, 1)
+        anim(ag, "Alpha", 0, 0.38, 0.65, 2):SetSmoothing("OUT")
+        anim(ag, "Alpha", 0.38, 0, 1.6, 2, 0.65):SetSmoothing("IN")
+        anim(ag, "Scale", 0.65, 1.2, 2.25, 2)
+        w.drift = ag:CreateAnimation("Translation")
+        w.drift:SetDuration(2.25); w.drift:SetOrder(2)
+        ag:SetScript("OnFinished", function()
+            if playing then placeWisp(w); ag:Play() end
+        end)
+        w.anim = ag
+        cloud.wisps[i] = w
+    end
+    function cloud:Play()
+        playing = true
+        for i, w in ipairs(self.wisps) do placeWisp(w, (i - 1) * 0.75); w.anim:Play() end
+    end
+    function cloud:Stop()
+        playing = false
+        for _, w in ipairs(self.wisps) do w.anim:Stop() end
+    end
+    return cloud
+end
+
 -- The reference: diagonal flares of different sizes, a little upward drift,
 -- and independent pauses. The engine handles the motion between flares.
 local function place(s, delay)
@@ -193,6 +311,8 @@ local function build()
     anim(g, "Alpha", 0.06, 0.14, 1.6, 1)
     g:SetLooping("BOUNCE")
     glow.anim = g
+    vapor = Marker.CreateVapor(root)
+    vapor:SetPoint("CENTER", root, "CENTER", 0, 0)
     for i = 1, Marker.STARS do
         local s = part("MarkerStar", Marker.STAR, "OVERLAY", Marker.WHITE)
         s:SetAlpha(0)                                  -- seen only while its animation runs
@@ -205,7 +325,7 @@ local function build()
         s.drift = ag:CreateAnimation("Translation")
         s.drift:SetDuration(0.54)
         s.drift:SetOrder(3)
-        ag:SetScript("OnFinished", function() place(s); ag:Play() end)
+        ag:SetScript("OnFinished", function() if root:IsShown() then place(s); ag:Play() end end)
         s.anim = ag
         stars[i] = s
     end
@@ -221,6 +341,7 @@ local function play(on)
         end
     end
     if glow then if on then glow.anim:Play() else glow.anim:Stop() end end
+    if vapor then if on then vapor:Play() else vapor:Stop() end end
 end
 
 -- The stars off their plate: hidden, still, unanchored.
@@ -327,6 +448,14 @@ end
 -- at once.
 function Marker.Toggle()
     if waiting() then
+        if not Marker.On() and NR.db.softCVars then
+            for name, e in pairs(NR.db.softCVars) do
+                if e.cancelled then
+                    NR.db.softCVars[name] = nil
+                    decision(name, "given up", "marker off during login wait: cancellation forgotten")
+                end
+            end
+        end
         NR.db.softClaim = Marker.On() or nil
     elseif Marker.On() then
         claim()
@@ -370,7 +499,7 @@ local loginDriver = CreateFrame("Frame")
 local function startRead()
     readDue = true
     loginDriver:SetScript("OnUpdate", function()
-        if loginPhase or (settleUntil and GetTime() < settleUntil) or API.Gamepad() then return end
+        if loggingOut or loginPhase or (settleUntil and GetTime() < settleUntil) or API.Gamepad() then return end
         loginDriver:SetScript("OnUpdate", nil)
         readDue, settleUntil = nil, nil
         readAtLogin()
@@ -385,6 +514,7 @@ API.RegisterEvents(events, { "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "PLAYER_LO
 events:SetScript("OnEvent", function(_, event, ...)
     if not NR.db then return end
     if event == "PLAYER_LOGIN" then
+        loggingOut = nil
         migrate()
         -- A value changed while NodeRadar wasn't loaded raises no CVAR_UPDATE
         -- for us: each claim read first (Codex, #78), once the client's synced
@@ -397,14 +527,22 @@ events:SetScript("OnEvent", function(_, event, ...)
             if Marker.On() or pending() then startRead() end
         end
     elseif event == "PLAYER_LOGOUT" then
+        -- Keep claims through the queued notifications from our own restore.
+        -- Login will compare the final values after the client's sync window.
+        loggingOut = true
         atLogout()
     elseif event == "CVAR_UPDATE" then
         -- Someone else's change (the player, another addon): theirs stands.
         -- Ours inside put(), and anything inside the gamepad UI, never counts.
         if writing or waiting() or API.Gamepad() or not NR.db.softCVars then return end
         for name, e in pairs(NR.db.softCVars) do
-            if not e.cancelled and not same(get(name), e.ours) then
-                NR.db.softCVars[name] = Marker.On() and { cancelled = true } or nil
+            if not e.cancelled then
+                local now = get(name)
+                if not same(now, e.ours) then
+                    decision(name, "given up", "CVAR_UPDATE: current " .. tostring(now)
+                        .. " differs from ours " .. tostring(e.ours))
+                    NR.db.softCVars[name] = Marker.On() and { cancelled = true } or nil
+                end
             end
         end
     elseif event == "NAME_PLATE_UNIT_ADDED" then
@@ -418,10 +556,13 @@ end)
 
 Marker._test = {
     root = root, stars = stars, driver = driver,
+    vapor = function() return vapor end,
     bound = function() return bound end,
     pass = pass, loginDriver = loginDriver,
     reset = function()                                 -- a fresh load
         bound, writing, wasPad, loginPhase, settleUntil, readDue = nil, nil, nil, nil, nil, nil
+        loginPhase = true
+        loggingOut = nil
         since = 0
         loginDriver:SetScript("OnUpdate", nil)
     end,
