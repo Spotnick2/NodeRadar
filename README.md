@@ -83,6 +83,9 @@ turn on Find Herbs or Find Minerals.
   while the beacon is active, a newly accepted quest may not automatically become tracked.
   Interact targeting and in-game navigation settings are restored when no longer needed, and
   changes of yours are kept. Distance scaling and the vapor-and-sparkle appearance have been checked in game.
+
+  ![Approach a Peacebloom with the compass and animated world marker, gather it, then see the compass point to the next node](docs/images/experimental-compass-marker.gif)
+
 - **A minimap button.** Left-click: quick settings (the radar, the icons, the compass) and the
   compass's snooze; right-click: the Options page. It drags around the minimap, and button
   collectors take it. Also in the AddOns compartment.
