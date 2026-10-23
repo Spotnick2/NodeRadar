@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.5.0
+
+Released 2026-10-23.
 
 - **Experimental: a marker in the world** (#61, #78): an animated beacon within 60 yards, with the nearest
   wanted node's name and above/below hint. It shrinks with distance and fades out from 45 to 60 yards,

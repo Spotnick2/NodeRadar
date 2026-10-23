@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.4.0, after v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.5.0, after v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -37,7 +37,7 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   (#63): the swap indoors or out no longer resets the alert, only a `Minimap:SetZoom` call does
   (measured on 70450; the fix offline only, no node was in view at a swap).
 
-- Unreleased: the marker in the world, experimental: #78's exact nearby stars plus a distant
+- v1.5.0: the marker in the world, experimental: #78's exact nearby stars plus a distant
   beacon using #61's measured waypoint anchor. The beacon is explicitly approximate in height,
   with independently animated stars and drifting teal vapor, node label, and above/below hint. It scales with distance
   and fades out between 45 and 60 yards; no duplicate distance text. Offline checked; the owner
