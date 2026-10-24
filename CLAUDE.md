@@ -273,3 +273,25 @@ the probe.
 - **Never name a competing addon** in tracked files, issues, PRs or commits (the owner, 2026-10-19).
   Notes on how others do things go in `.local/` (gitignored); the owner's own sibling addons and
   the libraries we use are fine to name.
+
+## Consulting Codex
+
+The shared `codex-consult` skill (user level) has the invocation and the gotchas. For this repo:
+
+For NodeRadar, good things to hand Codex:
+- anything that drives the minimap's mouseover (`Minimap:UpdateMouseoverAtPoint`): what it does
+  to the player's own hover tooltip, its cost per frame, taint;
+- what counts as a "new" node (a blip that scrolls back into view, two overlapping blips, a
+  zone change), and the cooldown between alerts;
+- anything that touches Blizzard's `Minimap` or `MinimapCluster` (an Edit Mode system: never moved,
+  reparented or resized);
+- the public API a minimap skin consumes (#4).
+
+**Always hand it `CLAUDE.md` and `docs/PLAN.md` alongside the diff or plan**, plus
+`C:/Projects/WoW/References/Docs/PORTING-TBC-TO-FOREVER.md` and `docs/FOREVER-PROBE.md`. Those findings
+were measured on the live client. Without them, a cold reviewer argues from Classic-era or Retail
+behaviour that doesn't hold here (that tracking blips are frames, that the old global tracking
+functions exist).
+The newest `C:/Projects/WoW/References/Forever/api/forever-api-1.60.1.<build>.md` is the full API surface when a
+question turns on whether something exists, and `C:/Projects/WoW/wow-ui-source` is the client's own
+FrameXML (`Blizzard_Minimap`).
