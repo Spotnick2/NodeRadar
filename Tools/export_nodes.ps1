@@ -11,7 +11,7 @@
 #>
 
 param(
-    [string]$Wtf = "C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account",
+    [string]$Wtf = "C:\Program Files (x86)\World of Warcraft\_forever_\WTF\Account",
     [string]$Lua = "C:\Program Files (x86)\Lua\5.1\lua.exe",
     [switch]$Write
 )

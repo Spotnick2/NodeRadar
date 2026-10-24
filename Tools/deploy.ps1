@@ -12,14 +12,14 @@
 
     NodeRadarProbe is a ForeverProbe module, so -Probe and -ProbeOnly deploy the
     ForeverProbe checkout first ($env:FOREVERPROBE, else ..\ForeverProbe).
-        pwsh Tools/deploy.ps1 -AddOnsPath "D:\...\_classic_beta_\Interface\AddOns"
+        pwsh Tools/deploy.ps1 -AddOnsPath "D:\...\_forever_\Interface\AddOns"
 
     Until the port (#3), deploy the probe alone (-ProbeOnly): v1's NodeRadar.lua
     reads APIs Forever no longer has.
 #>
 
 param(
-    [string]$AddOnsPath = "C:\Program Files (x86)\World of Warcraft\_classic_beta_\Interface\AddOns",
+    [string]$AddOnsPath = "C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns",
     [switch]$Probe,
     [switch]$ProbeOnly
 )
