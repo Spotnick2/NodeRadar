@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.6.0
+
+Released 2026-11-05.
 
 - **Your group's nodes on your minimap** (#83): with two characters together, say a herbalist
   following your main, NodeRadar on the gatherer can send the nodes it finds to the group, and

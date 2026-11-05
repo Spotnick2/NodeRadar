@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.5.0, after v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.6.0, after v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -43,7 +43,12 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   and fades out between 45 and 60 yards; no duplicate distance text. Offline checked; the owner
   accepted the scaling and final vapor-and-sparkle appearance in game (docs/PLAN.md, "Combined marker").
 
-Next: party nodes (#83: the minimap icons on `party-nodes`; then the compass, beacon and stars), the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+- v1.6.0: party nodes, step 1 (#83, PR #84): `shareNodes` sends the measured wanted nodes over
+  `PARTY` / `RAID`, `partyNodes` draws a group member's on the minimap with a blue pip, no profession or
+  tracking needed. Measured on 70790 (two accounts: delivery, the throttle, the 255-byte cut) and
+  checked in game (`partylook`).
+
+Next: party nodes' step 2 (#83: the compass, beacon and stars on them), the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)

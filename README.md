@@ -86,6 +86,14 @@ turn on Find Herbs or Find Minerals.
 
   ![Approach a Peacebloom with the compass and animated world marker, gather it, then see the compass point to the next node](docs/images/experimental-compass-marker.gif)
 
+- **Your group's nodes on your minimap** (`/nr share` on the gatherer, `/nr party` on the other;
+  both off by default). Two characters together, say a herbalist following your main: the gatherer
+  sends the nodes it finds to the group, and the other draws them as item icons with a small blue dot,
+  without the profession or any tracking there, whether its own icons are on or not. Only nodes the
+  gatherer wants are sent (its skill, its herb and ore lists); a node it gathers leaves the other
+  minimap at once, and leaving the group clears them. Both need NodeRadar, and the two characters in
+  one party or raid.
+
 - **A minimap button.** Left-click: quick settings (the radar, the icons, the compass) and the
   compass's snooze; right-click: the Options page. It drags around the minimap, and button
   collectors take it. Also in the AddOns compartment.
@@ -104,7 +112,8 @@ notification, sci-fi HUD ping), the sonar on the node, a chat line (each node wi
 map coordinates, `Peacebloom (45.2, 61.8)`: every node of an alerted name, since which one is new
 can't be told), Blizzard's ping, the time
 between alerts, a test button; only nodes you can gather; Blizzard's dots or item icons on the
-minimap, the icon's frame and size, what a skipped node shows; the experimental compass and marker; learning by
+minimap, the icon's frame and size, what a skipped node shows; the experimental compass and marker; your
+group's nodes (sending yours, showing theirs); learning by
 toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the presets and smart.
 
 ## Commands
@@ -126,6 +135,8 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
   `/nr compasssize small | medium | large`; `/nr compass lock | unlock | reset`: its position (Alt-drag
   moves it)
 - `/nr marker`: the experimental distant beacon and nearby stars (off by default)
+- `/nr share`: send the nodes you find to your group; `/nr party`: show your group's nodes on your
+  minimap (both off by default)
 - `/nr snooze [15 | 30 | 60 | session]`: snooze the compass's node (the key binding's length, in
   Key Bindings > NodeRadar); `/nr snooze clear`
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
