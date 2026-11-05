@@ -1940,10 +1940,16 @@ matching, measuring, covering or clearing touches them.
   full name with the surname, no realm. `GetUnitName(unit, false)` is the full name for the player
   and for others (`UnitName` splits it, even for the player on 70374). `UnitPosition` gives world
   yards and the instance, and #28's records are kept in them.
-- **In the dump, unmeasured:** `PARTY` / `RAID` delivery, `C_ChatInfo.InChatMessagingLockdown()`,
-  the throttle, delivery order.
-- **Assumed, to measure before the code** (the probe round): two clients on the same spot read the
-  same `UnitPosition` north, west and instance. Same coordinates don't prove the same layer: two
+- **Measured** (docs/FOREVER-PROBE.md, "Party addon messages", 70790): `PARTY` and `RAID` deliver
+  both ways in about 0.25 s, in order, in combat too (`InChatMessagingLockdown()` stayed false), and
+  `PARTY` still works inside a raid. The throttle allows about ten at once and refills at one a
+  second; a send over it returns 3 and is **lost**, not queued. The echo comes back with the
+  player's own `GetUnitName("player", false)`; another member's `sender` equals the roster's
+  `GetUnitName(unit, false)` exactly. A re-invite can lose a send that returned 0 (the inviter is
+  grouped seconds before the other): the heartbeat heals it. Two clients side by side read the same
+  `UnitPosition` frame and instance.
+- **Still to measure:** the 255-byte and non-ASCII sizes (`partysizes`), the main's geometry with no
+  tracking (`partygeo`), the plate without Herbalism (`partyplate`). Same coordinates don't prove the same layer: two
   grouped characters on different layers would see different nodes. The probe tries it if it can;
   otherwise it's an unverified limit, said in the README.
 
