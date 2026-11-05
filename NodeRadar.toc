@@ -24,6 +24,7 @@ Learn.lua
 Alert.lua
 Track.lua
 Icons.lua
+Share.lua
 Compass.lua
 Marker.lua
 FarMarker.lua

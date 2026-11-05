@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Your group's nodes on your minimap** (#83): with two characters together, say a herbalist
+  following your main, NodeRadar on the gatherer can send the nodes it finds to the group, and
+  NodeRadar on the other draws them as item icons with a small blue dot, without the profession or
+  any tracking there. Two settings, both off by default: "Send the nodes you find to your group"
+  (`/nr share`) and "Show your group's nodes on your minimap" (`/nr party`), in Options under
+  "Your group". The gatherer sends only the nodes it wants (its skill and its herb and ore lists);
+  a node it gathers goes from the other minimap at once.
+
 ## v1.5.0
 
 Released 2026-10-23.

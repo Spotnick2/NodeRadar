@@ -28,6 +28,8 @@ local DEFAULTS = {
                         -- interact CVars claimed while it's on, to put back (Marker.lua)
     snoozeFor = "session", -- the key binding's snooze (#46): "15", "30", "60" minutes or "session"
     minimapButton = true, -- NodeRadar's minimap button (#46); NodeRadarDB.minimap is LibDBIcon's table
+    shareNodes = false, -- send this character's nodes to the group (#83)
+    partyNodes = false, -- draw the group's nodes on this minimap (#83)
     tooltipSkill = true, -- the skill a node needs, coloured, in the minimap's tooltip (#62)
     ring     = true,    -- the sonar on the new node's blip
     chat     = false,   -- a line in chat
@@ -100,6 +102,7 @@ function NR.Step(now)
     lastGeometry = result.geometry
     Track.Follow()                                  -- smart: the list by the skill first (Codex, #47)
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
+    NR.Share.Send(now)                              -- this sweep's records to the group (#83)
     Compass.Reconcile(result, now)                  -- the nearest node, before the learner (#29)
     NR.FarMarker.Update(result)
     Alert.Update(result, now)
@@ -130,6 +133,11 @@ function NR.Set(key, value)
     NR.db[key] = value
     if key == "enabled" then Alert.Reset() end
     if key == "enabled" then Icons.Clear() end
+    if key == "shareNodes" then
+        if not Icons.Keeping() then Icons.Clear() end
+        NR.Share.Reset()
+    end
+    if key == "enabled" or key == "shareNodes" or key == "partyNodes" then NR.Share.Apply() end
     -- The records serve the icons and the compass (#29): each setting does its own part.
     if key == "icons" or key == "compass" or key == "marker" then
         if not Icons.Keeping() then
@@ -175,7 +183,8 @@ end)
 local events = CreateFrame("Frame")
 API.RegisterEvents(events, { "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "PLAYER_DEAD", "MINIMAP_UPDATE_ZOOM",
-    "MINIMAP_UPDATE_TRACKING", "SPELL_UPDATE_COOLDOWN", "SKILL_LINES_CHANGED" })
+    "MINIMAP_UPDATE_TRACKING", "SPELL_UPDATE_COOLDOWN", "SKILL_LINES_CHANGED", "CHAT_MSG_ADDON",
+    "GROUP_ROSTER_UPDATE" })
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
 local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
@@ -202,8 +211,11 @@ events:SetScript("OnEvent", function(_, event, ...)
         NR.Options.Register()
         NR.Minimap.Register()                      -- the button (#46): no libraries, no button
         NR.Tooltip.Register()                      -- the skill in the minimap's tooltip (#62)
+        NR.Share.Apply()                           -- the prefix and the roster, if sharing or showing (#83)
     elseif event == "PLAYER_ENTERING_WORLD" then
         Icons.Clear()
+        NR.Share.Clear()
+        NR.Share.Apply()
         Learn.loading = false
         Alert.NewArea(now)
         Learn.Resume(now)
@@ -212,6 +224,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.Void("the zone changed")
     elseif event == "LOADING_SCREEN_ENABLED" then
         Icons.Clear()
+        NR.Share.Clear()
         Learn.loading = true
         Learn.Void("a loading screen")
     elseif event == "LOADING_SCREEN_DISABLED" then
@@ -232,6 +245,10 @@ events:SetScript("OnEvent", function(_, event, ...)
         API.OnCooldownUpdate()                     -- Cultivation's state (#26)
     elseif event == "SKILL_LINES_CHANGED" then
         Track.Follow()                             -- smart (#47)
+    elseif event == "CHAT_MSG_ADDON" then
+        NR.Share.OnMessage(...)                    -- a party member's nodes (#83)
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        if NR.Share.Sending() or NR.Share.Showing() then NR.Share.OnRoster() end
     elseif event == "UNIT_SPELLCAST_SENT" then
         Learn.OnCastSent(...)
         local unit, target, castGUID, spellID = ...
@@ -246,6 +263,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         if gathering and unit == "player" and not API.IsSecret(castGUID) and castGUID == gathering.guid then
             Alert.Gathered(gathering.target, now)
             Icons.Gathered(gathering.target)
+            NR.Share.Gathered(gathering.target, now)  -- after the record went (#83)
             gathering = nil
         end
     end
@@ -266,6 +284,8 @@ local function status()
         .. "; item icons on the minimap " .. onOff(db.icons) .. " (" .. tostring(db.iconStyle) .. ", "
         .. tostring(db.iconSize) .. "); the compass (experimental) " .. onOff(db.compass)
         .. "; the marker in the world (experimental) " .. onOff(db.marker)
+        .. "; sharing your nodes with your group " .. onOff(db.shareNodes)
+        .. ", your group's nodes on your minimap " .. onOff(db.partyNodes)
         .. "; sound " .. onOff(db.sound) .. ", ring " .. onOff(db.ring)
         .. ", chat " .. onOff(db.chat) .. ", Blizzard's ping " .. onOff(db.ping) .. "; learning " .. onOff(db.learn)
         .. "; " .. db.cooldown .. " s between alerts")
@@ -312,6 +332,8 @@ local function help()
         .. "/nr compasssize small | medium | large. Hold Alt and drag it to move it; /nr compass lock | unlock | reset")
     API.Say("/nr marker: experimental, a distant beacon with approximate height, and exact nearby stars (off by "
         .. "default; your map pin or tracked objective takes priority)")
+    API.Say("/nr share: send the nodes you find to your group. /nr party: show your group's nodes on your "
+        .. "minimap (both off by default; both need NodeRadar on the other character)")
     API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
@@ -364,6 +386,12 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "marker" then
         NR.Set("marker", not db.marker)
         API.Say("the marker in the world (experimental) " .. onOff(db.marker))
+    elseif cmd == "share" then
+        NR.Set("shareNodes", not db.shareNodes)
+        API.Say("sharing your nodes with your group " .. onOff(db.shareNodes))
+    elseif cmd == "party" then
+        NR.Set("partyNodes", not db.partyNodes)
+        API.Say("your group's nodes on your minimap " .. onOff(db.partyNodes))
     elseif cmd == "compass" then
         NR.Set("compass", not db.compass)
         API.Say("the compass (experimental) " .. onOff(db.compass))
@@ -438,6 +466,7 @@ SlashCmdList.NODERADAR = function(msg)
         NR.Minimap.Apply()                         -- the button shown again, in LibDBIcon's table too (Codex, PR #65)
         NR.Marker.Toggle()                         -- off by default: ours cleared, the CVar put back (Codex, PR #74)
         NR.FarMarker.Toggle()
+        NR.Share.Apply()                           -- both off by default: the party's nodes forgotten (#83)
         API.Say("settings reset (learned names kept)")
     else
         help()
