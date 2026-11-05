@@ -902,3 +902,26 @@ order held here, but one run proves no guarantee. The roster set by `GetUnitName
 the echo by the player's own are confirmed.
 
 `partygeo` and `partyplate` haven't run yet (no record on either account).
+
+### Party sizes, the main's geometry, the plate without Herbalism (70790, 2026-11-05) (#83)
+
+`/fp steps nr partysizes` (from the herbalist, after 15 s quiet, each send alone 3 s apart), then
+`partygeo` and `partyplate` on Kalizo (no gathering profession).
+
+- **Sizes:** all four sends returned 0 and arrived. 255 bytes: byte for byte. **256 bytes: returned
+  0 but arrived cut to 255** (the last byte gone, on the echo too): over 255 fails silently. An 82-byte
+  payload with a non-ASCII name (`Ærendæl Çağdaş Ünsal-Ångström Ñoño Žižek Šćepanović`): intact. The
+  empty snapshot (`1|<session>|1|0|`, 17 bytes): received.
+- **Geometry with no tracking** (Shen'dar Highlands, 56 samples standing, riding at 7 yd/s, zoom 5
+  and 0, outdoors, "indoors", outdoors again): `UnitPosition` (four values, instance 2991),
+  `C_Minimap.GetViewRadius`, the minimap's size (198) and `Scan.Where()` were readable in every
+  sample, never secret, never nil. View radius 233.33 at zoom 0, 66.67 at zoom 5. It didn't change
+  at the "indoors" spot, so that spot likely wasn't a minimap indoors (#63 measured the real swap):
+  the indoor radius without tracking is unmeasured, and the drawing reads it live anyway.
+- **The plate without Herbalism:** with the marker's three CVars, a Silverleaf got the soft-interact
+  plate: `nameplate1`, `UnitName` "Silverleaf", `UnitIsGameObject` true, `UnitIsUnit(unit,
+  "softinteract")` true (`UnitExists("softinteract")` false, as with Herbalism). Nothing visible
+  over the herb (the owner's "no", the screenshot agrees): the plate exists but draws no name. That's
+  all the marker needs: its stars are its own frame anchored to the plate. The CVars were put back.
+- The screenshot's HUD read "Layer: 3": the realm has layers. Grouped characters were on the same
+  instance; different layers remain unmeasured.

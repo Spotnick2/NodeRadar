@@ -1948,8 +1948,13 @@ matching, measuring, covering or clearing touches them.
   `GetUnitName(unit, false)` exactly. A re-invite can lose a send that returned 0 (the inviter is
   grouped seconds before the other): the heartbeat heals it. Two clients side by side read the same
   `UnitPosition` frame and instance.
-- **Still to measure:** the 255-byte and non-ASCII sizes (`partysizes`), the main's geometry with no
-  tracking (`partygeo`), the plate without Herbalism (`partyplate`). Same coordinates don't prove the same layer: two
+- **Measured too** (docs/FOREVER-PROBE.md, "Party sizes...", 70790): 255 bytes arrive byte for
+  byte, a non-ASCII name intact; **256 returns 0 and arrives cut to 255**, so the 255-byte cap is a
+  hard rule, counted in bytes. With no gathering tracking, `UnitPosition`, the view radius, the
+  minimap's size and `Scan.Where()` all read, never secret: the main can draw without sweeping. A
+  character **without Herbalism gets the herb's soft-interact plate** (name readable, an object,
+  the soft target), drawn with no visible name: the nearby stars can work on the main.
+- **Unmeasured:** the indoor view radius without tracking (read live anyway). Same coordinates don't prove the same layer: two
   grouped characters on different layers would see different nodes. The probe tries it if it can;
   otherwise it's an unverified limit, said in the README.
 
@@ -2075,11 +2080,10 @@ the sweep's `where`. So:
 - The beacon's map point from `Scan.Where()` read at that moment with the player's position read
   in the same frame (never an old `where` with a new position).
 - The ring's tooltip uses the entry's item ID (the receiver may not know the name).
-- **The nearby stars** need the game's soft-interact plate on the node (#78). If a character
-  without Herbalism gets one (the probe round's last question), `Marker`'s rule accepts a plate
-  whose name is a shared entry's within 15 yards **of the player**: a proximity heuristic, the plate
-  carries no position. If it doesn't, the stars stay the gatherer's, and the beacon keeps its
-  6-yard floor.
+- **The nearby stars** need the game's soft-interact plate on the node (#78), and a character
+  without Herbalism gets one (`partyplate`, 70790). So `Marker`'s rule also accepts a plate whose
+  name is a shared entry's within 15 yards **of the player**: a proximity heuristic, the plate
+  carries no position. The interact CVars are claimed as #78 claims them (the marker on).
 - Its tests, beyond the first step's: the same never-swept receiver with the compass and the
   marker on; a nearer stale local record against a fresh shared one; a heartbeat keeping the
   incumbent and the waypoint; expiry and a snooze choosing again at once.
