@@ -39,7 +39,8 @@
 -- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63); world (#61: NodeRadar's marker in game);
 -- party (#83: PARTY addon messages, run on the herbalist H), partygeo (the main M's minimap and position with no
 -- gathering tracking), partyplate (M's soft-interact plate on a herb, no Herbalism) and partysizes (on H: after
--- 15 quiet seconds, the four payload sizes, each alone 3 s apart; the throttle spoiled party's). The listener for the
+-- 15 quiet seconds, the four payload sizes, each alone 3 s apart; the throttle spoiled party's), partylook (on M: the
+-- party nodes' icons on the minimap, their place, the style, the gather and leaving the group). The listener for the
 -- probe-only prefix NRProbe is always on while the probe is loaded; /fp nr stream on|off is the numbered PARTY stream.
 
 local ADDON, NS = ...
@@ -6467,6 +6468,175 @@ local plateSteps = {
 }
 Probe:Steps("partyplate", plateSteps)
 guardRound(PLATEKEY, ppending, prestore)
+
+--------------------------------------------------------------------------------
+-- /fp steps nr partylook (on M, the main: NodeRadar's party nodes in game, #83)
+--------------------------------------------------------------------------------
+
+local LOOKKEY = Probe.name .. "/partylook"
+local look = {}                                  -- the node followed through the round, and its watcher
+
+local function lookNR()
+    local n = nr()
+    if n and n.Share and n.Icons and n.Share.List and n.Share._test and n.Icons._test then return n end
+end
+
+-- One line a shared entry: what was sent, and where its frame is against where it should be.
+local function lookEntry(n, e, pn, pw, k)
+    local f = e.frame
+    local text = ("%s item %s north %s west %s"):format(q(e.name), str(e.item), fnum(e.north), fnum(e.west))
+    if not f then return text .. "; NO FRAME" end
+    local shown = wpRead(f.IsShown, f)
+    local alpha = wpRead(f.GetAlpha, f)
+    text = text .. ("; frame shown %s, alpha %s"):format(str(shown), fnum(alpha))
+    local okF, fx, fy = pcall(f.GetCenter, f)
+    local okM, mx, my = pcall(Minimap.GetCenter, Minimap)
+    fx, fy, mx, my = okF and num(fx), okF and num(fy), okM and num(mx), okM and num(my)
+    local okA, point, rel, _, ax, ay = pcall(f.GetPoint, f, 1)
+    if okA and point and ax and ay and not secret(ax) and not secret(ay) then
+        text = text .. ("; anchored %s of %s at (%.1f, %.1f) px"):format(str(point), rel == Minimap and "the minimap" or "something else", ax, ay)
+    else
+        text = text .. "; anchor unreadable"
+    end
+    if fx and fy and mx and my then
+        text = text .. ("; on screen offset from the minimap's centre (%.1f, %.1f) px"):format(fx - mx, fy - my)
+    else
+        text = text .. "; on screen offset unreadable (no centre)"
+    end
+    if pn and pw and k then
+        text = text .. ("; expected (%.1f, %.1f) px (%.1f yd north, %.1f yd east of you)"):format(
+            -(e.west - pw) / k, (e.north - pn) / k, e.north - pn, -(e.west - pw))
+    end
+    return text
+end
+
+-- Share's kept lists and every shared entry's frame, logged; the returns are the step's result.
+local function lookDump(tag)
+    local n = lookNR()
+    if not n then plog("look " .. tag .. ": NodeRadar (Share, #83) isn't loaded"); return "NodeRadar isn't loaded" end
+    local okP, pn, pw, _, inst = pcall(UnitPosition, "player")
+    pn, pw = okP and num(pn), okP and num(pw)
+    local okR, radius = pcall(C_Minimap.GetViewRadius)
+    radius = okR and num(radius)
+    local okW, _, _, width = pcall(Minimap.GetRect, Minimap)       -- as Icons reads it
+    width = okW and num(width)
+    local k = radius and width and width > 0 and radius / (width / 2) or nil
+    plog(("look %s: UnitPosition (%s, %s) inst %s; GetViewRadius %s; Minimap width %s, %s yd per px; icons %s, iconStyle %s, partyNodes %s")
+        :format(tag, pn and fnum(pn) or "unreadable", pw and fnum(pw) or "", str(okP and inst), radius and fnum(radius) or "unreadable",
+            width and fnum(width) or "unreadable", k and ("%.3f"):format(k) or "?", str(n.db.icons), str(n.db.iconStyle),
+            str(n.db.partyNodes)))
+    local now = GetTime()
+    local senders = {}
+    for sender in pairs(n.Share._test.party()) do senders[#senders + 1] = sender end
+    table.sort(senders)
+    for _, sender in ipairs(senders) do
+        local p = n.Share._test.party()[sender]
+        plog(("look %s: %s session %s seq %s age %.1f s instance %s, %d entries"):format(tag, q(sender), str(p.session),
+            str(p.seq), now - (p.at or now), str(p.instance), #p.list))
+        for _, e in ipairs(p.list) do plog("look " .. tag .. ":   kept " .. lookEntry(n, e, pn, pw, k)) end
+    end
+    local list = n.Share.List()
+    local frames, shownN = 0, 0
+    for _, e in ipairs(list) do
+        if e.frame then frames = frames + 1 end
+        if e.frame and yes(wpRead(e.frame.IsShown, e.frame)) then shownN = shownN + 1 end
+        plog("look " .. tag .. ":   drawn list " .. lookEntry(n, e, pn, pw, k))
+    end
+    local first = list[1]
+    if first and not look.name then look.name = first.name end
+    return ("%d senders kept, %d shared entries (%d with a frame, %d shown)%s"):format(#senders, #list, frames, shownN,
+        first and ("; first " .. q(first.name)) or "")
+end
+
+local function lookHas(name)
+    local n = lookNR()
+    if not n then return false end
+    for _, e in ipairs(n.Share.List()) do if e.name == name then return true end end
+    return false
+end
+
+-- Notes when the followed node was last seen and when it went, to a quarter second, between the steps.
+local function lookWatch()
+    if look.watch then look.watch:Cancel() end
+    look.watch = C_Timer.NewTicker(0.25, function(t)
+        if not active(LOOKKEY) then t:Cancel(); look.watch = nil; return end
+        if not look.name then return end
+        if lookHas(look.name) then
+            look.seenAt = GetTime()
+        elseif look.seenAt and not look.goneAt then
+            look.goneAt = GetTime()
+            plog(("look: %s gone from Share's list at %.2f (last seen %.2f)"):format(q(look.name), look.goneAt, look.seenAt))
+        end
+    end)
+end
+
+local lookSteps = {
+    rev = 1,
+    title = "The party nodes on the main's minimap, run on M (#83)",
+    { text = "Reading this client's settings, the group and Share's roster.", auto = true, run = function()
+          look = {}
+          local n = lookNR()
+          if not n then return "NodeRadar (#83) isn't loaded" end
+          local names = {}
+          for name in pairs(n.Share._test.roster()) do names[#names + 1] = name end
+          table.sort(names)
+          local text = ("partyNodes %s, shareNodes %s, IsInGroup %s, roster %s"):format(str(n.db.partyNodes),
+              str(n.db.shareNodes), str(wpRead(IsInGroup)), #names > 0 and table.concat(names, ", ") or "empty")
+          plog("look: " .. text)
+          return text
+      end },
+    { text = "H (your herbalist, the other window) has /nr share on and Find Herbs tracking on, and follows M "
+          .. "(this window). This window has /nr party on. Both grouped. Yes when that is so.", ask = true },
+    { text = "Ride with H following until H's minimap shows a herb. Yes when M's minimap shows that herb's icon "
+          .. "with the small blue dot (on the icon's upper right corner).", ask = true,
+      screenshot = "partylook: M's minimap with the herb" },
+    { text = "Logging Share's lists and the icon's frame.", auto = true, run = function()
+          local text = lookDump("shown")
+          lookWatch()
+          return text
+      end },
+    { text = "Does the icon sit where the herb is on H's minimap (the same spot relative to your character)? "
+          .. "(Note box: how far off, which way.)", ask = true },
+    { text = "Turn M's own icons off and on (/nr icons twice) and change the icon style (/nr iconstyle yellow, "
+          .. "then /nr iconstyle auto). Does the herb icon stay, in the new style (a yellow ring after the first, "
+          .. "the minimap's own look after the second)?", ask = true, screenshot = "partylook: after icons and style" },
+    { text = "Logging the icon's frame after the toggles.", auto = true, run = function() return lookDump("restyled") end },
+    { text = "Gather the herb with H (switch to H's window, pick it, come back). Yes when back here.", ask = true },
+    { text = "Waiting up to 5 s for the herb to leave the shared list.", wait = function()
+          look.t0 = look.t0 or GetTime()
+          local n = lookNR()
+          if not n then return true, "NodeRadar isn't loaded" end
+          if not look.name then return true, "no node was followed (the earlier dump found none)" end
+          if lookHas(look.name) then return false, ("%s still listed after %.1f s"):format(q(look.name), GetTime() - look.t0) end
+          local text = ("%s left the list %.1f s after the wait began; last seen %s, gone at %s; %d shared entries left")
+              :format(q(look.name), GetTime() - look.t0, look.seenAt and ("%.2f"):format(look.seenAt) or "never",
+                  look.goneAt and ("%.2f"):format(look.goneAt) or "not noted", #n.Share.List())
+          look.t0 = nil
+          plog("look: " .. text)
+          return true, text
+      end, timeout = 5 },
+    { text = "Logging Share's lists after the gather.", auto = true, run = function() return lookDump("gathered") end },
+    { text = "Leave the group (from either window). Yes when done.", ask = true },
+    { text = "Waiting up to 30 s for Share's list to empty (expected at once, on the roster update).", wait = function()
+          look.l0 = look.l0 or GetTime()
+          local n = lookNR()
+          if not n then return true, "NodeRadar isn't loaded" end
+          local left = #n.Share.List()
+          local kept = 0
+          for _ in pairs(n.Share._test.party()) do kept = kept + 1 end
+          if left > 0 or kept > 0 then
+              return false, ("%d shared entries, %d senders kept after %.1f s"):format(left, kept, GetTime() - look.l0)
+          end
+          local text = ("the list was empty %.1f s after the wait began; IsInGroup %s"):format(GetTime() - look.l0,
+              str(wpRead(IsInGroup)))
+          look.l0 = nil
+          plog("look: " .. text)
+          return true, text
+      end, timeout = 30 },
+    { text = "Logging Share's lists after leaving.", auto = true, run = function() return lookDump("left") end },
+    { text = "Type /reload in this window (M) to save the results.", reload = true },
+}
+Probe:Steps("partylook", lookSteps)
 
 --------------------------------------------------------------------------------
 -- The listener, always on
