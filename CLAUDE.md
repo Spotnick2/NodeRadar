@@ -43,7 +43,7 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   and fades out between 45 and 60 yards; no duplicate distance text. Offline checked; the owner
   accepted the scaling and final vapor-and-sparkle appearance in game (docs/PLAN.md, "Combined marker").
 
-Next: the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+Next: party nodes (#83: the minimap icons on `party-nodes`; then the compass, beacon and stars), the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
@@ -65,7 +65,7 @@ live game, WoWInterface (#37).
 
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
-`Track.lua` → `Icons.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
+`Track.lua` → `Icons.lua` → `Share.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
 `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -116,6 +116,16 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   `MiniMap-TrackingBorder` as LibDBIcon lays it out) or a yellow ring (#50, our `Media/IconRing.tga`
   tinted `Icons.YELLOW`, the tracking dots' colour; never auto's); auto follows the minimap. One `bind` sets a
   frame's look, icon, dim and height arrow (`Scan.Height`, folded per cell and blip).
+- `Share.lua` (#83, `shareNodes` / `partyNodes`, both off): party nodes. The sender (`Share.Send` in
+  `NR.Step` after `Icons.Update`, `Share.Gathered` after `Icons.Gathered`) sends a snapshot of its wanted
+  records with an item over `PARTY` / `RAID` (prefix `NodeRadar`, `1|session|seq|instance|item,north,west,name;...`,
+  whole entries within 255 bytes, never closer than 1 s, again every 10 s unchanged, a refusal changing
+  nothing; `Icons.Keeping` includes `shareNodes`). The receiver (`Share.OnMessage`) keeps each roster
+  member's newest snapshot (by session, then seq) until 25 s without one (its own 1 s ticker), the same
+  node's table reused; the roster by `GetUnitName(unit, false)`, the player never in it (the echo).
+  `Icons.SetShared` draws them: a third list, never records, never dimmed, a blue pip, its own
+  eligibility (no local sweep needed; the driver kept while one is kept), hidden while a drawn local icon
+  of its item is within 8 yards. Measured: docs/FOREVER-PROBE.md, "Party addon messages".
 - `Compass.lua` (#29, `compass`, experimental, off by default): under the character, the nearest
   gatherable record's item icon on our own art (`Media/Compass*.tga` from `Tools/make_media.py`: a
   shadow, a dark lens, a rim tinted pearl, bronze or yellow as the icons' frame resolves, `Icons.Style()`;

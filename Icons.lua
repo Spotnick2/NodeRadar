@@ -37,6 +37,9 @@ Icons.STYLES = { auto = true, plain = true, glass = true, bronze = true, yellow 
 Icons.YELLOW = { 0.92, 0.75, 0.11 }   -- the tracking dots' lit yellow (#50, measured: docs/FOREVER-PROBE.md)
 Icons.GLASS_MINOR = 6  -- LibGlass-1.0's clean preset (r6); Disc is r2
 Icons.ARROW = 8        -- map units: our height arrow (Blizzard's is hidden by a ring, #41)
+Icons.PIP = { 0.67, 0.67, 1 }   -- a party node's pip (#83): the party chat's blue
+Icons.PIP_SIZE = 5     -- map units
+Icons.SAME = 8         -- yards: a party node this near a drawn icon of its item is that icon (#83)
 -- Half of what each look draws, at an icon of `s`: the rim fades and drops by it.
 Icons.EXTENT = {
     plain = function(s) return s / 2 end,
@@ -54,6 +57,7 @@ local ARROWS = "Interface\\Minimap\\Minimap-PositionArrows"
 
 local records = {}     -- { name, kind, north, west, icon, misses, dim, height, x, y, frame }
 local provisional = {} -- the same, misses 0 and provisional: cells no record explains (#67), rebuilt each sweep
+local shared = {}      -- the party's nodes (#83): Share's entries, party = true; never records, never matched
 local tries = {}       -- { name, north, west, at, seen, wait, explaining, radius }: blips left
                        -- unexplained by a measure, by the spot of what they left
 local gone = {}        -- { name, north, west, units | yards, at }: nodes just gathered, their dots
@@ -76,10 +80,10 @@ function Icons.On()
     return db and db.icons and db.enabled and true or false
 end
 
--- Kept for the icons, compass, or distant beacon, whichever is on.
+-- Kept for the icons, compass, distant beacon, or sharing (#83), whichever is on.
 function Icons.Keeping()
     local db = NR.db
-    return db and db.enabled and (db.icons or db.compass or db.marker) and true or false
+    return db and db.enabled and (db.icons or db.compass or db.marker or db.shareNodes) and true or false
 end
 
 -- The player in UnitPosition's frame: north, west (HereBeDragons-2.0 reads its
@@ -122,6 +126,11 @@ local function acquire()
     f.arrow:SetTexture(ARROWS)
     f.arrow:SetSize(Icons.ARROW, Icons.ARROW)
     f.arrowFrame:Hide()
+    -- A party node's pip (#83): a small blue disc on the icon's corner, over any look.
+    f.pip = f.arrowFrame:CreateTexture(nil, "OVERLAY")
+    f.pip:SetTexture(CIRCLE)
+    f.pip:SetVertexColor(Icons.PIP[1], Icons.PIP[2], Icons.PIP[3])
+    f.pip:Hide()
     f:Hide()
     Icons._test.frames = Icons._test.frames + 1
     return f
@@ -314,15 +323,28 @@ local function bind(r)
         f.tex:SetDesaturated(r.dim)
         f.tex:Show()
     end
-    if r.height == "above" or r.height == "below" then
+    -- The arrow frame carries the height arrow and a party node's pip, each set
+    -- every bind: a pooled frame may come from the other kind (#83).
+    local height = r.height == "above" or r.height == "below"
+    if height then
         local up = r.height == "above"
         f.arrow:SetTexCoord(0, 1, up and 0 or 0.5, up and 0.5 or 1)
         f.arrow:ClearAllPoints()
         f.arrow:SetPoint("CENTER", f, "CENTER", 0, (up and 1 or -1) * (Icons.EXTENT[style](size) + 2))
-        f.arrowFrame:Show()
+        f.arrow:Show()
     else
-        f.arrowFrame:Hide()
+        f.arrow:Hide()
     end
+    if r.party then
+        local e = Icons.EXTENT[style](size) * 0.7
+        f.pip:SetSize(Icons.PIP_SIZE, Icons.PIP_SIZE)
+        f.pip:ClearAllPoints()
+        f.pip:SetPoint("CENTER", f, "CENTER", e, e)
+        f.pip:Show()
+    else
+        f.pip:Hide()
+    end
+    if height or r.party then f.arrowFrame:Show() else f.arrowFrame:Hide() end
 end
 
 -- Every shown record and provisional icon bound again; once more if the glass
@@ -338,6 +360,9 @@ local function bindAll()
         end
         for _, p in ipairs(provisional) do
             if p.frame then bind(p) end
+        end
+        for _, e in ipairs(shared) do
+            if e.frame then bind(e) end
         end
         if not restyle then break end
         tripped = true
@@ -368,19 +393,26 @@ function Icons.Refilter()
 end
 
 -- The style or size changed (NR.Set): every icon shown in the new look now.
+-- Party nodes are drawn whatever `icons` says (#83): restyled too.
 function Icons.Restyle()
-    if not Icons.On() then return end
+    if not (Icons.On() or #shared > 0) then return end
     bindAll()
 end
 
+-- The driver runs while a local icon may show or a party node is kept (#83:
+-- kept, not shown, so one hidden for a moment, or past the rim, comes back).
 local function stop()
+    if #shared > 0 then return end
     driver:SetScript("OnUpdate", nil)
 end
 
-local function hideAll()
+local function hideLocal()
     for _, r in ipairs(records) do if r.frame then r.frame:Hide() end end
     for _, p in ipairs(provisional) do if p.frame then p.frame:Hide() end end
-    stop()
+end
+
+local function hideShared()
+    for _, e in ipairs(shared) do if e.frame then e.frame:Hide() end end
 end
 
 local function dropProvisional()
@@ -429,6 +461,7 @@ local function place(list, pn, pw, k, edge)
         if f and r.misses == 0 then
             local x, y = -(r.west - pw) / k, (r.north - pn) / k
             local alpha = math.max(0, math.min(1, (edge - dist(x, y)) / Icons.FADE))
+            r.drawn = alpha > 0
             if alpha > 0 then
                 f:ClearAllPoints()
                 f:SetPoint("CENTER", Minimap, "CENTER", x, y)
@@ -441,28 +474,98 @@ local function place(list, pn, pw, k, edge)
     end
 end
 
--- Each frame while an icon shows: where every shown record and provisional
--- icon is now.
+-- The item a local record gives, for the party nodes' one-icon rule.
+local function itemOf(name)
+    local info = NR.Learn.Info(name)
+    return info and API.Num(info.item)
+end
+
+-- Party nodes (#83) in the player's instance, read live; one isn't drawn
+-- while a local icon of its item is drawn this frame within SAME yards
+-- (drawn, not kept: a record kept for the compass shows nothing).
+local function placeShared(pn, pw, inst, k, edge, localDrawn)
+    local mine = {}
+    if localDrawn then
+        for _, list in ipairs({ records, provisional }) do
+            for _, r in ipairs(list) do
+                if r.frame and r.misses == 0 and r.drawn then mine[#mine + 1] = r end
+            end
+        end
+    end
+    local visible = {}
+    for _, e in ipairs(shared) do
+        local f = e.frame
+        if f then
+            local dup = e.instance ~= inst
+            for _, r in ipairs(mine) do
+                if dup then break end
+                if dist(r.north - e.north, r.west - e.west) <= Icons.SAME and itemOf(r.name) == e.item then dup = true end
+            end
+            if dup then e.drawn = false; f:Hide() else visible[#visible + 1] = e end
+        end
+    end
+    place(visible, pn, pw, k, edge)
+end
+
+-- Each frame while an icon may show: where every shown record and provisional
+-- icon is now, and every party node (#83). The local icons need a fresh local
+-- sweep in its instance; the party's only their own list (Share's expiry) and
+-- the live position, so a character with no tracking, which never sweeps,
+-- draws them.
 local function draw()
     local db = NR.db
-    if not (Icons.On() and lastSweep) or GetTime() - lastSweep > db.interval + Icons.GRACE then
-        hideAll()
-        return
-    end
     local pn, pw, inst = player()
     local okR, radius = pcall(C_Minimap.GetViewRadius)
     radius = okR and API.Num(radius)
     local okG, _, _, w = pcall(Minimap.GetRect, Minimap)
     w = okG and API.Num(w)
-    if not (pn and radius and w) or inst ~= instance or radius <= 0 or w <= 0 then
-        hideAll()
-        return
+    local geometry = pn and radius and w and radius > 0 and w > 0
+    local half = geometry and w / 2
+    local k = geometry and radius / half
+    local edge = geometry and half - look.extent
+    local fresh = Icons.On() and lastSweep and GetTime() - lastSweep <= db.interval + Icons.GRACE
+    local localDrawn = false
+    if fresh and geometry and inst == instance then
+        place(records, pn, pw, k, edge)
+        place(provisional, pn, pw, k, edge)
+        localDrawn = true
+    else
+        hideLocal()
     end
-    local half = w / 2
-    local k = radius / half
-    local edge = half - look.extent
-    place(records, pn, pw, k, edge)
-    place(provisional, pn, pw, k, edge)
+    if geometry then placeShared(pn, pw, inst, k, edge, localDrawn) else hideShared() end
+    if not (fresh and geometry) then stop() end        -- kept running while a party node is kept
+end
+
+-- Share's entries changed (#83): frames for the new ones, the gone ones'
+-- released, every one bound in the current look; the driver kept running
+-- while any is kept.
+function Icons.SetShared(list)
+    local keep = {}
+    for _, e in ipairs(list) do keep[e] = true end
+    for _, e in ipairs(shared) do
+        if not keep[e] then release(e) end
+    end
+    shared = {}
+    if #list > 0 then resolve() end
+    for _, e in ipairs(list) do
+        e.party, e.misses, e.dim, e.height = true, 0, false, nil
+        if e.icon == nil then
+            local ok, icon = pcall(C_Item.GetItemIconByID, e.item)
+            if ok and icon ~= nil and not API.IsSecret(icon) then
+                e.icon = icon
+            else
+                e.icon = iconOf(e.name, NR.Learn.Kind(e.name) or "herbs")
+            end
+        end
+        if not e.frame then e.frame = acquire() end
+        shared[#shared + 1] = e
+    end
+    bindAll()
+    -- draw() stops the driver itself once neither a fresh local icon nor a party node is left.
+    if #shared > 0 or driver:GetScript("OnUpdate") then
+        driver:SetScript("OnUpdate", draw)
+        draw()
+    end
 end
 
 -- The failed try a blip is, if any: its name within MATCH units of the spot of
@@ -809,7 +912,7 @@ function Icons.At(b)
 end
 
 Icons._test = { frames = 0, records = function() return records end, tries = function() return tries end,
-                provisional = function() return provisional end,
+                provisional = function() return provisional end, shared = function() return shared end,
                 gone = function() return gone end,
                 draw = draw, driver = driver, look = function() return look end,
                 reset = function() glass, glassMiniMap, restyle, free = nil, nil, nil, {} end }

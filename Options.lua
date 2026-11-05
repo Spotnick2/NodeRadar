@@ -263,7 +263,15 @@ local function build()
         .. "auto-track. Interact targeting and in-game navigation settings are restored when no longer needed; "
         .. "a change of yours is kept.")
 
-    local learning = heading(page, markerWhy, "Learning")
+    -- #83: both off by default.
+    local partyHead = heading(page, markerWhy, "Your group")
+    local share = checkbox(page, partyHead, "Send the nodes you find to your group", "shareNodes")
+    local partyNodes = checkbox(page, share, "Show your group's nodes on your minimap", "partyNodes")
+    local partyWhy = note(page, partyNodes, "For two characters together, say a herbalist following your main: "
+        .. "turn on sending on the gatherer and showing on the other, both with NodeRadar. The group's nodes "
+        .. "show as item icons with a small blue dot, without needing the profession or tracking here.")
+
+    local learning = heading(page, partyWhy, "Learning")
     local learn = checkbox(page, learning, "Learn a new name by turning gathering tracking off and on for a moment", "learn")
     local why = note(page, learn, "Standing still, out of combat. Turning tracking back on costs a global cooldown, so "
         .. "it's off by default; NodeRadar also learns every node you gather.")

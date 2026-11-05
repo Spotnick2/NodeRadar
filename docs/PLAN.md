@@ -1912,6 +1912,231 @@ while approaching uphill/downhill and turning the camera; smooth handoff to
 nearby stars. The test is whether the beacon helps find the node despite its
 approximate elevation. Offline tests cannot establish that visual result.
 
+## Party nodes (#83)
+
+**Why** (the owner, 2026-11-05): two accounts, the herbalist following the main. The herbalist's
+alert is heard, but the node is only on the herbalist's minimap: the main can't track herbs, so
+its own shows nothing, and finding the node means switching windows. NodeRadar on each client can
+tell the other what it found. Reviewed by Codex in two rounds to consent (2026-11-05).
+
+Two settings, both **off by default**, in `NodeRadarDB` (account-wide, like the rest; the two
+accounts have their own SavedVariables anyway):
+- `shareNodes`: **send** this character's nodes to the party.
+- `partyNodes`: **show** the party's nodes here.
+
+Both can be on at once (two gatherers, each showing the other's). Off, no work: nothing sent,
+messages ignored, no list kept. The prefix is registered once a session, the first time either is
+on (the dump has no unregister; registering is harmless).
+
+One new file, `Share.lua` (after `Icons.lua`): the transport, the sender's snapshots, the roster,
+the received lists and their expiry. `Icons.lua` draws the shared entries; the compass and the
+beacon consume them in the second step. Shared entries are never records: nothing of #28's
+matching, measuring, covering or clearing touches them.
+
+### What it rests on
+
+- **Measured:** `C_ChatInfo.SendAddonMessage` with `WHISPER` and `GUILD` (porting guide, "Addon-to-
+  addon transports"; `GUILD` returned 0 and echoed to its sender); `CHAT_MSG_ADDON`'s `sender` is the
+  full name with the surname, no realm. `GetUnitName(unit, false)` is the full name for the player
+  and for others (`UnitName` splits it, even for the player on 70374). `UnitPosition` gives world
+  yards and the instance, and #28's records are kept in them.
+- **Measured** (docs/FOREVER-PROBE.md, "Party addon messages", 70790): `PARTY` and `RAID` deliver
+  both ways in about 0.25 s, in order, in combat too (`InChatMessagingLockdown()` stayed false), and
+  `PARTY` still works inside a raid. The throttle allows about ten at once and refills at one a
+  second; a send over it returns 3 and is **lost**, not queued. The echo comes back with the
+  player's own `GetUnitName("player", false)`; another member's `sender` equals the roster's
+  `GetUnitName(unit, false)` exactly. A re-invite can lose a send that returned 0 (the inviter is
+  grouped seconds before the other): the heartbeat heals it. Two clients side by side read the same
+  `UnitPosition` frame and instance.
+- **Measured too** (docs/FOREVER-PROBE.md, "Party sizes...", 70790): 255 bytes arrive byte for
+  byte, a non-ASCII name intact; **256 returns 0 and arrives cut to 255**, so the 255-byte cap is a
+  hard rule, counted in bytes. With no gathering tracking, `UnitPosition`, the view radius, the
+  minimap's size and `Scan.Where()` all read, never secret: the main can draw without sweeping. A
+  character **without Herbalism gets the herb's soft-interact plate** (name readable, an object,
+  the soft target), drawn with no visible name: the nearby stars can work on the main.
+- **Unmeasured:** the indoor view radius without tracking (read live anyway). Same coordinates don't prove the same layer: two
+  grouped characters on different layers would see different nodes. The probe tries it if it can;
+  otherwise it's an unverified limit, said in the README.
+
+### The sender (`shareNodes`)
+
+- **What's sent:** the records `Icons.lua` keeps (measured centres, world yards) that pass
+  `Alert.Wanted`, the alert's own policy: not proof the character can gather them (an unknown
+  requirement, an unreadable skill or `skillOnly` off pass it), but the same rule the sender's own
+  alert follows. Only records seen this sweep (`misses == 0`), with an item in `NODE_INFO` (a
+  learned name without one has no item ID to send: left out, the smaller first version). Not
+  provisional icons (#67), not the sender's snoozes (its own compass's). So `Icons.Keeping()` adds
+  `shareNodes`: the sender measures nodes even with icons, compass and marker off, at the cost #29
+  already accepted (31 to 33 reads a new node, once).
+- **When:** only from a **successful radar sweep**, after its `Icons.Update` (`Share.Send` in
+  `NR.Step`), while `IsInGroup()`. A **snapshot**, the whole list: a lost message is healed by the
+  next, and an entry left out (gone, filtered, past the byte cap) simply isn't advertised any more.
+  Sent when the set differs from the last one **sent successfully** (compared as a set, sorted by
+  name and position, so moving doesn't reorder it into a "change"), and again every
+  `Share.HEARTBEAT` (10 s) unchanged, but never closer than `Share.GAP` (1 s): a sweep runs every
+  0.5 s at the quickest, so a change inside the gap goes out with the first sweep after it. A
+  rejected send changes nothing (neither the last set nor the heartbeat). No sweep, nothing sent:
+  tracking off, the learner's pause, the gamepad UI, the minimap hidden all go silent and the
+  receivers expire the list. Nothing old is ever re-sent on a timer.
+- **The gather:** the sender's own successful gather (the cast handler, after `Icons.Gathered` has
+  dropped the record and noted its lingering dot) sends at once, through the same gates and the gap,
+  if the last sweep is fresh (the idle interval plus 2 s, the icons' rule), the list as it is now
+  (no record renewed by it).
+- **Reset** when `shareNodes` is turned on and on `GROUP_ROSTER_UPDATE` with a different group (the
+  set of member names changed): the next sweep sends whatever it has, a new group never inherits
+  "unchanged, sent recently".
+- **The message** (prefix `NodeRadar`): `1|<session>|<seq>|<instance>|<entries>`. `1` the format
+  version (matched exactly), `session` the sender's `GetServerTime()` at load, `seq` counting up
+  from 1 for each send. The receiver orders by both (Codex: a random session tells sessions apart
+  but doesn't order them): an older session is dropped, a newer one replaces, within a session an
+  older or equal `seq` is dropped. So a snapshot arriving late, even one from before the sender's
+  reload, can't bring a gathered node back. Two loads within the same second share a session
+  (a reload takes longer: accepted). Each entry
+  `<item>,<north>,<west>,<name>`, `;` between them: the item ID (the icon, locale-free), the
+  position to 0.1 yard, the node's name (what `Learn`, the compass, the snoozes and the marker key
+  on; item IDs alone can't replace it, several nodes give one item; the owner's accounts share a
+  locale). Nearest the sender first, ties by name then position; **whole entries** added while the
+  message, header and separators included, stays within 255 bytes (`#s`, bytes: never cut inside
+  an entry or a UTF-8 name). An empty list is a valid snapshot. A name containing `|`, `,`, `;` or a
+  control character is left out.
+- **Channel:** `RAID` in a raid, else `PARTY`. Not sent while `InChatMessagingLockdown()` is true,
+  in an instance (the radar doesn't run there), or solo. A send whose result isn't success is
+  recorded once with `API.Fail` (`/nr failures`).
+
+### The receiver (`partyNodes`)
+
+- **Listens** to `CHAT_MSG_ADDON` for the prefix on `PARTY` / `RAID` only. Every argument passes the
+  secret test first. Dropped whole: anything secret, a message over 255 bytes, another version,
+  malformed separators, more than `Share.MAX` (12) entries, an item not a positive integer, a
+  position not finite or past 100000 yards, a name empty, over 64 bytes or with a control
+  character, an older session than the sender's current one, an older or equal `seq` within it.
+- **Who:** the sender must be in the group **when the message arrives**: a roster set built from
+  the unit tokens (`party1..4`, `raid1..40`) with `GetUnitName(unit, false)`, rebuilt at
+  `GROUP_ROSTER_UPDATE` (not `UnitInParty(name)`: whether it takes a surnamed full name is
+  unmeasured). The player's own name (`GetUnitName("player", false)`) is the echo: dropped. Two
+  members with the same full name across connected realms would collide: a limit, recorded.
+- **Keeps** `party[sender] = { session, seq, at, instance, list }`, each accepted snapshot
+  **replacing** the sender's list. **Entries are kept across snapshots**: an incoming entry of the
+  same name within 1 yard of a kept one reuses that table (so the compass's incumbent and the
+  beacon's waypoint survive a heartbeat, second step).
+- **Goes:** a sender's list after `Share.EXPIRE` (25 s) without an accepted message; at once when it
+  leaves the roster; all of them at a loading screen (and **nothing accepted while loading**:
+  `Learn.loading`), when `partyNodes` or the radar goes off, or leaving the group. Expiry runs on
+  its own 1 s ticker, only while some list is kept, so a last snapshot expires with no further
+  message and no sweep. In memory only: nothing saved.
+- **Shown only in the receiver's own instance** (`UnitPosition`'s fourth value, read live).
+- **Its own gather** of a name (the cast handler, its own call: with `partyNodes` alone
+  `Icons.Keeping()` is false and `Icons.Gathered` returns at once) drops the shared entries of that
+  name within `Icons.GATHERED` yards, until the sender's next snapshot. A sender that doesn't gather
+  it may still advertise it while its own dot lingers: accepted (the main case, the sender
+  gathering, is #68's `gone` rule).
+
+### Drawing (`Icons.lua`)
+
+- `Icons.On()` and `Icons.Keeping()` keep their meanings (the receiver's own icons, its own
+  measuring): `partyNodes` turns on neither.
+- **Separate eligibility, one pool and one driver.** The local lists (`records`, `provisional`)
+  keep their rule: shown while the receiver's own sweep is fresh, in the sweep's instance, with
+  `icons` on. The shared list has its own: `partyNodes` and the radar on, the sender's list
+  unexpired, the receiver's live instance equal to the list's, `UnitPosition` and the minimap's
+  radius and width readable (each frame, as `draw()` already reads them: no sweep needed, so a
+  main with no tracking at all, which never sweeps, still draws them). The driver runs while the
+  local list has a shown frame **or any unexpired shared entry is kept**, even with every shared
+  frame hidden (unreadable for a moment, or past the rim while the player rides toward it: today's
+  `hideAll()` stops `OnUpdate`, which would leave nothing to bring them back); it stops when
+  neither is left. `stop()`, `hideAll()`, `Clear()`, `Release()` and `Restyle()` are split
+  so the local paths (a tracking change, the learner, `icons` off) leave the shared frames alone, and
+  only the shared paths (expiry, `partyNodes` off, a loading screen, the radar off) release them.
+  A frame unreadable for a moment is hidden and shown again on a later frame by itself.
+- **The look:** each shared frame bound in the current look (`bind`), with its dim, height arrow
+  and pip **set every bind** (a pooled frame can come from a local record): never dimmed (the
+  sender filtered by its wants; the receiver's skill doesn't apply), no height arrow (the height is
+  the sender's), and a small party pip on its corner (the party frame's blue) so it isn't taken for
+  the receiver's own. `Restyle` rebinds them too, `icons` on or off. The owner decides the pip in
+  the look round. No mouse (`EnableMouse(false)`).
+- **One icon a node:** a shared entry isn't drawn while a local icon of the same item is **drawn
+  this frame** within 8 yards (world yards, both positions measured; not mere record existence: a
+  record kept for the compass with `icons` off, or missed once, shows nothing); entries of the same
+  item within 8 yards from several senders draw once.
+
+### Compass and beacon (second step, same issue, its own PR)
+
+Choosing among shared entries isn't a two-line change: today both run only off a successful local
+sweep (`NR.Step` returns when no tracking is on), the compass draws only with a recent `lastSweep`,
+and the beacon's target expires after the idle interval plus 2 s and takes its map position from
+the sweep's `where`. So:
+- `Compass.choose` takes the unexpired shared entries of the player's instance too, with
+  `partyNodes` on; a shared entry counts as wanted (its sender said so), snoozes apply by name and
+  spot. **Each candidate by its own freshness** (Codex): local records only while the local sweep
+  is fresh (today's allowance for a record missed once kept, within a fresh sweep), shared entries
+  only while their list is unexpired; so a nearer local record left from sweeps that stopped can't
+  outbid a live shared one. A shared refresh never advances the local `lastSweep`. The incumbent
+  is the same table across heartbeats (the receiver reuses entries), so the
+  5-yard hysteresis and the beacon's waypoint hold.
+- A **shared target has its own freshness** (its list unexpired) everywhere the compass and
+  `FarMarker.fresh()` check a sweep's, and a light refresh (`Compass.Refresh` without the
+  `lastSweep` gate for a shared target) runs at each accepted message, at expiry, at a snooze and on
+  `Share`'s ticker, which also wakes a hidden ring.
+- The beacon's map point from `Scan.Where()` read at that moment with the player's position read
+  in the same frame (never an old `where` with a new position).
+- The ring's tooltip uses the entry's item ID (the receiver may not know the name).
+- **The nearby stars** need the game's soft-interact plate on the node (#78), and a character
+  without Herbalism gets one (`partyplate`, 70790). So `Marker`'s rule also accepts a plate whose
+  name is a shared entry's within 15 yards **of the player**: a proximity heuristic, the plate
+  carries no position. The interact CVars are claimed as #78 claims them (the marker on).
+- Its tests, beyond the first step's: the same never-swept receiver with the compass and the
+  marker on; a nearer stale local record against a fresh shared one; a heartbeat keeping the
+  incumbent and the waypoint; expiry and a snooze choosing again at once.
+
+### Not in this
+
+Sounds on the receiver (the sender's client plays its own), the chat line for shared nodes,
+sharing outside the group (no `WHISPER` discovery, no channel), saving shared nodes, acknowledgements
+or retransmission, multi-part messages, a node database (#30).
+
+### Tests
+
+The wire: sent only after a successful sweep, only wanted measured records with an item, nearest
+first with ties fixed, whole entries within 255 bytes (a long UTF-8 name included), the empty
+list, unchanged not resent until the heartbeat, the 1 s gap coalescing changes, a rejected send
+leaving the state as it was, `RAID` vs `PARTY`, not sent solo, in lockdown, in an instance or when
+off, the gather's send and its gates, the reset on a new group, `seq` and `session`. The receiver:
+a snapshot replacing the last and reusing kept entries, a late (older `seq`) snapshot dropped, a new
+session accepted, a late snapshot of an older session arriving after the new one's dropped, expiry by the ticker with no sweep, a sender leaving (and its message arriving
+after the roster event dropped), nothing accepted while loading, another instance, the echo, each
+malformed, secret or out-of-bounds field dropping the message, another version. Drawing, the case
+Codex named first: **the receiver never swept, `icons`, compass and marker off, `partyNodes` on**:
+received, drawn, moved, restyled, expired and released; every shared frame hidden (unreadable,
+then past the rim) and shown again with no message and no sweep. Also: local clears (tracking change, the
+learner) leaving shared frames, `icons` off leaving them, never dimmed, the pip and the dim reset
+on a reused frame, one icon a node (local drawn vs kept-but-hidden, two senders). Off: nothing sent
+or drawn, messages ignored. `CHAT_MSG_ADDON`, `GROUP_ROSTER_UPDATE` (both in `events-70450.txt`),
+`C_ChatInfo`'s calls and `GetUnitName` added to the stubs from the dump. Every new test
+mutation-tested.
+
+### Probe round (`/fp steps nr party`, both accounts grouped, before the code)
+
+1. `RegisterAddonMessagePrefix`'s and `SendAddonMessage`'s results; the message on the other
+   client and the echo on the sender's, with `sender`'s exact form against
+   `GetUnitName("player", false)` and the roster's `GetUnitName(unit, false)`, before and after the
+   other leaves the group.
+2. Numbered messages at two a second for 30 s, then a burst of five: the result codes, how many
+   arrive, in what order, also across the sender's `/reload`, a loading screen on either side and
+   the group left and joined again. A 255-byte message, a long non-ASCII name, an empty snapshot:
+   received byte for byte.
+3. The party converted to a raid: `RAID` delivery, and `PARTY` sent in a raid.
+4. In combat: `InChatMessagingLockdown()`, and a real send and receive.
+5. Both characters on the same spot (one following, standing still): `UnitPosition` on each.
+   Different layers, if the realm has them and it can be arranged; else recorded as unverified.
+6. The main with **no gathering tracking**: `UnitPosition`, `C_Minimap.GetViewRadius`, the minimap's
+   width, `Scan.Where()` standing, moving, zooming and crossing indoors and out.
+7. The character without Herbalism facing a herb within 15 yards, the marker's three interact CVars
+   set: a soft-interact plate or not, its `UnitName`, `UnitIsGameObject`, `UnitIsUnit(unit,
+   "softinteract")`.
+
+Then a look round with the code (`/fp steps nr partylook`): the shared icons on the main's
+minimap while the herbalist follows, the pip, a gather removing the icon, the group left.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock

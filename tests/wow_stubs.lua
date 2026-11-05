@@ -89,6 +89,7 @@ function WoW.reset()
     WoW.methodsCalled = {}
     WoW.combat = false
     WoW.timers = {}
+    WoW.tickers = {}
     WoW.now = 0
 end
 
@@ -388,6 +389,15 @@ C_AddOns = {
 -- upTo seconds (all when nil) and keeps the rest. WoW.drainTimers() runs them
 -- until none is left, timers set by timers included.
 C_Timer = { After = function(s, fn) table.insert(WoW.timers, { s = s, fn = fn }) end }
+-- C_Timer.NewTicker follows WoW.now: WoW.tick runs a ticker's callback each time
+-- the clock passes its next due time, `iterations` times at most; Cancel stops it.
+WoW.tickers = {}
+function C_Timer.NewTicker(seconds, callback, iterations)
+    local t = { every = seconds, at = WoW.now + seconds, cb = callback, left = iterations }
+    function t.Cancel(self) self.cancelled = true end
+    table.insert(WoW.tickers, t)
+    return t
+end
 function WoW.flushTimers(upTo)
     local run, keep = {}, {}
     for _, t in ipairs(WoW.timers) do
@@ -425,6 +435,31 @@ function UnitPosition(unit)
     return WoW.pos[1], WoW.pos[2], WoW.posZ or 0, WoW.pos[3]
 end
 function IsInGroup() return WoW.group end
+-- A raid (WoW.raid), and the other units of a group (WoW.units[unit] = { name, realm,
+-- full }): UnitName splits a surname-bearing name as the client does, GetUnitName(unit,
+-- false) is the full name.
+WoW.raid, WoW.units = false, {}
+function IsInRaid() return WoW.raid == true end
+function GetUnitName(unit, showServer)
+    local u = WoW.units[unit]
+    return u and (u.full or u.name) or nil
+end
+-- Addon messages (C_ChatInfo): every send recorded in WoW.sent as { prefix, text,
+-- chatType, target }; WoW.sendResult[chatType] (a number, or a function of the text; default 0,
+-- success) is what it returns,
+-- WoW.lockdown what InChatMessagingLockdown says, WoW.prefixes the registered ones.
+WoW.sent, WoW.sendResult, WoW.lockdown, WoW.prefixes = {}, {}, false, {}
+C_ChatInfo = {
+    RegisterAddonMessagePrefix = function(prefix) WoW.prefixes[prefix] = true; return 0 end,
+    IsAddonMessagePrefixRegistered = function(prefix) return WoW.prefixes[prefix] == true end,
+    InChatMessagingLockdown = function() return WoW.lockdown end,
+    SendAddonMessage = function(prefix, text, chatType, target)
+        table.insert(WoW.sent, { prefix = prefix, text = text, chatType = chatType, target = target })
+        local r = WoW.sendResult[chatType]
+        if type(r) == "function" then r = r(text) end
+        return r or 0
+    end,
+}
 function GetLocale() return WoW.locale end
 
 -- Spells: names by ID (C_Spell.GetSpellInfo); WoW.cooling[id] puts one on cooldown.
@@ -622,8 +657,12 @@ C_NamePlate = {
     GetNamePlateForUnit = function(unit) local p = plateOf(unit); return p and plateFrame(p) or nil end,
 }
 function UnitIsGameObject(unit) local p = plateOf(unit); return p ~= nil and p.object == true end
-function UnitName(unit) local p = plateOf(unit); if p then return p.name end end
-function UnitExists(unit) return plateOf(unit) ~= nil end
+function UnitName(unit)
+    local u = WoW.units[unit]
+    if u then return u.name, u.realm end
+    local p = plateOf(unit); if p then return p.name end
+end
+function UnitExists(unit) return WoW.units[unit] ~= nil or plateOf(unit) ~= nil end
 function UnitIsUnit(a, b)
     local pa, pb = plateOf(a), plateOf(b)
     return pa ~= nil and pa == pb
@@ -987,6 +1026,21 @@ function WoW.tick(elapsed)
         local fn = w._scripts.OnUpdate
         if fn and Methods.IsVisible(w) then fn(w, elapsed) end
     end
+    local tickers = {}
+    for _, t in ipairs(WoW.tickers) do tickers[#tickers + 1] = t end
+    for _, t in ipairs(tickers) do
+        while not t.cancelled and WoW.now >= t.at do
+            t.at = t.at + t.every
+            if t.left then
+                t.left = t.left - 1
+                if t.left <= 0 then t.cancelled = true end
+            end
+            t.cb(t)
+        end
+    end
+    local keep = {}
+    for _, t in ipairs(WoW.tickers) do if not t.cancelled then keep[#keep + 1] = t end end
+    WoW.tickers = keep
 end
 
 -- Time passing: `seconds` of frames, `step` apart.
