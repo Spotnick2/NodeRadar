@@ -925,3 +925,22 @@ the echo by the player's own are confirmed.
   all the marker needs: its stars are its own frame anchored to the plate. The CVars were put back.
 - The screenshot's HUD read "Layer: 3": the realm has layers. Grouped characters were on the same
   instance; different layers remain unmeasured.
+
+### Party nodes in game: `/fp steps nr partylook` (70790, 2026-11-05) (#83)
+
+Kalizo (no profession, `partyNodes` on, its own `icons` **off**) with Drakuza (Herbalism,
+`shareNodes` on, Find Herbs) following, Shen'dar Village.
+
+- **Drawn:** two Peacebloom from Drakuza's snapshots (seq 39, 4.6 s old) on Kalizo's minimap, in
+  the minimap's own look (glass with Glass MiniMap), each with the blue pip on its upper right. The
+  owner: yes, and in the same spot as on the herbalist's minimap. Each frame's anchor equals the
+  offset expected from `UnitPosition` and the view radius to 0.1 px (77.4 yd north, 26.1 west; 47.4
+  south, 84.9 east). The screenshot agrees.
+- **Gone at the gather:** the snapshot without the gathered node (seq 50) arrived about 0.1 to 0.25 s
+  after the node's last sighting (inferred from the sender's age: the round's wait started after the
+  owner came back).
+- **Gone on leaving the group:** the list empty within 0.6 s of `GROUP_ROSTER_UPDATE`.
+- **The restyle wasn't seen with an icon:** the herbs had left the list (Drakuza rode off or picked
+  them) during the icons toggle and `iconstyle yellow`/`auto`, so that step's yes had nothing to
+  show. Covered offline (test_share: restyled with icons off).
+- No error, failure, secret or taint on either client.
