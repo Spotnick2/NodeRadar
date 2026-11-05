@@ -36,7 +36,10 @@
 -- coords (a blip's map coordinates, #27); /fp steps nr waypoint and waypointframe (Blizzard's marker,
 -- #29); /fp steps nr icons (hit areas, position arrows, item icons, #28) and iconcheck (NodeRadar's
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
--- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63); world (#61: NodeRadar's marker in game).
+-- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63); world (#61: NodeRadar's marker in game);
+-- party (#83: PARTY addon messages, run on the herbalist H), partygeo (the main M's minimap and position with no
+-- gathering tracking) and partyplate (M's soft-interact plate on a herb, no Herbalism). The listener for the
+-- probe-only prefix NRProbe is always on while the probe is loaded; /fp nr stream on|off is the numbered PARTY stream.
 
 local ADDON, NS = ...
 local MAX_LOG = 3000
@@ -5965,6 +5968,493 @@ f:SetScript("OnEvent", function(_, _, addon)
     end
 end)
 NS._markerDecisionsTest = { save = save }
+end)()
+
+;(function()
+--------------------------------------------------------------------------------
+-- Party nodes (#83, docs/PLAN.md "Probe round"): PARTY addon messages between two
+-- grouped clients, before any NodeRadar code sends one. A listener that is always
+-- on (the probe-only prefix NRProbe), /fp steps nr party (run on the herbalist H:
+-- hello, a stream, sizes, the same spot, reloads and group changes, combat, a
+-- raid), /fp steps nr partygeo (on the main M, no gathering tracking: what the
+-- minimap and UnitPosition give) and /fp steps nr partyplate (on M, no
+-- Herbalism: does a herb get the game's soft-interact plate). Every line goes to
+-- the probe's log and to NodeRadarProbeDB.party.lines (kept apart: the log is
+-- trimmed), never to chat.
+--------------------------------------------------------------------------------
+
+local PREFIX = "NRProbe"
+local KEY = Probe.name .. "/party"
+local GEOKEY = Probe.name .. "/partygeo"
+local PLATEKEY = Probe.name .. "/partyplate"
+local MAX_LINES = 1500
+local session = GetServerTime()               -- this load's: a reload is a new session
+local seqN, helloN, combatN = 0, 0, 0
+local stream = {}                             -- the background stream: ticker, manual
+local jobs = {}                               -- the timed steps' tickers
+local secretSeen = 0
+
+local function q(v) return Probe.Show(v) end
+local function ts(v) if secret(v) then return "secret" end return tostring(v) end
+local function fnum(v) return num(v) and ("%.2f"):format(v) or str(v) end
+
+local function pdb()
+    if type(NodeRadarProbeDB) ~= "table" then return {} end       -- before the saved table exists
+    if type(NodeRadarProbeDB.party) ~= "table" then NodeRadarProbeDB.party = {} end
+    return NodeRadarProbeDB.party
+end
+local function plog(text)
+    local d = pdb()
+    d.lines = d.lines or {}
+    d.lines[#d.lines + 1] = ("%.2f %s"):format(GetTime(), text)
+    while #d.lines > MAX_LINES do table.remove(d.lines, 1) end
+    say("party: " .. text)
+end
+-- Control bytes and the backslash escaped; UTF-8 left as it is, to read.
+local function esc(s)
+    return (s:gsub("[%c\\]", function(c) return c == "\\" and "\\\\" or ("\\%03d"):format(c:byte()) end))
+end
+local function me() return wpRead(GetUnitName, "player", false) end
+local function active(key)
+    local st = type(ForeverProbeDB) == "table" and ForeverProbeDB.steps
+    return type(st) == "table" and st.active == key
+end
+
+-- The roster: the full name and both UnitName returns of every group unit.
+local function roster(tag)
+    plog(("%s: IsInGroup %s, IsInRaid %s"):format(tag, str(wpRead(IsInGroup)), str(wpRead(IsInRaid))))
+    local function add(unit)
+        if not yes(wpRead(UnitExists, unit)) then return end
+        local okN, n1, n2 = pcall(UnitName, unit)
+        plog(("  %s GetUnitName(unit, false) %s, UnitName (%s, %s)"):format(unit, q(wpRead(GetUnitName, unit, false)),
+            okN and q(n1) or "ERROR", okN and q(n2) or "ERROR"))
+    end
+    for i = 1, 4 do add("party" .. i) end
+    for i = 1, 40 do add("raid" .. i) end
+end
+
+local function register()
+    local ok, res = pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
+    plog(("RegisterAddonMessagePrefix(%s) -> %s; registered %s; session %d; player %s"):format(PREFIX,
+        ok and str(res) or "ERROR " .. str(res), str(wpRead(C_ChatInfo.IsAddonMessagePrefixRegistered, PREFIX)),
+        session, q(me())))
+end
+
+-- One CHAT_MSG_ADDON: every argument tested for secret before any use.
+local function onAddon(prefix, text, channel, sender, target, zone, localID, name, instance)
+    if secret(prefix) then
+        secretSeen = secretSeen + 1
+        if secretSeen <= 20 then plog("CHAT_MSG_ADDON: prefix secret, not readable") end
+        return
+    end
+    if prefix ~= PREFIX then return end
+    local mine = me()
+    local echo = "?"
+    if not secret(sender) and not secret(mine) then echo = tostring(sender == mine) end
+    local len, body = "secret", "secret"
+    if not secret(text) then
+        if type(text) == "string" then len, body = tostring(#text), esc(text:sub(1, 255))
+        else len, body = "?", "type " .. type(text) end
+    end
+    plog(("RX %s sender=%s player=%s echo=%s len=%s t=%.2f target=%s zone=%s local=%s name=%s instance=%s payload=%s")
+        :format(ts(channel), ts(sender), ts(mine), echo, len, GetTime(), ts(target), ts(zone), ts(localID), ts(name),
+            ts(instance), body))
+    if type(text) == "string" and not secret(text) then
+        local n, w, inst = text:match("^pos|(%-?[%d%.]+)|(%-?[%d%.]+)|(%-?%d+)$")
+        if n then
+            local ok, on, ow, _, oi = pcall(UnitPosition, "player")
+            on, ow, oi = ok and num(on), ok and num(ow), ok and num(oi)
+            n, w = tonumber(n), tonumber(w)
+            if on and ow and n and w then
+                plog(("  pos: theirs %.2f, %.2f inst %s; mine %.2f, %.2f inst %s; diff %.2f, %.2f (%.2f yd)"):format(
+                    n, w, inst, on, ow, tostring(oi), on - n, ow - w, math.sqrt((on - n) ^ 2 + (ow - w) ^ 2)))
+            else
+                plog("  pos: own position not readable")
+            end
+        end
+    end
+end
+
+-- A send and its result code (a number: Enum.SendAddonMessageResult).
+local function send(chan, text)
+    local ok, res = pcall(C_ChatInfo.SendAddonMessage, PREFIX, text, chan)
+    local shown = ok and str(res) or "ERROR " .. str(res)
+    plog(("TX %s len %d t=%.2f -> %s payload=%s"):format(chan, #text, GetTime(), shown, esc(text:sub(1, 80))))
+    return shown
+end
+local function tally(codes)
+    local out = {}
+    for code, n in pairs(codes) do out[#out + 1] = ("%s x%d"):format(code, n) end
+    table.sort(out)
+    return #out > 0 and (": " .. table.concat(out, ", ")) or ""
+end
+local function nextSeq() seqN = seqN + 1; return ("seq|%d|%d"):format(session, seqN) end
+
+-- The background stream (one a second): kept in the saved data so a load starts it
+-- again; it stops with its procedure (unless started by hand) or /fp nr stream off.
+local streamOff
+local function streamOn(manual, resumed)
+    stream.manual = manual or false
+    pdb().stream = { manual = stream.manual }
+    if stream.ticker then return end
+    stream.ticker = C_Timer.NewTicker(1, function()
+        if not stream.manual and not active(KEY) then streamOff("its procedure ended"); return end
+        send("PARTY", nextSeq())
+    end)
+    plog(("stream %s (%s), session %d"):format(resumed and "resumed after the load" or "on",
+        stream.manual and "by hand" or "with the procedure", session))
+end
+function streamOff(why)
+    if stream.ticker then stream.ticker:Cancel() end
+    local was = stream.ticker ~= nil
+    stream.ticker = nil
+    pdb().stream = nil
+    if was then plog("stream off: " .. (why or "stopped")) end
+end
+local function resume()
+    local s = pdb().stream
+    if type(s) ~= "table" then return end
+    if s.manual or active(KEY) then streamOn(s.manual, true) else pdb().stream = nil end
+end
+Probe:Command("stream", function(args)
+    if args == "on" then streamOn(true)
+    elseif args == "off" then streamOff("by hand")
+    else say("/fp nr stream on|off: one PARTY message a second (" .. (stream.ticker and "on" or "off") .. ")") end
+end, "on|off: a numbered PARTY message every second, kept across a /reload (#83)")
+
+-- A step that sends or samples `count` times, `every` seconds apart, from a
+-- ticker; completes when they are done.
+local function timed(count, every, fn, label)
+    local job
+    return function()
+        if job and job.dead then job = nil end
+        if not job then
+            local j = { n = 0, codes = {} }
+            job = j
+            jobs[#jobs + 1] = j
+            j.ticker = C_Timer.NewTicker(every, function()
+                if not (active(KEY) or active(GEOKEY)) then j.ticker:Cancel(); j.dead = true; return end
+                j.n = j.n + 1
+                fn(j.n, j)
+            end, count)
+        end
+        if job.n < count then return false, ("%s: %d of %d"):format(label, job.n, count) end
+        local j = job
+        job = nil
+        return true, ("%s: %d done%s"):format(label, count, tally(j.codes))
+    end
+end
+local function stopAll()
+    for _, j in ipairs(jobs) do if j.ticker then j.ticker:Cancel() end; j.dead = true end
+    jobs = {}
+    streamOff("the procedure's end")
+end
+
+--------------------------------------------------------------------------------
+-- /fp steps nr party (on H)
+--------------------------------------------------------------------------------
+
+local NAME = "Ærendæl Çağdaş Ünsal-Ångström Ñoño Žižek Šćepanović"
+local function fill(head, n) return head .. ("0123456789"):rep(math.ceil(n / 10)):sub(1, n - #head) end
+
+local function identity()
+    local okN, n1, n2 = pcall(UnitName, "player")
+    plog(("identity: GetUnitName(player, false) %s, UnitName(player) (%s, %s), InChatMessagingLockdown %s"):format(
+        q(me()), okN and q(n1) or "ERROR", okN and q(n2) or "ERROR", str(wpRead(C_ChatInfo.InChatMessagingLockdown))))
+    roster("setup")
+    return ("%s in a party of %s"):format(q(me()), str(wpRead(IsInGroup)))
+end
+local function hello()
+    helloN = helloN + 1
+    return send("PARTY", "hello|" .. helloN)
+end
+local function streamSend(_, j)
+    local code = send("PARTY", nextSeq())
+    j.codes[code] = (j.codes[code] or 0) + 1
+end
+local function burst()
+    local codes = {}
+    for _ = 1, 5 do
+        local code = send("PARTY", nextSeq())
+        codes[code] = (codes[code] or 0) + 1
+    end
+    return "burst of 5" .. tally(codes)
+end
+local function sizes()
+    local out = {}
+    local function one(label, text)
+        out[#out + 1] = ("%s len %d -> %s"):format(label, #text, send("PARTY", text))
+    end
+    one("255 bytes", fill("size255|", 255))
+    one("256 bytes", fill("size256|", 256))
+    one("non-ASCII name", ("name|%d|%s"):format(session, NAME))
+    one("empty snapshot", ("1|%d|1|0|"):format(session))
+    return table.concat(out, "; ")
+end
+local function posSend(_, j)
+    local ok, n, w, _, inst = pcall(UnitPosition, "player")
+    n, w = ok and num(n), ok and num(w)
+    if not (n and w) then plog("pos: no readable position, nothing sent"); return end
+    local code = send("PARTY", ("pos|%.2f|%.2f|%d"):format(n, w, num(inst) or 0))
+    j.codes[code] = (j.codes[code] or 0) + 1
+end
+local function combatBurst(tag)
+    plog(("%s: InCombatLockdown %s, InChatMessagingLockdown %s"):format(tag, str(InCombatLockdown()),
+        str(wpRead(C_ChatInfo.InChatMessagingLockdown))))
+    local codes = {}
+    for _ = 1, 3 do
+        combatN = combatN + 1
+        local code = send("PARTY", "combat|" .. combatN)
+        codes[code] = (codes[code] or 0) + 1
+    end
+    return tag .. tally(codes)
+end
+local function raidSends()
+    plog(("raid: IsInRaid %s"):format(str(wpRead(IsInRaid))))
+    roster("raid")
+    return ("RAID -> %s; PARTY -> %s"):format(send("RAID", "raid|1"), send("PARTY", "raid|2"))
+end
+
+local partySteps = {
+    rev = 1,
+    title = "Party addon messages, run on the herbalist H (#83)",
+    { text = "Setup: H is your herbalist (this window), M your main (the other window). Both grouped in a "
+          .. "PARTY (not a raid), H following M, both logged in with the probe loaded. Leave M's window "
+          .. "idle. Yes when that is so.", ask = true },
+    { text = "The identity and the roster, logged.", auto = true, run = function() stopAll(); return identity() end },
+    { text = "One hello on PARTY (the echo shows in this window's log, M's listener has the rest).", auto = true,
+      run = hello },
+    { text = "The stream: 60 numbered messages over 30 seconds. Wait.",
+      wait = timed(60, 0.5, streamSend, "stream"), timeout = 120 },
+    { text = "A burst of five in one frame.", auto = true, run = burst },
+    { text = "Sizes: 255 bytes, 256 bytes, a long non-ASCII name, an empty snapshot.", auto = true, run = sizes },
+    { text = "Same spot: stand still with H right next to M (H following). Yes when it is so.", ask = true },
+    { text = "Three position messages, a second apart. Stay still.", wait = timed(3, 1, posSend, "pos"),
+      timeout = 60 },
+    { text = "The background stream starts: one message a second, until the end of this procedure.", auto = true,
+      run = function() streamOn(false); return "stream on, session " .. session end },
+    { text = "Press Reload now (or type /reload) in THIS window (H). The stream starts again after it.",
+      reload = true },
+    { text = "Leave the group, then invite again (from either window). Yes when H is back in M's party.",
+      ask = true },
+    { text = "/reload the OTHER window (M), then come back here. Yes when M is logged in and grouped again.",
+      ask = true },
+    { text = "The background stream stops.", auto = true, run = function()
+          streamOff("transitions done")
+          return "stream off" end },
+    { text = "Combat: get H into combat (attack a mob or a training dummy) and stay in it. The probe notices.",
+      wait = function()
+          if not InCombatLockdown() then return false, "not in combat yet" end
+          return true, combatBurst("in combat")
+      end, timeout = 900 },
+    { text = "End the fight. The probe notices.", wait = function()
+          if InCombatLockdown() then return false, "still in combat" end
+          return true, combatBurst("out of combat")
+      end, timeout = 900 },
+    { text = "Raid: convert the party to a raid (M or H as leader). Yes when it is one.", ask = true },
+    { text = "One message on RAID, one on PARTY.", auto = true, run = raidSends },
+    { text = "You can leave it as a raid or disband it. Press Next.", },
+    { text = "Everything stopped.", auto = true, run = function() stopAll(); return "stopped" end },
+    { text = "Type /reload in BOTH windows (this one and M's) so both SavedVariables are written.", reload = true },
+}
+Probe:Steps("party", partySteps)
+
+--------------------------------------------------------------------------------
+-- /fp steps nr partygeo (on M, no gathering tracking)
+--------------------------------------------------------------------------------
+
+-- Why Scan.Where gave nil: its inputs, one by one.
+local function whyNil()
+    local okS, sw, sh = pcall(C_Map.GetMapWorldSize, wpRead(C_Map.GetBestMapForUnit, "player"))
+    local map = wpRead(C_Map.GetBestMapForUnit, "player")
+    local pos = "?"
+    if num(map) then
+        local okP, p = pcall(C_Map.GetPlayerMapPosition, map, "player")
+        if okP and type(p) == "table" and not secret(p) then
+            local okX, x, y = pcall(p.GetXY, p)
+            pos = okX and (fnum(x) .. ", " .. fnum(y)) or "GetXY failed"
+        else
+            pos = okP and str(p) or "ERROR"
+        end
+    end
+    return ("IsInInstance %s, rotateMinimap %s, map %s at %s, world size %s x %s"):format(str(wpRead(IsInInstance)),
+        str(wpRead(C_CVar.GetCVar, "rotateMinimap")), str(map), pos, okS and fnum(sw) or "ERROR", okS and fnum(sh) or "")
+end
+local function geoSample(tag, i)
+    local ok, n, w, z, inst = pcall(UnitPosition, "player")
+    local where = "NodeRadar isn't loaded"
+    local nrr = nr()
+    if nrr then
+        local okW, r = pcall(nrr.Scan.Where)
+        if not okW then where = "ERROR " .. str(r)
+        elseif type(r) == "table" and not secret(r) then where = Probe.Describe(r, 1)
+        else where = "nil (" .. whyNil() .. ")" end
+    end
+    plog(("geo %s #%d: UnitPosition (%s, %s, %s, inst %s); speed %s; GetViewRadius %s; Minimap %s x %s, zoom %s; Scan.Where %s")
+        :format(tag, i, ok and fnum(n) or "ERROR", ok and fnum(w) or "", ok and fnum(z) or "", ok and str(inst) or "",
+            fnum(wpRead(GetUnitSpeed, "player")), fnum(wpRead(C_Minimap.GetViewRadius)),
+            fnum(wpRead(Minimap.GetWidth, Minimap)), fnum(wpRead(Minimap.GetHeight, Minimap)),
+            str(wpRead(Minimap.GetZoom, Minimap)), where))
+end
+local geoSteps = {
+    rev = 1,
+    title = "What the main's minimap gives with no tracking, run on M (#83)",
+    { text = "Turn EVERY gathering tracking off on this character (Find Herbs, Find Minerals, ...) in the "
+          .. "minimap's tracking menu. The step completes when none is on.", wait = function()
+          local on = tracking(true)
+          if #on > 0 then return false, "still on: " .. table.concat(on, ", ") end
+          return true, "gathering tracking off"
+      end, timeout = 900 },
+}
+for _, s in ipairs({
+    { "still", "Stand still. Yes when you are." },
+    { "riding", "Ride along at speed and keep riding. Yes when you are." },
+    { "zoomin", "Zoom the minimap all the way IN with its + button. Yes when done." },
+    { "zoomout", "Zoom the minimap all the way OUT with its - button. Yes when done." },
+    { "outdoors", "Stand outdoors, still. Yes when you are." },
+    { "indoors", "Go indoors (a building, a cave or a tunnel) and stand still. Yes when you are." },
+    { "outdoors2", "Come back outdoors and stand still. Yes when you are." },
+}) do
+    local tag = s[1]
+    geoSteps[#geoSteps + 1] = { text = s[2], ask = true }
+    geoSteps[#geoSteps + 1] = { text = "Sampling (" .. tag .. "): eight readings a quarter second apart.",
+        wait = timed(8, 0.25, function(i) geoSample(tag, i) end, "geo " .. tag), timeout = 60 }
+end
+geoSteps[#geoSteps + 1] = { text = "Type /reload (or press Reload now) to save the results.", reload = true }
+Probe:Steps("partygeo", geoSteps)
+
+--------------------------------------------------------------------------------
+-- /fp steps nr partyplate (on M, no Herbalism)
+--------------------------------------------------------------------------------
+
+local PWANT = { { "softTargetInteract", "3" }, { "SoftTargetIconGameObject", "1" }, { "SoftTargetInteractRange", "60" } }
+local function cget(name) return wpRead(C_CVar.GetCVar, name) end
+local function csame(a, b) return a == b or (tonumber(a) ~= nil and tonumber(a) == tonumber(b)) end
+local function ppdb()
+    NodeRadarProbeDB.partyplate = NodeRadarProbeDB.partyplate or {}
+    return NodeRadarProbeDB.partyplate
+end
+local function ppending()
+    local s = NodeRadarProbeDB.partyplate
+    return s ~= nil and s.saved ~= nil
+end
+-- Each CVar back, but only while it is still at our value (a change of the player's wins).
+local function prestore()
+    if InCombatLockdown() then return false end
+    local s = ppdb()
+    if not s.saved then return true end
+    local kept = {}
+    for name, old in pairs(s.saved) do
+        if csame(cget(name), s.applied[name]) then wpRead(C_CVar.SetCVar, name, old) else kept[#kept + 1] = name end
+    end
+    s.saved, s.applied = nil, nil
+    plog("partyplate: CVars put back" .. (#kept > 0 and ("; left as you changed them: " .. table.concat(kept, ", ")) or ""))
+    return true
+end
+local function claim()
+    if InCombatLockdown() then return false, "in combat" end
+    if ppending() then prestore() end
+    local s = ppdb()
+    s.saved, s.applied = {}, {}
+    local out = {}
+    for _, c in ipairs(PWANT) do
+        local name, v = c[1], c[2]
+        local old = cget(name)
+        if type(old) ~= "string" or old:find("^[A-Z][A-Z]") then
+            out[#out + 1] = name .. " " .. str(old)
+        else
+            if not csame(old, v) then wpRead(C_CVar.SetCVar, name, v) end
+            local now = cget(name)
+            if csame(now, v) and not csame(old, v) then s.saved[name], s.applied[name] = old, v end
+            out[#out + 1] = ("%s %s -> %s"):format(name, str(old), str(now))
+        end
+    end
+    local nrr = nr()
+    local text = "set: " .. table.concat(out, "; ") .. ("; NodeRadar's marker %s"):format(str(nrr and nrr.db.marker))
+    plog("partyplate: " .. text)
+    return true, text
+end
+local function plateDump()
+    local ok, list = pcall(C_NamePlate.GetNamePlates)
+    local out = {}
+    if ok and type(list) == "table" then
+        for _, p in ipairs(list) do
+            local uf = p.UnitFrame
+            local unit = p.namePlateUnitToken or (uf and uf.unit)
+            if type(unit) == "string" and not secret(unit) then
+                out[#out + 1] = ("%s name %s, UnitIsGameObject %s, UnitIsUnit(softinteract) %s"):format(unit,
+                    q(wpRead(UnitName, unit)), str(wpRead(UnitIsGameObject, unit)),
+                    str(wpRead(UnitIsUnit, unit, "softinteract")))
+            else
+                out[#out + 1] = "a plate with no readable unit token"
+            end
+        end
+    else
+        out[1] = "GetNamePlates failed: " .. str(list)
+    end
+    local text = ("%d plates: %s; UnitExists(softinteract) %s, its name %s, UnitIsGameObject %s"):format(
+        ok and type(list) == "table" and #list or 0, #out > 0 and table.concat(out, "; ") or "none",
+        str(wpRead(UnitExists, "softinteract")), q(wpRead(UnitName, "softinteract")),
+        str(wpRead(UnitIsGameObject, "softinteract")))
+    plog("partyplate: " .. text)
+    return text
+end
+local plateSteps = {
+    rev = 1,
+    title = "Does a character without Herbalism get the soft-interact plate on a herb (#83), run on M",
+    { text = "Out of combat, on the character without Herbalism, with NodeRadar's marker off. The round sets the "
+          .. "game's interact targeting on and puts it back at the end.", wait = claim, timeout = 900 },
+    { text = "Face a herb node on the ground, the kind your herbalist picks, within 10 yards, and stand still. "
+          .. "Yes when you do.", ask = true },
+    { text = "The plates, logged and photographed.", auto = true, run = plateDump,
+      screenshot = "partyplate: the herb" },
+    { text = "Is there a name floating over the herb?", ask = true },
+    { text = "Your settings put back.", auto = true, run = function()
+          if prestore() then return "put back: " .. (function()
+              local out = {}
+              for _, c in ipairs(PWANT) do out[#out + 1] = c[1] .. " " .. str(cget(c[1])) end
+              return table.concat(out, ", ")
+          end)() end
+          return "in combat: put back when it ends"
+      end },
+    { text = "Type /reload (or press Reload now) to save the results.", reload = true },
+}
+Probe:Steps("partyplate", plateSteps)
+guardRound(PLATEKEY, ppending, prestore)
+
+--------------------------------------------------------------------------------
+-- The listener, always on
+--------------------------------------------------------------------------------
+
+local listener = CreateFrame("Frame")
+Probe:RegisterEvents(listener, { "ADDON_LOADED", "PLAYER_LOGIN", "CHAT_MSG_ADDON", "GROUP_ROSTER_UPDATE" })
+listener:SetScript("OnEvent", function(_, event, ...)
+    if event == "CHAT_MSG_ADDON" then
+        onAddon(...)
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        roster("GROUP_ROSTER_UPDATE")
+    elseif event == "ADDON_LOADED" then
+        if (...) == ADDON then register() end
+    elseif event == "PLAYER_LOGIN" then
+        resume()
+    end
+end)
+
+-- A reload in a test: the counters and the tickers gone, a new session.
+NS._partyTest = {
+    session = function() return session end,
+    wipe = function(newSession)
+        for _, j in ipairs(jobs) do if j.ticker then j.ticker:Cancel() end end
+        if stream.ticker then stream.ticker:Cancel() end
+        jobs = {}
+        stream = {}
+        seqN, helloN, combatN, secretSeen = 0, 0, 0, 0
+        session = newSession
+    end,
+    stream = function() return stream end,
+    onAddon = onAddon,
+    nameBytes = function() return #NAME end,
+}
 end)()
 
 NS._test = { Probe = Probe, state = state, CONVENTIONS = CONVENTIONS, nearestNode = nearestNode, marks = marks }
