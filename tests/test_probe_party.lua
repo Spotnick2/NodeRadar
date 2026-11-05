@@ -43,7 +43,7 @@ local function errors()
 end
 local function fp(cmd) SlashCmdList.FOREVERPROBE(cmd) end
 local function rec(name) return FP.db.steps.records["NodeRadarProbe/" .. name] end
-local function tick(s) for _ = 1, math.floor(s / 0.05 + 0.5) do WoW.now = WoW.now + 0.05; WoW.tick(0.05) end end
+local function tick(s) for _ = 1, math.floor(s / 0.05 + 0.5) do WoW.now = WoW.now + 0.05 + 1e-9; WoW.tick(0.05) end end   -- the epsilon: the host polls at now - last >= 1, which 20 float steps of 0.05 can miss
 local function settle() for _ = 1, 4 do tick(0.5); WoW.fire("SCREENSHOT_SUCCEEDED") end end
 local function mine() -- what this client sent on our prefix, in order
     local out = {}
@@ -190,30 +190,50 @@ for i = 61, 65 do
 end
 check(frame and sameFrame, "...all five at the same time")
 
--- 6: the sizes.
+-- 6: the sizes: 15 quiet seconds after the burst, then each alone, 3 s apart.
+local burstN = #mine()
+tick(14)
+eq(r(6).status, nil, "sizes: still quiet 14 s after the burst")
+eq(#mine(), burstN, "...nothing sent while it is quiet")
+tick(1.5)
+eq(#mine(), burstN, "...nothing sent at 15 s either: the first goes out 3 s later")
+tick(3)
+eq(#mine(), burstN + 1, "...then one send")
+tick(14.5)
 eq(r(6).status, "done", "sizes: " .. d(6))
 local s255, s256, sName, sEmpty
 all = mine()
+local order = {}
 for _, m in ipairs(all) do
-    if m.text:find("^size255|") then s255 = m.text
-    elseif m.text:find("^size256|") then s256 = m.text
-    elseif m.text:find("^name|") then sName = m.text
-    elseif m.text:find("^1|") then sEmpty = m.text end
+    if m.text:find("^size255|") then s255 = m.text; order[#order + 1] = "255"
+    elseif m.text:find("^size256|") then s256 = m.text; order[#order + 1] = "256"
+    elseif m.text:find("^name|") then sName = m.text; order[#order + 1] = "name"
+    elseif m.text:find("^1|") then sEmpty = m.text; order[#order + 1] = "empty" end
 end
+eq(table.concat(order, ","), "255,256,name,empty", "the four in order")
 eq(s255 and #s255, 255, "a payload of exactly 255 bytes")
 eq(s256 and #s256, 256, "a payload of 256 bytes")
 eq(sName and #sName, #("name|" .. session .. "|") + T.nameBytes(), "a long non-ASCII name, sent byte for byte")
 check(sName and sName:find("\195\134", 1, true), "...its accented letters as UTF-8")
 check(T.nameBytes() >= 40, "...of 40 bytes or more")
 eq(sEmpty, ("1|%d|1|0|"):format(session), "an empty snapshot")
-check(d(6):find("255 bytes len 255 -> 0; 256 bytes len 256 -> 2;", 1, true), "...each length and result logged: " .. d(6))
-check(d(6):find("empty snapshot len " .. #sEmpty .. " -> 0", 1, true), "...the empty snapshot's too")
+check(logged("sizes: 255 bytes len 255 %-> 0"), "each length and result logged: 255")
+check(logged("sizes: 256 bytes len 256 %-> 2"), "...256 refused, its code kept")
+check(logged("sizes: empty snapshot len " .. #sEmpty .. " %-> 0"), "...the empty snapshot's too")
+local sizeT = {}
+for _, line in ipairs(party().lines) do
+    local t, text = line:match("^[%d%.]+ TX PARTY len %d+ t=([%d%.]+) %-> %d+ payload=(.*)$")
+    if t and (text:find("^size25") or text:find("^name|") or text:find("^1|")) then sizeT[#sizeT + 1] = tonumber(t) end
+end
+check(#sizeT == 4 and math.abs(sizeT[2] - sizeT[1] - 3) < 0.06 and math.abs(sizeT[3] - sizeT[2] - 3) < 0.06
+    and math.abs(sizeT[4] - sizeT[3] - 3) < 0.06, "...3 seconds apart")
+check(d(6):find("sizes: 4 done: 0 x3, 2 x1", 1, true), "...done, the results tallied: " .. d(6))
 
 -- 7, 8: the same spot, three positions a second apart.
 WoW.sendResult.PARTY = nil
 WoW.pos = { 10.123, 20.456, 1 }
 S.Answer(true)
-tick(4)
+tick(4.1)
 eq(r(8).status, "done", "positions: " .. d(8))
 check(d(8):find("pos: 3 done: 0 x3", 1, true), "...three sent")
 local poss = {}
@@ -313,7 +333,7 @@ fp("steps nr party")
 S.Answer(true)
 tick(0.2)
 eq(mine()[mark + 1].text, "hello|1", "...a new session's hello count starts again")
-for _ = 1, 3 do S.Skip() end                               -- to the background stream
+for _ = 1, 4 do S.Skip() end                               -- to the background stream
 tick(0.2)
 eq(rec("party").results[9].status, "done", "a second run: the background stream on")
 tick(2.05)
@@ -334,7 +354,7 @@ fp("steps stop")
 mark = #mine()
 fp("steps nr party")
 S.Answer(true)
-tick(31)
+tick(32.5)
 local seqCount = 0
 for i = mark + 1, #mine() do if mine()[i].text:find("^seq|") then seqCount = seqCount + 1 end end
 eq(seqCount, 60 + 5, "a restart mid-stream: its own 60 and the burst, no stale ticker's")
@@ -363,6 +383,61 @@ tick(3)
 eq(#mine(), mark, "/fp nr stream off stops it")
 
 --------------------------------------------------------------------------------
+-- /fp steps nr partysizes (on H, M idle): 15 quiet seconds, then each size alone
+--------------------------------------------------------------------------------
+
+WoW.sendResult.PARTY = function(text) return #text > 255 and 2 or 0 end
+local sess = T.session()
+mark = #mine()
+fp("steps nr partysizes")
+local function z(i) return rec("partysizes").results[i] or {} end
+tick(20)
+eq(#mine(), mark, "partysizes: nothing sent before the ask is answered")
+S.Answer(true)                                             -- 1
+tick(14)
+eq(z(2).status, nil, "...the quiet wait is still waiting at 14 s")
+eq(#mine(), mark, "...and sent nothing")
+tick(2)
+eq(z(2).status, "done", "...done after 15 s: " .. tostring(z(2).detail))
+eq(#mine(), mark, "...still nothing sent")
+tick(1.5)
+eq(#mine(), mark, "the first size waits for its 3 seconds")
+tick(2.5)
+eq(#mine(), mark + 1, "...then goes out")
+tick(3.05)
+eq(#mine(), mark + 2, "...the second 3 seconds later")
+tick(3.05)
+eq(#mine(), mark + 3, "...the third")
+tick(3.05)
+eq(#mine(), mark + 4, "...the fourth")
+tick(1.5)
+eq(z(3).status, "done", "the sizes step is done: " .. tostring(z(3).detail))
+local sent = {}
+for i = mark + 1, mark + 4 do sent[#sent + 1] = mine()[i].text end
+check(sent[1]:find("^size255|") and sent[2]:find("^size256|") and sent[3]:find("^name|") and sent[4]:find("^1|"),
+    "...in order: 255, 256, the name, the empty snapshot")
+eq(#sent[1], 255, "...255 bytes")
+eq(#sent[2], 256, "...256 bytes")
+eq(#sent[3], #("name|" .. sess .. "|") + T.nameBytes(), "...the name's bytes")
+eq(#sent[4], #(("1|%d|1|0|"):format(sess)), "...the empty snapshot's bytes")
+local st = {}
+for _, line in ipairs(party().lines) do
+    local t, text = line:match("^[%d%.]+ TX PARTY len %d+ t=([%d%.]+) %-> %d+ payload=(.*)$")
+    if t and (text:find("^size25") or text:find("^name|") or text:find("^1|")) then st[#st + 1] = tonumber(t) end
+end
+local lastFour = { st[#st - 3], st[#st - 2], st[#st - 1], st[#st] }
+check(lastFour[4] and math.abs(lastFour[2] - lastFour[1] - 3) < 0.06 and math.abs(lastFour[3] - lastFour[2] - 3) < 0.06
+    and math.abs(lastFour[4] - lastFour[3] - 3) < 0.06, "...3 seconds apart")
+check(logged("sizes: 255 bytes len 255 %-> 0") and logged("sizes: 256 bytes len 256 %-> 2")
+    and logged("sizes: non%-ASCII name len " .. #sent[3] .. " %-> 0")
+    and logged("sizes: empty snapshot len " .. #sent[4] .. " %-> 0"), "...each length and result logged")
+check(z(3).detail and z(3).detail:find("sizes: 4 done: 0 x3, 2 x1", 1, true), "...and tallied: " .. tostring(z(3).detail))
+eq(rec("partysizes").at, 4, "then it waits for the reload of both windows")
+eq(#WoW.tickers, 0, "...no ticker left")
+WoW.sendResult.PARTY = nil
+fp("steps stop")
+
+--------------------------------------------------------------------------------
 -- /fp steps nr partygeo (on M)
 --------------------------------------------------------------------------------
 
@@ -378,7 +453,7 @@ WoW.tracking[1].active = false
 tick(1.2)
 eq(g(1).status, "done", "...tracking off: " .. tostring(g(1).detail))
 S.Answer(true)                                             -- 2: standing still
-tick(3)
+tick(4.1)
 eq(g(3).status, "done", "still: " .. tostring(g(3).detail))
 eq(count("geo still #%d"), 8, "...eight samples")
 l = logged("geo still #8")
@@ -391,30 +466,30 @@ local t2s = logged("geo still #2"):match("^([%d%.]+)")
 check(math.abs((t2s - t1s) - 0.25) < 0.06, "...a quarter second apart")
 WoW.speed, WoW.pos = 14, { 330.5, 400.25, 1 }
 S.Answer(true)                                             -- 4: riding
-tick(3)
+tick(4.1)
 l = logged("geo riding #8")
 check(l and l:find("speed 14.00", 1, true) and l:find("330.50", 1, true), "riding: the speed and the moved position")
 Minimap._zoom = 5
 S.Answer(true)
-tick(3)
+tick(4.1)
 l = logged("geo zoomin #8")
 check(l and l:find("zoom 5", 1, true) and l:find("GetViewRadius 66.67", 1, true), "zoomed in: the zoom and the radius")
 Minimap._zoom = 0
 S.Answer(true)
-tick(3)
+tick(4.1)
 l = logged("geo zoomout #8")
 check(l and l:find("zoom 0", 1, true) and l:find("GetViewRadius 233.33", 1, true), "zoomed out")
 S.Answer(true)
-tick(3)
+tick(4.1)
 check(logged("geo outdoors #8"), "outdoors sampled")
 WoW.instanced = true
 S.Answer(true)
-tick(3)
+tick(4.1)
 l = logged("geo indoors #8")
 check(l and l:find("Scan.Where nil (IsInInstance true, rotateMinimap 0", 1, true), "indoors: Scan.Where nil, and why: " .. tostring(l))
 WoW.instanced = false
 S.Answer(true)
-tick(3)
+tick(4.1)
 check(logged("geo outdoors2 #8"), "back outdoors sampled")
 eq(rec("partygeo").at, 16, "...waiting for the reload")
 fp("steps stop")

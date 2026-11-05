@@ -38,7 +38,8 @@
 -- icons in game, #28); /fp steps nr glass and bronze (glass discs and bronze rings around them, #41);
 -- /fp steps nr styles (NodeRadar's own frames, #41); /fp steps nr compass, compass3, compasslook, compasslook2, compass4 and compass5 (#29); yellow (#50); track and track2 (#47); gather (#29); compassmove (#57); marker (#61); snooze (#46); cave (#63); world (#61: NodeRadar's marker in game);
 -- party (#83: PARTY addon messages, run on the herbalist H), partygeo (the main M's minimap and position with no
--- gathering tracking) and partyplate (M's soft-interact plate on a herb, no Herbalism). The listener for the
+-- gathering tracking), partyplate (M's soft-interact plate on a herb, no Herbalism) and partysizes (on H: after
+-- 15 quiet seconds, the four payload sizes, each alone 3 s apart; the throttle spoiled party's). The listener for the
 -- probe-only prefix NRProbe is always on while the probe is loaded; /fp nr stream on|off is the numbered PARTY stream.
 
 local ADDON, NS = ...
@@ -5987,6 +5988,7 @@ local PREFIX = "NRProbe"
 local KEY = Probe.name .. "/party"
 local GEOKEY = Probe.name .. "/partygeo"
 local PLATEKEY = Probe.name .. "/partyplate"
+local SIZESKEY = Probe.name .. "/partysizes"
 local MAX_LINES = 1500
 local session = GetServerTime()               -- this load's: a reload is a new session
 local seqN, helloN, combatN = 0, 0, 0
@@ -6133,7 +6135,7 @@ local function timed(count, every, fn, label)
             job = j
             jobs[#jobs + 1] = j
             j.ticker = C_Timer.NewTicker(every, function()
-                if not (active(KEY) or active(GEOKEY)) then j.ticker:Cancel(); j.dead = true; return end
+                if not (active(KEY) or active(GEOKEY) or active(SIZESKEY)) then j.ticker:Cancel(); j.dead = true; return end
                 j.n = j.n + 1
                 fn(j.n, j)
             end, count)
@@ -6172,7 +6174,9 @@ local function streamSend(_, j)
     local code = send("PARTY", nextSeq())
     j.codes[code] = (j.codes[code] or 0) + 1
 end
+local burstAt                                 -- when the last burst went out (the throttle's clock)
 local function burst()
+    burstAt = GetTime()
     local codes = {}
     for _ = 1, 5 do
         local code = send("PARTY", nextSeq())
@@ -6180,16 +6184,37 @@ local function burst()
     end
     return "burst of 5" .. tally(codes)
 end
-local function sizes()
-    local out = {}
-    local function one(label, text)
-        out[#out + 1] = ("%s len %d -> %s"):format(label, #text, send("PARTY", text))
+-- The four payloads; each is sent alone, 3 s apart (the PARTY throttle drops a
+-- send that follows a burst: 15 quiet seconds first).
+local function sizeList()
+    return {
+        { "255 bytes", fill("size255|", 255) },
+        { "256 bytes", fill("size256|", 256) },
+        { "non-ASCII name", ("name|%d|%s"):format(session, NAME) },
+        { "empty snapshot", ("1|%d|1|0|"):format(session) },
+    }
+end
+local function sizeSend(i, j)
+    local item = sizeList()[i]
+    local code = send("PARTY", item[2])
+    plog(("sizes: %s len %d -> %s"):format(item[1], #item[2], code))
+    j.codes[code] = (j.codes[code] or 0) + 1
+end
+local sizesTimed = timed(4, 3, sizeSend, "sizes")
+-- A wait step that sends nothing for `secs` (from the last burst, if asked),
+-- the throttle refilling; says so on screen.
+local function quiet(secs, fromBurst)
+    local from, polled
+    return function()
+        if polled and GetTime() - polled > 5 then from = nil end   -- polling stopped (Stop, Back): start again
+        polled = GetTime()
+        from = from or (fromBurst and burstAt) or GetTime()
+        local left = from + secs - GetTime()
+        if left > 0 then return false, ("quiet, nothing sent (the throttle refills): %d s left"):format(math.ceil(left)) end
+        from, polled = nil, nil
+        if fromBurst then burstAt = nil end
+        return true, ("quiet for %d s"):format(secs)
     end
-    one("255 bytes", fill("size255|", 255))
-    one("256 bytes", fill("size256|", 256))
-    one("non-ASCII name", ("name|%d|%s"):format(session, NAME))
-    one("empty snapshot", ("1|%d|1|0|"):format(session))
-    return table.concat(out, "; ")
 end
 local function posSend(_, j)
     local ok, n, w, _, inst = pcall(UnitPosition, "player")
@@ -6215,6 +6240,7 @@ local function raidSends()
     return ("RAID -> %s; PARTY -> %s"):format(send("RAID", "raid|1"), send("PARTY", "raid|2"))
 end
 
+local afterBurst = quiet(15, true)
 local partySteps = {
     rev = 1,
     title = "Party addon messages, run on the herbalist H (#83)",
@@ -6227,7 +6253,13 @@ local partySteps = {
     { text = "The stream: 60 numbered messages over 30 seconds. Wait.",
       wait = timed(60, 0.5, streamSend, "stream"), timeout = 120 },
     { text = "A burst of five in one frame.", auto = true, run = burst },
-    { text = "Sizes: 255 bytes, 256 bytes, a long non-ASCII name, an empty snapshot.", auto = true, run = sizes },
+    { text = "Sizes: 15 quiet seconds after the burst (nothing sent), then 255 bytes, 256 bytes, a long "
+          .. "non-ASCII name and an empty snapshot, each alone, 3 seconds apart. Wait.",
+      wait = function()
+          local ok, detail = afterBurst()
+          if not ok then return false, detail end
+          return sizesTimed()
+      end, timeout = 120 },
     { text = "Same spot: stand still with H right next to M (H following). Yes when it is so.", ask = true },
     { text = "Three position messages, a second apart. Stay still.", wait = timed(3, 1, posSend, "pos"),
       timeout = 60 },
@@ -6258,6 +6290,20 @@ local partySteps = {
     { text = "Type /reload in BOTH windows (this one and M's) so both SavedVariables are written.", reload = true },
 }
 Probe:Steps("party", partySteps)
+
+-- /fp steps nr partysizes (on H, M idle and listening)
+local sizesQuiet = quiet(15)
+Probe:Steps("partysizes", {
+    rev = 1,
+    title = "Party addon message sizes, run on the herbalist H (#83)",
+    { text = "H is your herbalist (this window), M your main (the other window). Both in a party, both logged "
+          .. "in with the probe loaded, nothing else running. Yes when that is so.", ask = true },
+    { text = "Quiet: nothing is sent for 15 seconds, so the PARTY throttle refills. Wait.",
+      wait = sizesQuiet, timeout = 60 },
+    { text = "The four sizes, each alone, 3 seconds apart: 255 bytes, 256 bytes, a long non-ASCII name, an "
+          .. "empty snapshot. Wait.", wait = sizesTimed, timeout = 60 },
+    { text = "Type /reload in BOTH windows (this one and M's) so both SavedVariables are written.", reload = true },
+})
 
 --------------------------------------------------------------------------------
 -- /fp steps nr partygeo (on M, no gathering tracking)
