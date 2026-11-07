@@ -79,8 +79,10 @@ turn on Find Herbs or Find Minerals.
   They shrink with distance and fade out between 45 and 60 yards; the compass supplies the
   distance readout. Their height is approximate, and they can show through terrain. Nearby, when the game supplies
   the node's interact plate (about 15 yards), twinkling stars take over at the node's real spot.
-  The beacon works with the compass off. Your own map pin or tracked objective takes priority;
-  while the beacon is active, a newly accepted quest may not automatically become tracked.
+  The beacon works with the compass off. Your own map pin or tracked objective takes priority
+  (an addon that tracks quests for you, such as a levelling guide, keeps the distant beacon hidden;
+  the nearby stars still show); while the beacon is active, a newly accepted quest may not
+  automatically become tracked.
   Interact targeting and in-game navigation settings are restored when no longer needed, and
   changes of yours are kept. Distance scaling and the vapor-and-sparkle appearance have been checked in game.
 
@@ -92,7 +94,10 @@ turn on Find Herbs or Find Minerals.
   without the profession or any tracking there, whether its own icons are on or not. Only nodes the
   gatherer wants are sent (its skill, its herb and ore lists); a node it gathers leaves the other
   minimap at once, and leaving the group clears them. Both need NodeRadar, and the two characters in
-  one party or raid.
+  one party or raid. With the compass or the marker on, they point at the group's nodes too, your
+  own first: the group's only when you have none of yours to point at (so a miner and an herbalist
+  each keep their own). A group member's node that arrives ripples on your minimap as your own do
+  (the sonar on the node), best effort.
 
 - **A minimap button.** Left-click: quick settings (the radar, the icons, the compass) and the
   compass's snooze; right-click: the Options page. It drags around the minimap, and button
