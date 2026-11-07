@@ -944,3 +944,47 @@ Kalizo (no profession, `partyNodes` on, its own `icons` **off**) with Drakuza (H
   them) during the icons toggle and `iconstyle yellow`/`auto`, so that step's yes had nothing to
   show. Covered offline (test_share: restyled with icons off).
 - No error, failure, secret or taint on either client.
+
+### Party nodes' step 2: `/fp steps nr partyguide` (70790, 2026-11-06) (#83)
+
+Kalizo (no profession, `partyNodes` on; the round turned its `compass` and `marker` on and put them
+back) with Drakuza (Herbalism, `shareNodes` on, Find Herbs) riding ahead. The complete run
+started 12:15:36 (an earlier one was stopped from the panel, its settings put back).
+
+- **The compass:** its target a party Silverleaf (`party true`, item 765) at 184 yd, the ring
+  shown with the herb's icon and the distance. The owner: the arrow points at the herb.
+- **The stars:** at 7.4 yd, `Marker.Nearby()` true and `Share.Near` true, the ring hidden (within
+  `Compass.NEAR`, as designed); the screenshot has the star over the herb. The owner: yes, and no
+  beacon.
+- **The sonar:** one `Alert.Sonar(75.78, -2.89, "herbs")` in a 22.6 s window, for a Peacebloom
+  Drakuza's alert had just found; no second call. The owner: the green ripple at that herb, at about
+  the same time. The delay after the message wasn't logged.
+- **The beacon: not shown.** At 20.9 yd from the party target, `beacon shown false, waypoint ours no`;
+  the decision log's reason in range was `navigation unavailable`, so the target was fresh and in
+  range but our user waypoint was never placed. The owner's yes had a note, "it only sparkles at 15
+  yards or less": they saw the stars, not the beacon. `Far.Reconcile` places the waypoint only when
+  the slot is free (no user waypoint, nothing super-tracked) and the navigation CVar is claimed;
+  which of those held wasn't logged: `partybeacon`, below.
+- No error, failure, secret or taint.
+
+### Why the beacon didn't show: `/fp steps nr partybeacon` (70790, 2026-11-06) (#83)
+
+The owner's hunter (Mining, Find Minerals on) receiving the druid's herbs, Thendal Grove. The
+compass on a party Peacebloom at 20.8 yd (own nodes first: no ore of its own in view).
+
+- **The slot was taken by a quest:** `IsSuperTrackingAnything` true, `IsSuperTrackingQuest` true
+  (quest 92463), the user waypoint false; no corpse, content, map pin or vignette. The navigation
+  frame present, valid, 150 yd away and **clamped** to the screen edge. `free()` false, so
+  `Far.Reconcile` never claimed the navigation CVar (`showInGameNavigation` stayed 0,
+  `farNavigation` nil) nor placed the waypoint: `want` set (map 2521, 0.4464, 0.2094, party
+  Peacebloom), `ours` none, reason `navigation unavailable`. The same at the second read 12 s later.
+- **Who super-tracked it:** a levelling guide addon. The screenshot has its gold arrow at the top
+  centre, labelled with the guide's step and "149yd", the clamped navigation frame, pointing at
+  that step's quest turn-in. The owner answered "no" to "is a quest tracked?": they hadn't tracked
+  one themselves. So with such a guide running, the quest slot is never free, and the beacon, which
+  never takes the slot from someone else (docs/PLAN.md, "Free"), never shows, for a local target
+  as much as a party one. Not a step-2 defect. The partyguide run's missing beacon was the same:
+  its beacon screenshot has the guide's arrow too, on its own step at 84 yd.
+- `want`'s point agrees with the minimap's coordinates (the player at 44.3, 21.0; the herb 20.8 yd
+  away at 44.6, 20.9).
+- No error, failure, secret or taint.
