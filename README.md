@@ -94,10 +94,11 @@ turn on Find Herbs or Find Minerals.
   without the profession or any tracking there, whether its own icons are on or not. Only nodes the
   gatherer wants are sent (its skill, its herb and ore lists); a node it gathers leaves the other
   minimap at once, and leaving the group clears them. Both need NodeRadar, and the two characters in
-  one party or raid. With the compass or the marker on, they point at the group's nodes too, your
-  own first: the group's only when you have none of yours to point at (so a miner and an herbalist
-  each keep their own). A group member's node that arrives ripples on your minimap as your own do
-  (the sonar on the node), best effort.
+  one party or raid. The compass, and the marker's distant beacon that follows it, point at the
+  group's nodes too, your own first: the group's only when you have none of yours to point at (so a
+  miner and an herbalist each keep their own). The marker's nearby stars show on any group node
+  within reach, yours or not. A group member's node that arrives ripples on your minimap as your
+  own do (the sonar on the node), best effort.
 
 - **A minimap button.** Left-click: quick settings (the radar, the icons, the compass) and the
   compass's snooze; right-click: the Options page. It drags around the minimap, and button
