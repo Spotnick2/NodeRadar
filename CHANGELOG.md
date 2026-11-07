@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Your group's nodes, step 2** (#83): with "Show your group's nodes on your minimap" on, the
+  experimental compass, distant beacon and nearby stars point at a group member's nodes too, on a
+  character with no tracking and no profession. Your own nodes come first: the compass points at a
+  group member's only when it has none of yours to point at. A group member's node that arrives ripples on your
+  minimap as your own do (the "sonar on the node" option), best effort: a node the gatherer
+  alerted on just before you joined, reloaded or changed zone doesn't.
+
 ## v1.6.0
 
 Released 2026-11-05.

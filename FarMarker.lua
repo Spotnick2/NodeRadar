@@ -213,10 +213,13 @@ local function inRange()
     local d = targetDistance()
     return d and d >= 6 and d < Far.RANGE
 end
+-- A party node (#83) by Share's freshness, wanted by its sender; a local one by the sweep's.
 local function fresh()
-    return want and GetTime() - want.at <= NR.db.interval + Far.GRACE
-        and NR.Compass.Chosen() == want.record and NR.Alert.Wanted(want.record.name)
-        and not NR.Compass.Snoozed(want.record)
+    if not want then return false end
+    local r = want.record
+    if NR.Compass.Chosen() ~= r or NR.Compass.Snoozed(r) then return false end
+    if r.party then return NR.Share.Live(r) end
+    return GetTime() - want.at <= NR.db.interval + Far.GRACE and NR.Alert.Wanted(r.name)
 end
 local function usable()
     return NR.Marker.On() and not exiting and NR.Marker.Settled() and not API.Gamepad()
@@ -309,6 +312,8 @@ end
 function Far.Update(result)
     if not NR.Marker.On() then return end
     local r, where = NR.Compass.Chosen(), result and result.where
+    -- A party node's map point from the map read now, with the position below (#83).
+    if r and r.party then where = NR.Scan.Where() end
     if r and want and want.record == r and where and where.map == want.map
         and math.abs(r.north - want.north) < 1 and math.abs(r.west - want.west) < 1 then
         want.at = GetTime()

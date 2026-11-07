@@ -171,10 +171,21 @@ gripText:SetPoint("CENTER", body, "CENTER")
 gripText:SetText("Drag to move")
 root:SetMovable(true)
 
--- The item a record gives (NODE_INFO), or nil.
+-- The item a record gives (NODE_INFO), or a party node's own (#83), or nil.
 local function itemOf(t)
+    if t and t.party then return t.item end
     local info = t and NR.Learn.Info(t.name)
     return info and API.Num(info.item)
+end
+
+-- Each candidate by its own freshness (#83, Codex): a local record while the
+-- local sweep is recent, a party node while Share says it's live.
+local function localFresh()
+    return lastSweep ~= nil and GetTime() - lastSweep <= NR.db.interval + Compass.GRACE
+end
+local function live(t)
+    if t.party then return NR.Share.Live(t) end
+    return localFresh()
 end
 
 local function ownsTooltip()
@@ -299,8 +310,7 @@ local function frame()
     if not t then hide(); return end
     local pn, pw = here()
     local f = facing()
-    if not (pn and f) or not lastSweep or GetTime() - lastSweep > NR.db.interval + Compass.GRACE
-        or API.Dead() or onTaxi() then
+    if not (pn and f) or not live(t) or API.Dead() or onTaxi() then
         hide()
         return
     end
@@ -428,8 +438,8 @@ end
 function Compass.Target()
     if not (Compass.On() and target) then return nil end
     local pn, pw = here()
-    local info = NR.Learn.Info(target.name)
-    local name = info and NR.Track.ItemName({ item = info.item }) or target.name
+    local item = itemOf(target)
+    local name = item and NR.Track.ItemName({ item = item }) or target.name
     return target, name, pn and math.floor(yards(target, pn, pw) + 0.5) or nil
 end
 
@@ -440,12 +450,22 @@ local function choose()
     local pn, pw = here()
     if not pn then target = nil; return end
     local best, bestD, kept
-    for _, r in ipairs(NR.Icons.Records()) do
-        -- The incumbent too: a skipped (#47) or snoozed (#46) one goes, outright.
-        if NR.Alert.Wanted(r.name) and not Compass.Snoozed(r) then
-            local d = yards(r, pn, pw)
-            if not bestD or d < bestD then best, bestD = r, d end
-            if r == target then kept = d end
+    local function consider(r)
+        local d = yards(r, pn, pw)
+        if not bestD or d < bestD then best, bestD = r, d end
+        if r == target then kept = d end
+    end
+    if localFresh() then
+        for _, r in ipairs(NR.Icons.Records()) do
+            -- The incumbent too: a skipped (#47) or snoozed (#46) one goes, outright.
+            if NR.Alert.Wanted(r.name) and not Compass.Snoozed(r) then consider(r) end
+        end
+    end
+    -- The party's nodes (#83): wanted by their sender; snoozes apply. Own nodes
+    -- first (the owner, two gatherers): only with no candidate of one's own.
+    if not best and NR.Share.Showing() then
+        for _, e in ipairs(NR.Share.List()) do
+            if NR.Share.Live(e) and not Compass.Snoozed(e) then consider(e) end
         end
     end
     if kept and best ~= target and kept - bestD < Compass.HYSTERESIS then best = target end
@@ -469,11 +489,18 @@ function Compass.Reconcile(result, now)
     refresh()
 end
 
--- A gather took records out (Icons.Gathered, once the list is filtered):
--- chosen again at once. Not a sweep: the freshness isn't renewed.
+-- A gather took records out (Icons.Gathered, once the list is filtered), a
+-- snooze, the party's nodes changed or Share's ticker (#83): chosen again at
+-- once. Not a sweep: the local freshness isn't renewed. A party target's
+-- beacon gets its map point here, the receiver never sweeping (before the
+-- ring's own early return: the marker alone needs it).
 function Compass.Refresh()
-    if not Compass.Choosing() or not lastSweep then return end
+    if not Compass.Choosing() then
+        if target then Compass.Reset() end
+        return
+    end
     refresh()
+    if target and target.party and NR.FarMarker then NR.FarMarker.Update() end
 end
 
 -- The style or the size changed (NR.Set), or the glass latch tripped in the
@@ -496,7 +523,14 @@ function Compass.UpdateGrip()
     updateGrip()
 end
 
--- The records cleared (Icons.Clear), or the compass turned off: no target.
+-- The records cleared (Icons.Clear): a local target goes; a party node's
+-- stays (#83: no beacon churn at a tracking change), unless nothing chooses.
+function Compass.LocalCleared()
+    if target and target.party and Compass.Choosing() then return end
+    Compass.Reset()
+end
+
+-- The compass turned off: no target.
 function Compass.Reset()
     target = nil
     if NR.FarMarker then NR.FarMarker.TargetGone() end
