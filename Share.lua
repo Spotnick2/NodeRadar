@@ -28,6 +28,10 @@ Share.LIMIT = 100000    -- yards: a position past this is malformed
 Share.REUSE = 1         -- yards: an incoming entry of the same name this near a kept one is that one
 Share.SAME = 8          -- yards: two senders' entries of one item this near are one node
 Share.SUCCESS = 0       -- Enum.SendAddonMessageResult.Success
+-- The sonar on a node arriving (step 2, best effort: not the sender's alert replayed).
+Share.QUIET = 2         -- seconds: a sender's first messages are the silent baseline (a loading burst too)
+Share.SEEN = 120        -- seconds: a node of that name seen within SAME yards this recently isn't new
+Share.PENDING = 10      -- seconds: a new node ripples on its first draw within this
 
 local session = API.Num(GetServerTime()) or 0   -- orders this load's messages after any earlier load's
 local seq = 0
@@ -36,6 +40,8 @@ local registered
 local lastKey, lastAt, lastTry, lastSweep
 local party = {}        -- [sender] = { session, seq, at, instance, list }
 local shown = {}        -- the entries to draw: every sender's, one a node (Share.List)
+local kept = {}         -- [entry] = true: the shown ones, for Share.Live
+local seen = {}         -- { name, north, west, instance, at }: the nodes heard of lately (the sonar)
 local roster = {}       -- [full name] = true: the group's other members
 local rosterKey         -- the roster as a string, to tell a new group
 local ticker
@@ -48,6 +54,10 @@ end
 function Share.Showing()
     local db = NR.db
     return db and db.enabled and db.partyNodes and true or false
+end
+
+local function compass()
+    if NR.Compass then NR.Compass.Refresh() end
 end
 
 local function call(fn, ...)
@@ -115,9 +125,10 @@ end
 
 local function dist(a, b) return math.sqrt((a.north - b.north) ^ 2 + (a.west - b.west) ^ 2) end
 
--- Every sender's entries, a node once (two senders' of one item within SAME).
+-- Every sender's entries, a node once (two senders' of one item within SAME);
+-- the compass chooses again (step 2).
 local function rebuild()
-    shown = {}
+    shown, kept = {}, {}
     local senders = {}
     for sender in pairs(party) do senders[#senders + 1] = sender end
     table.sort(senders)                                -- a fixed order: the same one wins each time
@@ -128,24 +139,36 @@ local function rebuild()
             for _, s in ipairs(shown) do
                 if s.item == e.item and s.instance == e.instance and dist(s, e) <= Share.SAME then dup = true; break end
             end
-            if not dup then shown[#shown + 1] = e end
+            if not dup then shown[#shown + 1] = e; kept[e] = true end
         end
     end
     if NR.Icons then NR.Icons.SetShared(shown) end
+    compass()
 end
 
 local function stopTicker()
     if ticker then ticker:Cancel(); ticker = nil end
 end
 
+local function prune(now)
+    local live = {}
+    for _, s in ipairs(seen) do
+        if now - s.at < Share.SEEN then live[#live + 1] = s end
+    end
+    seen = live
+end
+
+-- Each second while a list is kept: the lists past EXPIRE go, and the compass
+-- chooses again either way (the receiver moves between messages).
 local function expire()
     local now = GetTime()
     local changed = false
     for sender, p in pairs(party) do
         if now - p.at >= Share.EXPIRE then party[sender] = nil; changed = true end
     end
+    prune(now)
     if next(party) == nil then stopTicker() end
-    if changed then rebuild() end
+    if changed then rebuild() else compass() end
 end
 
 local function startTicker()
@@ -160,7 +183,7 @@ function Share.List() return shown end
 -- Every shared node forgotten (a loading screen, partyNodes or the radar off,
 -- the group left).
 function Share.Clear()
-    party = {}
+    party, seen = {}, {}
     stopTicker()
     rebuild()
 end
@@ -199,24 +222,71 @@ function Share.OnMessage(prefix, msg, channel, sender)
     if not snap then return end
     local p = party[sender]
     if p and (snap.session < p.session or (snap.session == p.session and snap.seq <= p.seq)) then return end
-    -- The same node keeps its table (its frame, the compass's incumbent).
+    -- The same node keeps its table (its frame, the compass's incumbent, its pending).
+    local now = GetTime()
+    local quiet = p and p.quiet or now + Share.QUIET
     local old = p and p.list or {}
     local used = {}
+    prune(now)
     for i, e in ipairs(snap.list) do
+        local reused = false
         for j, o in ipairs(old) do
             if not used[j] and o.name == e.name and o.item == e.item and o.instance == e.instance
                 and dist(o, e) <= Share.REUSE then
                 used[j] = true
                 o.north, o.west = e.north, e.west
                 snap.list[i] = o
+                reused = true
                 break
             end
         end
+        -- Arriving: pending its ripple, unless in the baseline or heard of lately.
+        if not reused and now >= quiet then
+            local heard = false
+            for _, s in ipairs(seen) do
+                if s.name == e.name and s.instance == e.instance and dist(s, e) <= Share.SAME then heard = true; break end
+            end
+            if not heard then e.pending = now + Share.PENDING end
+        end
     end
-    party[sender] = { session = snap.session, seq = snap.seq, at = GetTime(), instance = snap.instance,
-                      list = snap.list }
+    for _, e in ipairs(snap.list) do
+        e.heard = now
+        local found
+        for _, s in ipairs(seen) do
+            if s.name == e.name and s.instance == e.instance and dist(s, e) <= Share.SAME then found = s; break end
+        end
+        if found then
+            found.north, found.west, found.at = e.north, e.west, now
+        else
+            seen[#seen + 1] = { name = e.name, north = e.north, west = e.west, instance = e.instance, at = now }
+        end
+    end
+    party[sender] = { session = snap.session, seq = snap.seq, at = now, instance = snap.instance,
+                      list = snap.list, quiet = quiet }
     startTicker()
     rebuild()
+end
+
+-- Whether a shared entry may be chosen, pointed at or starred now (step 2):
+-- showing, still kept, its sender heard from less than EXPIRE ago (read now:
+-- the ticker removes a list up to a second late), in the player's instance.
+function Share.Live(e)
+    if not (e and kept[e] and Share.Showing()) then return false end
+    if not e.heard or GetTime() - e.heard >= Share.EXPIRE then return false end
+    local _, _, inst = player()
+    return inst ~= nil and inst == e.instance
+end
+
+-- A live shared entry of that name within `yards` of the player (the stars'
+-- heuristic: a soft-interact plate carries no position).
+function Share.Near(name, yards)
+    local pn, pw = player()
+    if not pn then return false end
+    for _, e in ipairs(shown) do
+        if e.name == name and Share.Live(e)
+            and math.sqrt((e.north - pn) ^ 2 + (e.west - pw) ^ 2) <= yards then return true end
+    end
+    return false
 end
 
 -- GROUP_ROSTER_UPDATE (and at login, and when a setting turns on): the roster
@@ -360,8 +430,9 @@ Share._test = {
     roster = function() return roster end,
     ticker = function() return ticker end,
     parse = parse,
+    seen = function() return seen end,
     reset = function()
-        party, shown, roster, rosterKey, registered = {}, {}, {}, nil, nil
+        party, shown, kept, seen, roster, rosterKey, registered = {}, {}, {}, {}, {}, nil, nil
         lastKey, lastAt, lastTry, lastSweep, seq = nil, nil, nil, nil, 0
         stopTicker()
         if NR.Icons then NR.Icons.SetShared(shown) end

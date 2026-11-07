@@ -48,7 +48,7 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   tracking needed. Measured on 70790 (two accounts: delivery, the throttle, the 255-byte cut) and
   checked in game (`partylook`).
 
-Next: party nodes' step 2 (#83: the compass, beacon and stars on them), the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+Next: party nodes' step 2 in game (#83: the compass, beacon, stars and sonar on them, `party-nodes-2`), the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
@@ -131,6 +131,14 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   `Icons.SetShared` draws them: a third list, never records, never dimmed, a blue pip, its own
   eligibility (no local sweep needed; the driver kept while one is kept), hidden while a drawn local icon
   of its item is within 8 yards. Measured: docs/FOREVER-PROBE.md, "Party addon messages".
+  Step 2: `Share.Live(e)` is a party node's one freshness rule (showing, kept, heard within `EXPIRE`
+  read now, the player's instance), used by the compass's `choose` and `frame`, the beacon's `fresh`
+  and `Share.Near` (the stars: a plate named as a live party node within 15 yards of the player).
+  Own nodes first: `choose` takes party nodes only with no local candidate (the owner, two gatherers).
+  The compass chooses again after each rebuild and on the 1 s ticker (`Compass.Refresh`, which also
+  places a party target's beacon from `Scan.Where()` read then); `Icons.Clear` keeps a party target
+  (`Compass.LocalCleared`). The sonar on a node arriving, best effort: `e.pending` set past a sender's
+  `QUIET` baseline for a node not `seen` within `SEEN`, played on its first draw within `PENDING`.
 - `Compass.lua` (#29, `compass`, experimental, off by default): under the character, the nearest
   gatherable record's item icon on our own art (`Media/Compass*.tga` from `Tools/make_media.py`: a
   shadow, a dark lens, a rim tinted pearl, bronze or yellow as the icons' frame resolves, `Icons.Style()`;

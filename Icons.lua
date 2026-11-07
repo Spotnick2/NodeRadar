@@ -427,7 +427,7 @@ function Icons.Clear()
     dropProvisional()
     records, tries, gone, lastSweep, instance = {}, {}, {}, nil, nil
     stop()
-    if NR.Compass then NR.Compass.Reset() end
+    if NR.Compass then NR.Compass.LocalCleared() end   -- a party node's target stays (#83)
 end
 
 -- The icons turned off while the compass keeps the records: the frames go,
@@ -462,6 +462,7 @@ local function place(list, pn, pw, k, edge)
             local x, y = -(r.west - pw) / k, (r.north - pn) / k
             local alpha = math.max(0, math.min(1, (edge - dist(x, y)) / Icons.FADE))
             r.drawn = alpha > 0
+            r.ox, r.oy = x, y
             if alpha > 0 then
                 f:ClearAllPoints()
                 f:SetPoint("CENTER", Minimap, "CENTER", x, y)
@@ -505,6 +506,18 @@ local function placeShared(pn, pw, inst, k, edge, localDrawn)
         end
     end
     place(visible, pn, pw, k, edge)
+    -- A node just arrived ripples on its first draw, within Share.PENDING (step 2, best effort).
+    local now = GetTime()
+    for _, e in ipairs(shared) do
+        if e.pending then
+            if now > e.pending then
+                e.pending = nil
+            elseif e.drawn and e.instance == inst then
+                e.pending = nil
+                if NR.db.ring then NR.Alert.Sonar(e.ox, e.oy, NR.Learn.Kind(e.name) or "herbs") end
+            end
+        end
+    end
 end
 
 -- Each frame while an icon may show: where every shown record and provisional

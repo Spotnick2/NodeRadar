@@ -394,11 +394,15 @@ local function unitOf(plate)
 end
 
 -- The stars' plate: a game object, the soft-interact target, a node known and
--- wanted. Every read secret-tested; a secret or an error: no.
+-- wanted, or named as a party node within NEAR yards of the player (#83: a
+-- heuristic, the plate has no position). Every read secret-tested; a secret
+-- or an error: no.
 local function qualifies(unit)
     if not (yes(UnitIsGameObject, unit) and yes(UnitIsUnit, unit, "softinteract")) then return false end
     local name = text(call(UnitName, unit))
-    return name ~= nil and NR.Learn.Kind(name) ~= nil and NR.Alert.Wanted(name)
+    if name == nil then return false end
+    if NR.Learn.Kind(name) ~= nil and NR.Alert.Wanted(name) then return true end
+    return NR.Share.Near(name, NR.Compass.NEAR)
 end
 
 local function shownPlate(plate) return yes(plate.IsShown, plate) end

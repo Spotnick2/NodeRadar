@@ -2059,38 +2059,120 @@ matching, measuring, covering or clearing touches them.
   record kept for the compass with `icons` off, or missed once, shows nothing); entries of the same
   item within 8 yards from several senders draw once.
 
-### Compass and beacon (second step, same issue, its own PR)
+### Step 2: the compass, the beacon, the stars and the sonar (same issue, its own PR)
 
-Choosing among shared entries isn't a two-line change: today both run only off a successful local
-sweep (`NR.Step` returns when no tracking is on), the compass draws only with a recent `lastSweep`,
-and the beacon's target expires after the idle interval plus 2 s and takes its map position from
-the sweep's `where`. So:
-- `Compass.choose` takes the unexpired shared entries of the player's instance too, with
-  `partyNodes` on; a shared entry counts as wanted (its sender said so), snoozes apply by name and
-  spot. **Each candidate by its own freshness** (Codex): local records only while the local sweep
-  is fresh (today's allowance for a record missed once kept, within a fresh sweep), shared entries
-  only while their list is unexpired; so a nearer local record left from sweeps that stopped can't
-  outbid a live shared one. A shared refresh never advances the local `lastSweep`. The incumbent
-  is the same table across heartbeats (the receiver reuses entries), so the
-  5-yard hysteresis and the beacon's waypoint hold.
-- A **shared target has its own freshness** (its list unexpired) everywhere the compass and
-  `FarMarker.fresh()` check a sweep's, and a light refresh (`Compass.Refresh` without the
-  `lastSweep` gate for a shared target) runs at each accepted message, at expiry, at a snooze and on
-  `Share`'s ticker, which also wakes a hidden ring.
-- The beacon's map point from `Scan.Where()` read at that moment with the player's position read
-  in the same frame (never an old `where` with a new position).
-- The ring's tooltip uses the entry's item ID (the receiver may not know the name).
-- **The nearby stars** need the game's soft-interact plate on the node (#78), and a character
-  without Herbalism gets one (`partyplate`, 70790). So `Marker`'s rule also accepts a plate whose
-  name is a shared entry's within 15 yards **of the player**: a proximity heuristic, the plate
-  carries no position. The interact CVars are claimed as #78 claims them (the marker on).
-- Its tests, beyond the first step's: the same never-swept receiver with the compass and the
-  marker on; a nearer stale local record against a fresh shared one; a heartbeat keeping the
-  incumbent and the waypoint; expiry and a snooze choosing again at once.
+The owner asked for this after v1.6.0 (2026-11-05), "and probably the animation on the minimap too":
+the alert's sonar on a shared node when it first appears, so the main sees where the herbalist's
+sound pointed.
+
+Choosing among shared entries isn't a two-line change. Today both the compass and the beacon run
+only off a successful local sweep (`NR.Step` returns when no tracking is on). The compass draws only
+with a recent `lastSweep`. The beacon's target expires after the idle interval plus 2 s and takes its
+map position from the sweep's `where`. So:
+
+- **The compass's candidates** (`choose`): the local records **only while the local sweep is fresh**
+  (`lastSweep` within the idle interval plus `Compass.GRACE`, the rule `frame()` already hides by),
+  and `Alert.Wanted`; otherwise (none of those, below), with `partyNodes` on, `Share.List()`'s entries in the player's live
+  instance. A shared entry counts as wanted: its sender filtered it, and the receiver may not know
+  the name or have the skill. Snoozes apply to both, by name and spot (`Compass.Snoozed` reads
+  `name`, `north`, `west`). Each candidate is judged by its own freshness (Codex), so a nearer local
+  record left from sweeps that stopped can't outbid a live shared one. A shared refresh never
+  advances the local `lastSweep`. The incumbent is the same table across heartbeats (the receiver
+  reuses entries within `Share.REUSE`), so the 5-yard hysteresis holds, and so does the beacon's
+  waypoint, while the same target stays eligible and chosen.
+- **Own nodes first** (the owner, 2026-11-06, two gatherers sharing with each other, a miner and an
+  herbalist): when any local record is a candidate (fresh, `Alert.Wanted`, not snoozed), the shared
+  entries aren't considered at all. Only a player with no candidate of their own gets the group's
+  nearest: Kalizo (no profession), or a gatherer whose own nodes are all snoozed, skipped, gone from
+  the minimap, or whose sweep went stale. So the miner's compass never points at the herbalist's
+  herb while an ore of its own is on its minimap, and the beacon (it follows `Compass.Chosen`) never
+  lands there either. A shared incumbent gives way to a local candidate at once: the hysteresis
+  compares within the pool chosen from, and a shared incumbent isn't in it. A local record and a
+  shared entry of the same node: the local one. The stars aren't affected (`Share.Near` doesn't go
+  through the compass), nor are the minimap's pips and the sonar.
+- **A shared entry's freshness**, one rule everywhere (`Share.Live(e)`, Codex round 1): `partyNodes`
+  and the radar on, the entry still kept, its sender's last accepted message less than
+  `Share.EXPIRE` ago **read now** (the ticker removes a list up to a second late), and the entry's
+  instance the player's live one. `choose`, `frame()`, `FarMarker.fresh()` and `Share.Near` all use
+  it. `frame()` hides a local target by `lastSweep`, as today, and a shared one by `Share.Live`.
+  `Compass.Refresh` loses its `lastSweep` gate: `choose` applies the freshness per candidate. With
+  `Compass.Choosing()` false it resets a target left over.
+- **When it chooses again without a sweep:** after each `Icons.SetShared` from `Share`'s `rebuild`
+  (an accepted message, expiry, a sender gone, the player's gather, `Share.Clear`), and on `Share`'s
+  1 s ticker while a list is kept. The ticker matters: messages come only on a change or every 10 s,
+  but the receiver rides, so the nearest changes, and a ring `frame()` hid (dead, on a taxi) shows
+  again only through a refresh.
+- **Local clears keep a shared target.** `Icons.Clear` (a tracking change, the learner, `enabled`
+  off) calls `Compass.Reset` today. It becomes `Compass.LocalCleared()`, which resets a local target,
+  or any target once `Compass.Choosing()` is false (Codex: turning the compass off with only
+  `partyNodes` left takes `NR.Set`'s `Icons.Clear` path and nothing else). So a tracking change
+  doesn't make the beacon drop and re-place its waypoint under a shared target. `enabled` off still
+  empties everything: `Share.Clear` runs, and the refresh it causes finds `Choosing()` false.
+- **The beacon** (`FarMarker`): `fresh()` takes a shared target by `Share.Live(want.record)` and skips
+  `Alert.Wanted` for it, keeping `Compass.Chosen() == want.record` and the snooze. A local target is
+  judged as today. `Far.Update(result)` takes the map point of a shared target from `Scan.Where()`,
+  read then, with `UnitPosition` read in the same call (never an old `where` with a new position);
+  a local target keeps the sweep's `where`. The compass's non-sweep refresh calls `Far.Update()` for
+  a shared target, before the ring's own early return (so the marker alone reaches it), and a
+  receiver that never sweeps still places its waypoint. `Far.Update`'s existing fast path (same
+  record and map, each coordinate within a yard) keeps the waypoint across ticks and heartbeats;
+  a correction past a yard, a new table or a new map replaces it, as for a local target. Nothing else in the
+  beacon changes: no height (the entry has none: the middle position, no hint), the label the
+  entry's name.
+- **The ring's look:** the icon is the entry's (`e.icon`, set by `Icons.SetShared`). Its tooltip and
+  the menu's label (`Compass.Target`) take the entry's `item` (the receiver may not know the name).
+- **The nearby stars:** they need the game's soft-interact plate on the node (#78), and a character
+  without Herbalism gets one (`partyplate`, 70790). So `Marker`'s `qualifies` also accepts a plate
+  whose name is a shared entry's (`Share.Near(name, Compass.NEAR)`): an entry of that name in the
+  player's instance within 15 yards **of the player**. It's a proximity heuristic: the plate carries
+  no position. The interact CVars are claimed as #78 claims them, only with the marker on.
+- **The sonar** (the alert's minimap animation, `Alert.Sonar`), **best effort**: a ripple when a
+  shared node first arrives, on the receiver with `partyNodes` and `ring` on. It isn't the sender's
+  alert replayed: the sender alerts on a rise in a name's count, with a cooldown and a 20 s blink
+  rule; the receiver sees positions arrive (Codex round 1). Matching the sound exactly would take a
+  flag on the wire; not in this. An entry arriving is **pending** (`Share.PENDING`, 10 s) when:
+  - it isn't a table reused from its sender's previous list (a reused table keeps its pending);
+  - it isn't from a sender's first `Share.QUIET` (2 s) of accepted messages, the silent baseline,
+    as the alert's first sweep is one. A window, not one message: snapshots queued during the
+    receiver's loading screen arrive together after it (measured), and the burst is all baseline;
+  - no entry of its name has been seen within `Share.SAME` yards, from any sender, in the last
+    `Share.SEEN` (120 s): an in-memory list of name, spot, instance and time, refreshed by every
+    accepted entry, pruned on the ticker, emptied by `Share.Clear`. A node that leaves a snapshot
+    and comes back (the 12-entry cap, the sender's record measured again, its view leaving and
+    returning) doesn't ripple twice, and a node the receiver itself gathered doesn't either.
+
+  A pending entry ripples on its **first draw** (`Icons`' `placeShared`: drawn inside the rim, not
+  hidden under the receiver's own icon of its item), at the spot just drawn, in the colour of its
+  kind (`Learn.Kind`, herbs if unknown), then stops being pending; past 10 s it stops without one.
+  So a node that arrives beyond the follower's rim ripples when it comes into view (Codex). No
+  sound, no chat line (the sender's client plays its own, which is why the owner asked), no
+  cooldown: the memory is the limit. Known differences, accepted: a node already in the sender's
+  view but left out by the cap can ripple when it enters the list; a node that comes back after
+  30 s can alert on the sender and stay quiet here; the baseline misses a real alert just after
+  joining, a reload or turning `partyNodes` on.
+- Its tests, beyond the first step's:
+  - the same never-swept receiver with the compass and the marker on: chosen, shown, the beacon's
+    waypoint placed;
+  - a nearer stale local record against a fresh shared one;
+  - a heartbeat keeping the incumbent and the waypoint;
+  - expiry and a snooze choosing again at once;
+  - the ticker choosing a nearer entry as the receiver moves, with no message;
+  - a tracking change (`Icons.Clear`) keeping a shared target, and `enabled` off dropping it;
+  - the stars on a plate named like a shared entry within 15 yards, and none at 16 or in another
+    instance;
+  - turning off the last choosing feature with a shared target; a list past `Share.EXPIRE` between
+    two ticks no longer chosen, drawn by the ring or kept by the beacon; the marker alone, a shared
+    target, the beacon;
+  - the waypoint across a tick, a heartbeat and a tracking change: no extra clear or set;
+  - the sonar: on a new entry; not on the baseline (two queued snapshots after a load included), a
+    reused table, an entry seen within 120 s, or with `ring` off; one past the rim pending, then
+    rippling when the receiver comes near, and not after 10 s; one under a local icon not until it
+    shows.
 
 ### Not in this
 
-Sounds on the receiver (the sender's client plays its own), the chat line for shared nodes,
+Sounds on the receiver (the sender's client plays its own), a flag on the wire for the sender's
+alert (step 2's sonar is best effort), the chat line for shared nodes,
 sharing outside the group (no `WHISPER` discovery, no channel), saving shared nodes, acknowledgements
 or retransmission, multi-part messages, a node database (#30).
 
