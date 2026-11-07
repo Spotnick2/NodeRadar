@@ -40,7 +40,7 @@
 -- party (#83: PARTY addon messages, run on the herbalist H), partygeo (the main M's minimap and position with no
 -- gathering tracking), partyplate (M's soft-interact plate on a herb, no Herbalism) and partysizes (on H: after
 -- 15 quiet seconds, the four payload sizes, each alone 3 s apart; the throttle spoiled party's), partylook (on M: the
--- party nodes' icons on the minimap, their place, the style, the gather and leaving the group). The listener for the
+-- party nodes' icons on the minimap, their place, the style, the gather and leaving the group), partybeacon (on M: why the distant beacon has no waypoint, the super-track state read), partyguide (on M: step 2's compass, beacon, stars and sonar on H's herb). The listener for the
 -- probe-only prefix NRProbe is always on while the probe is loaded; /fp nr stream on|off is the numbered PARTY stream.
 
 local ADDON, NS = ...
@@ -6637,6 +6637,305 @@ local lookSteps = {
     { text = "Type /reload in this window (M) to save the results.", reload = true },
 }
 Probe:Steps("partylook", lookSteps)
+
+--------------------------------------------------------------------------------
+-- /fp steps nr partyguide (on M, the receiver: party nodes' step 2, #83): the
+-- compass, the beacon, the stars and the sonar on a node H shares. The compass and
+-- the marker are turned on for the round and put back however it ends
+-- (guardRound); the Alert.Sonar wrapper only counts and calls the original.
+--------------------------------------------------------------------------------
+
+local GUIDEKEY = Probe.name .. "/partyguide"
+local guide = { ripples = {} }
+local GUIDE_KEYS = { "compass", "marker" }
+
+local function gdb()
+    NodeRadarProbeDB.partyguide = NodeRadarProbeDB.partyguide or {}
+    return NodeRadarProbeDB.partyguide
+end
+local function gpending()
+    local s = NodeRadarProbeDB.partyguide
+    return s ~= nil and s.saved ~= nil
+end
+
+-- The Sonar wrapper out again, only if it is still ours.
+local function gunwrap()
+    local n = nr()
+    if n and n.Alert and guide.orig and n.Alert.Sonar == guide.wrapper then n.Alert.Sonar = guide.orig end
+    guide.orig, guide.wrapper = nil, nil
+end
+
+-- Each setting we turned on back to what it was, unless the player changed it since.
+local function grestore()
+    gunwrap()
+    local n = nr()
+    local s = gdb()
+    if not s.saved then return true end
+    if not n then return false end
+    local kept = {}
+    for _, key in ipairs(GUIDE_KEYS) do
+        local old = s.saved[key]
+        if old ~= nil then
+            if n.db[key] == true then n.Set(key, old) else kept[#kept + 1] = key end
+        end
+    end
+    s.saved = nil
+    plog("partyguide: settings put back (compass " .. str(n.db.compass) .. ", marker " .. str(n.db.marker) .. ")"
+        .. (#kept > 0 and ("; left as you changed them: " .. table.concat(kept, ", ")) or ""))
+    return true
+end
+
+local function guideNR()
+    local n = nr()
+    if n and n.Share and n.Compass and n.FarMarker and n.Marker and n.Alert and n.Share.List
+        and n.Compass._test and n.FarMarker._test then return n end
+end
+
+-- Where the chosen target is against the player, and what each feature shows now.
+local function guideDump(tag)
+    local n = guideNR()
+    if not n then plog("guide " .. tag .. ": NodeRadar (step 2, #83) isn't loaded"); return "NodeRadar isn't loaded" end
+    local okP, pn, pw = pcall(UnitPosition, "player")
+    pn, pw = okP and num(pn), okP and num(pw)
+    local t = n.Compass.Chosen()
+    local dist
+    if t and pn and num(t.north) and num(t.west) then dist = math.sqrt((t.north - pn) ^ 2 + (t.west - pw) ^ 2) end
+    local ring = wpRead(n.Compass._test.root.IsShown, n.Compass._test.root)
+    local far = n.FarMarker._test
+    local farShown = wpRead(far.root.IsShown, far.root)
+    local ours = far.ours()
+    local near = t and t.party and n.Share.Near(t.name, n.Compass.NEAR or 15)
+    local text = ("target %s (party %s, item %s) %s yd; compass %s, ring shown %s; beacon shown %s, waypoint ours %s; "
+        .. "stars Nearby %s, Share.Near %s"):format(
+        t and q(t.name) or "none", str(t and t.party), str(t and t.item), dist and ("%.1f"):format(dist) or "?",
+        str(n.db.compass), str(ring), str(farShown), ours and "yes" or "no", str(n.Marker.Nearby()), str(near))
+    plog("guide " .. tag .. ": " .. text)
+    for _, e in ipairs(n.Share.List()) do
+        plog(("guide %s:   shared %s north %s west %s pending %s live %s"):format(tag, q(e.name), fnum(e.north),
+            fnum(e.west), str(e.pending), str(n.Share.Live(e))))
+    end
+    guide.name = guide.name or (t and t.name)
+    return text
+end
+
+-- Why the distant beacon has (or hasn't) a user waypoint of ours: every input of
+-- FarMarker's free() / claimCVar() / busy() and its want, read through wpRead.
+local function pos4(map, x, y)
+    return ("map %s (%s, %s)"):format(str(map), num(x) and ("%.4f"):format(x) or str(x), num(y) and ("%.4f"):format(y) or str(y))
+end
+local function beaconSlot(tag)
+    local n = guideNR()
+    if not n then plog("beaconSlot " .. tag .. ": NodeRadar (step 2, #83) isn't loaded"); return "NodeRadar isn't loaded" end
+    local st = C_SuperTrack or {}
+    local e = n.db.farNavigation
+    local fnav = type(e) ~= "table" and "nil" or ("old %s, ours %s, cancelled %s"):format(str(e.old), str(e.ours), str(e.cancelled))
+    local far = n.FarMarker._test
+    local w, o = far.want(), far.ours()
+    local rec = type(w) == "table" and type(w.record) == "table" and w.record or nil
+    local wantS = type(w) ~= "table" and "none" or ("%s, record %s, party %s"):format(pos4(w.map, w.x, w.y),
+        q(rec and rec.name or nil), str(rec and rec.party))
+    local oursS = type(o) ~= "table" and "none" or pos4(o.map, o.x, o.y)
+    local pt = wpRead(C_Map and C_Map.GetUserWaypoint)
+    local ptS = "none"
+    if type(pt) == "table" and not secret(pt) then
+        local p = pt.position
+        ptS = pos4(pt.uiMapID, p and p.x, p and p.y)
+    elseif pt ~= nil then ptS = str(pt) end
+    local map = rawget(_G, "WorldMapFrame")
+    local mapShown = "absent"
+    if map then mapShown = wpRead(map.IsShown, map) end
+    plog(("beaconSlot %s: %s"):format(tag, navState()))
+    local text = ("quest %s, corpse %s, content %s, mapPin %s, vignette %s; showInGameNavigation %s; farNavigation %s; "
+        .. "InCombatLockdown %s; WorldMapFrame shown %s; FarMarker.reason %s; want %s; ours %s; GetUserWaypoint %s; "
+        .. "Marker.Settled %s, Nearby %s"):format(
+        str(wpRead(st.IsSuperTrackingQuest)), str(wpRead(st.IsSuperTrackingCorpse)), str(wpRead(st.IsSuperTrackingContent)),
+        str(wpRead(st.IsSuperTrackingMapPin)), str(wpRead(st.GetSuperTrackedVignette)),
+        str(wpRead(C_CVar and C_CVar.GetCVar, "showInGameNavigation")), fnav, str(wpRead(InCombatLockdown)), str(mapShown),
+        str(n.FarMarker.reason), wantS, oursS, ptS, str(wpRead(n.Marker.Settled)), str(wpRead(n.Marker.Nearby)))
+    plog(("beaconSlot %s: %s"):format(tag, text))
+    return text
+end
+
+local guideSteps = {
+    rev = 1,
+    title = "Party nodes' compass, beacon, stars and sonar, run on M (#83 step 2)",
+    { text = "Checking this client's settings and turning the compass and the marker on for the round.", auto = true, run = function()
+          guide = { ripples = {} }
+          local n = guideNR()
+          if not n then return "NodeRadar (step 2, #83) isn't loaded" end
+          local tracking = {}
+          for i = 1, wpRead(C_Minimap.GetNumTrackingTypes) or 0 do
+              local ok, info = pcall(C_Minimap.GetTrackingInfo, i)
+              if ok and type(info) == "table" and not secret(info.active) and info.active == true
+                  and not secret(info.name) then tracking[#tracking + 1] = info.name end
+          end
+          local s = gdb()
+          if s.saved then grestore() end
+          s.saved = {}
+          for _, key in ipairs(GUIDE_KEYS) do
+              s.saved[key] = n.db[key] and true or false
+              if not n.db[key] then n.Set(key, true) end
+          end
+          local text = ("partyNodes %s, enabled %s, IsInGroup %s, tracking active: %s; compass %s (was %s), marker %s (was %s)")
+              :format(str(n.db.partyNodes), str(n.db.enabled), str(wpRead(IsInGroup)),
+                  #tracking > 0 and table.concat(tracking, ", ") or "none", str(n.db.compass), str(s.saved.compass),
+                  str(n.db.marker), str(s.saved.marker))
+          plog("guide: " .. text)
+          return text
+      end },
+    { text = "H (herbalist, the other window) has /nr share on and Find Herbs on, and rides ahead of M (this window: "
+          .. "no profession, no tracking, /nr party on). Both grouped. Yes when that is so.", ask = true },
+    { text = "Ride with H until a herb shows on M's minimap as an icon with the small blue dot. Yes when it does.", ask = true },
+    { text = "The compass target, logged and photographed.", auto = true, run = function() return guideDump("compass") end,
+      screenshot = "partyguide: the compass ring under the character" },
+    { text = "Look at the ring under M's character (the disc with an arrow and the distance pill). Does its arrow point "
+          .. "at the herb with the blue dot? (Note box: which way it points, if not.)", ask = true },
+    { text = "The beacon: ride until the herb is 20 to 55 yards away (use the distance in the ring's pill) and stand "
+          .. "still. Yes when you are.", ask = true },
+    { text = "The beacon, logged and photographed.", auto = true, run = function() local t = guideDump("beacon"); beaconSlot("beacon"); return t end,
+      screenshot = "partyguide: the beacon over the herb" },
+    { text = "Look at the world around M's character, toward the herb. Does a beacon (teal vapor and sparkles with the "
+          .. "herb's name above it) stand over the herb? (Note box: where it is, if not.)", ask = true },
+    { text = "The stars: walk to within 10 yards of the herb, facing it, and stand still. Yes when you are.", ask = true },
+    { text = "The stars, logged and photographed.", auto = true, run = function() return guideDump("stars") end,
+      screenshot = "partyguide: the stars on the herb" },
+    { text = "Look at the herb itself. Do twinkling stars sit on the herb (and the far beacon gone)? "
+          .. "(Note box: where they are, if not.)", ask = true },
+    { text = "Counting the sonar's ripples from now on.", auto = true, run = function()
+          local n = guideNR()
+          if not n then return "NodeRadar isn't loaded" end
+          guide.ripples = {}
+          if not guide.wrapper then
+              guide.orig = n.Alert.Sonar
+              local orig = guide.orig
+              guide.wrapper = function(x, y, kind, ...)
+                  local r = { x = num(x), y = num(y), kind = type(kind) == "string" and not secret(kind) and kind or "?",
+                      t = GetTime() }
+                  guide.ripples[#guide.ripples + 1] = r
+                  plog(("guide: Alert.Sonar(%s, %s, %s) at %.2f"):format(fnum(x), fnum(y), r.kind, r.t))
+                  return orig(x, y, kind, ...)
+              end
+              n.Alert.Sonar = guide.wrapper
+          end
+          guide.sonarFrom = GetTime()
+          local text = "counting Alert.Sonar calls from " .. ("%.2f"):format(guide.sonarFrom)
+          plog("guide: " .. text)
+          return text
+      end },
+    { text = "Ride on, with M's minimap in view, until H's alert sound plays on a new herb (H's window). Watch M's "
+          .. "minimap for a green ripple at that herb. Yes right after H's sound plays.", ask = true },
+    { text = "The ripples counted.", auto = true, run = function()
+          local n = guideNR()
+          local now = GetTime()
+          local out = {}
+          for _, r in ipairs(guide.ripples) do
+              out[#out + 1] = ("%s at (%s, %s), %.1f s ago"):format(r.kind, fnum(r.x), fnum(r.y), now - r.t)
+          end
+          local text = ("%d ripples in %.1f s: %s; the wrapper %s"):format(#guide.ripples, now - (guide.sonarFrom or now),
+              #out > 0 and table.concat(out, "; ") or "none", (n and guide.wrapper and n.Alert.Sonar == guide.wrapper)
+              and "still ours" or "no longer in place")
+          plog("guide: " .. text)
+          guideDump("sonar")
+          return text
+      end },
+    { text = "Did a green ripple play on M's minimap at the new herb, about when H's sound played? (Note box: late, "
+          .. "early, at the wrong spot, or twice, if so.)", ask = true },
+    { text = "Your settings and the Sonar counter put back.", auto = true, run = function()
+          grestore()
+          local n = nr()
+          local text = ("compass %s, marker %s, Alert.Sonar restored %s"):format(str(n and n.db.compass),
+              str(n and n.db.marker), str(guide.wrapper == nil))
+          plog("guide: " .. text)
+          return text
+      end },
+    { text = "Type /reload (or press Reload now) in this window (M) to save the results.", reload = true },
+}
+Probe:Steps("partyguide", guideSteps)
+guardRound(GUIDEKEY, gpending, grestore)
+
+--------------------------------------------------------------------------------
+-- /fp steps nr partybeacon (on M, the receiver): why the distant beacon doesn't
+-- show on a party herb 20 to 55 yards away: beaconSlot reads every input of its
+-- user waypoint. The compass and the marker are on for the round, put back
+-- however it ends (guardRound), as partyguide.
+--------------------------------------------------------------------------------
+
+local BEACONKEY = Probe.name .. "/partybeacon"
+
+local function bdb()
+    NodeRadarProbeDB.partybeacon = NodeRadarProbeDB.partybeacon or {}
+    return NodeRadarProbeDB.partybeacon
+end
+local function bpending()
+    local s = NodeRadarProbeDB.partybeacon
+    return s ~= nil and s.saved ~= nil
+end
+local function brestore()
+    local n = nr()
+    local s = bdb()
+    if not s.saved then return true end
+    if not n then return false end
+    local kept = {}
+    for _, key in ipairs(GUIDE_KEYS) do
+        local old = s.saved[key]
+        if old ~= nil then
+            if n.db[key] == true then n.Set(key, old) else kept[#kept + 1] = key end
+        end
+    end
+    s.saved = nil
+    plog("partybeacon: settings put back (compass " .. str(n.db.compass) .. ", marker " .. str(n.db.marker) .. ")"
+        .. (#kept > 0 and ("; left as you changed them: " .. table.concat(kept, ", ")) or ""))
+    return true
+end
+
+Probe:Steps("partybeacon", {
+    rev = 1,
+    title = "Why the beacon doesn't show on a party herb, run on M (#83 step 2)",
+    { text = "Checking this client's settings and turning the compass and the marker on for the round.", auto = true, run = function()
+          local n = guideNR()
+          if not n then return "NodeRadar (step 2, #83) isn't loaded" end
+          local tracking = {}
+          for i = 1, wpRead(C_Minimap.GetNumTrackingTypes) or 0 do
+              local ok, info = pcall(C_Minimap.GetTrackingInfo, i)
+              if ok and type(info) == "table" and not secret(info.active) and info.active == true
+                  and not secret(info.name) then tracking[#tracking + 1] = info.name end
+          end
+          local s = bdb()
+          if s.saved then brestore() end
+          s.saved = {}
+          for _, key in ipairs(GUIDE_KEYS) do
+              s.saved[key] = n.db[key] and true or false
+              if not n.db[key] then n.Set(key, true) end
+          end
+          local text = ("partyNodes %s, enabled %s, IsInGroup %s, tracking active: %s; compass %s (was %s), marker %s (was %s)")
+              :format(str(n.db.partyNodes), str(n.db.enabled), str(wpRead(IsInGroup)),
+                  #tracking > 0 and table.concat(tracking, ", ") or "none", str(n.db.compass), str(s.saved.compass),
+                  str(n.db.marker), str(s.saved.marker))
+          plog("partybeacon: " .. text)
+          return text
+      end },
+    { text = "Ride until the compass ring under your character points at a herb with a blue dot on the minimap, then stop "
+          .. "20 to 55 yards from it (the ring's pill shows the distance). Answer yes once there.", ask = true },
+    { text = "The beacon's inputs, logged and photographed.", auto = true, run = function()
+          local t = guideDump("pbeacon")
+          beaconSlot("pbeacon")
+          return t
+      end, screenshot = "partybeacon: the herb at 20-55 yd" },
+    { text = "Do you see a teal glowing beacon with the herb's name over the herb (not the twinkling stars, which only show "
+          .. "within about 15 yards)?", ask = true },
+    { text = "Is a quest, a map pin or a corpse being tracked on this character (a gold diamond or arrow on screen, or a "
+          .. "quest tracked on the world map)?", ask = true },
+    { text = "The beacon's inputs again.", auto = true, run = function() return beaconSlot("pbeacon-after") end },
+    { text = "Your settings put back.", auto = true, run = function()
+          brestore()
+          local n = nr()
+          local text = ("compass %s, marker %s"):format(str(n and n.db.compass), str(n and n.db.marker))
+          plog("partybeacon: " .. text)
+          return text
+      end },
+    { text = "Type /reload (or press Reload now) in this window (M) to save the results.", reload = true },
+})
+guardRound(BEACONKEY, bpending, brestore)
 
 --------------------------------------------------------------------------------
 -- The listener, always on
