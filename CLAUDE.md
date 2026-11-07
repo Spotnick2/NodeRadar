@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.6.0, after v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.7.0, after v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -48,7 +48,12 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   tracking needed. Measured on 70790 (two accounts: delivery, the throttle, the 255-byte cut) and
   checked in game (`partylook`).
 
-Next: party nodes' step 2 in game (#83: the compass, beacon, stars and sonar on them, `party-nodes-2`), the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+- v1.7.0: party nodes, step 2 (#83, PR #86): the compass, the beacon, the stars and the sonar on a
+  group member's nodes (`Share.Live`), own nodes first. Checked in game on 70790 (`partyguide`,
+  `partybeacon`): the compass, stars and sonar; the beacon yields to a levelling guide's
+  super-tracked quest (docs/FOREVER-PROBE.md), so a free-slot beacon on a party node is unseen.
+
+Next: the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)

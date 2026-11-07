@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.7.0
+
+Released 2026-11-06.
 
 - **Your group's nodes, step 2** (#83): with "Show your group's nodes on your minimap" on, the
   experimental compass, distant beacon and nearby stars point at a group member's nodes too, on a
