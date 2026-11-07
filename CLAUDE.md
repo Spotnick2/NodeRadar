@@ -138,7 +138,7 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   The compass chooses again after each rebuild and on the 1 s ticker (`Compass.Refresh`, which also
   places a party target's beacon from `Scan.Where()` read then); `Icons.Clear` keeps a party target
   (`Compass.LocalCleared`). The sonar on a node arriving, best effort: `e.pending` set past a sender's
-  `QUIET` baseline for a node not `seen` within `SEEN`, played on its first draw within `PENDING`.
+  `QUIET` baseline (each session its own) for a node not `seen` within `SEEN`, played on its first draw within `PENDING`.
 - `Compass.lua` (#29, `compass`, experimental, off by default): under the character, the nearest
   gatherable record's item icon on our own art (`Media/Compass*.tga` from `Tools/make_media.py`: a
   shadow, a dark lens, a rim tinted pearl, bronze or yellow as the icons' frame resolves, `Icons.Style()`;

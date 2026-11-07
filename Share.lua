@@ -224,7 +224,8 @@ function Share.OnMessage(prefix, msg, channel, sender)
     if p and (snap.session < p.session or (snap.session == p.session and snap.seq <= p.seq)) then return end
     -- The same node keeps its table (its frame, the compass's incumbent, its pending).
     local now = GetTime()
-    local quiet = p and p.quiet or now + Share.QUIET
+    -- A new session (the sender reloaded) starts its own silent baseline (Codex on PR #86).
+    local quiet = p and p.session == snap.session and p.quiet or now + Share.QUIET
     local old = p and p.list or {}
     local used = {}
     prune(now)

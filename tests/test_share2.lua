@@ -300,6 +300,22 @@ receive(msg(11, "765,30.0,0.0,Silverleaf", "2449,0.0,-60.0,Earthroot", "2449,0.0
 WoW.tick()
 eq(#rings, 3, "...a node heard of before the loading screen ripples after it")
 
+-- The sender reloaded: its new session's first snapshot is a silent baseline
+-- too, the old session's quiet window long past (Codex on PR #86).
+local function msgIn(ses, sq, ...)
+    return ("1|%d|%d|1|%s"):format(ses, sq, table.concat({ ... }, ";"))
+end
+receive(msg(12, "765,30.0,0.0,Silverleaf"))
+WoW.now = WoW.now + 1
+receive(msgIn(SENDER + 1, 1, "765,30.0,0.0,Silverleaf", "2449,50.0,0.0,Earthroot"))
+check(entry("Earthroot") ~= nil, "the sender reloaded: its new session accepted")
+WoW.tick()
+eq(#rings, 3, "...its first snapshot a silent baseline: no ripple")
+WoW.now = WoW.now + Share.QUIET + 0.5
+receive(msgIn(SENDER + 1, 2, "765,30.0,0.0,Silverleaf", "2449,50.0,0.0,Earthroot", "2449,-50.0,0.0,Earthroot"))
+WoW.tick()
+eq(#rings, 4, "...past the new session's quiet window: a node arriving ripples")
+
 -- Under the receiver's own icon of its item: not until it shows.
 NR.Set("icons", true)
 fresh()
@@ -314,11 +330,11 @@ receive(msg(1, "2449,-60.0,0.0,Earthroot"))
 WoW.now = WoW.now + Share.QUIET + 0.5
 receive(msg(2, "2449,-60.0,0.0,Earthroot", ("765,%.1f,%.1f,Silverleaf"):format(own.north + 3, own.west)))
 WoW.tick()
-eq(#rings, 3, "arriving under my own icon of its item: no ripple")
+eq(#rings, 4, "arriving under my own icon of its item: no ripple")
 WoW.tracking[1].active = false
 NR.Set("icons", false)                                     -- my icons gone: the party node shows
 WoW.tick()
-eq(#rings, 4, "...its ripple once it shows")
+eq(#rings, 5, "...its ripple once it shows")
 NR.Alert.Sonar = realSonar
 
 done("test_share2")

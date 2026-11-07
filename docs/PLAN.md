@@ -2134,7 +2134,8 @@ map position from the sweep's `where`. So:
   - it isn't a table reused from its sender's previous list (a reused table keeps its pending);
   - it isn't from a sender's first `Share.QUIET` (2 s) of accepted messages, the silent baseline,
     as the alert's first sweep is one. A window, not one message: snapshots queued during the
-    receiver's loading screen arrive together after it (measured), and the burst is all baseline;
+    receiver's loading screen arrive together after it (measured), and the burst is all baseline. A
+    new session (the sender reloaded) starts a window of its own (Codex on PR #86);
   - no entry of its name has been seen within `Share.SAME` yards, from any sender, in the last
     `Share.SEEN` (120 s): an in-memory list of name, spot, instance and time, refreshed by every
     accepted entry, pruned on the ticker, emptied by `Share.Clear`. A node that leaves a snapshot
