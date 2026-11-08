@@ -8,6 +8,10 @@
   looking and says why, once per build in chat, in `/nr` and at the top of its Options page,
   instead of silently doing nothing. Hovering a node still shows the skill it needs. An opt-in
   minimap scan mode is in the works (#91).
+- **No more blocked-action error in combat** (#93): a few seconds after logging in or reloading, the
+  experimental marker checks its interact settings and may set one again. In a fight, the game
+  blocked that and BugGrabber reported `ADDON_ACTION_BLOCKED`. The check now waits until the fight
+  is over.
 
 ## v1.7.0
 

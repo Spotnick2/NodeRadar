@@ -460,6 +460,30 @@ eq(claims().softTargetInteract and claims().softTargetInteract.old, "1", "...the
 setPlates({ soft() })
 frames(0.6)
 eq(shown(), true, "...the stars")
+-- #93: the login's read waits out combat. A logout restore that stuck needs our
+-- value written again; with the settle ending mid-fight, nothing is written
+-- (SetCVar is blocked in combat: ADDON_ACTION_BLOCKED, the owner on 70862)
+-- until the first frame out of combat.
+WoW.fire("PLAYER_LOGOUT")
+eq(cv("softTargetInteract"), "1", "logout: put back, the claim kept")
+M.reset()
+local combatWrites = 0
+local realSet = C_CVar.SetCVar
+C_CVar.SetCVar = function(...)
+    if WoW.combat then combatWrites = combatWrites + 1 end
+    return realSet(...)
+end
+WoW.fire("PLAYER_LOGIN")
+WoW.fire("PLAYER_ENTERING_WORLD", true, false)
+WoW.combat = true
+frames(NR.Marker.SETTLE + 1.2)
+eq(combatWrites, 0, "the login's read in combat: no CVar written")
+eq(cv("softTargetInteract"), "1", "...ours not yet set again")
+WoW.combat = false
+frames(0.6)
+eq(cv("softTargetInteract"), "3", "...out of combat: the login's read sets it again")
+eq(combatWrites, 0, "...and never in combat")
+C_CVar.SetCVar = realSet
 -- Claimed already, all of them cancelled: a login claims nothing again.
 NR.db.softCVars = { softTargetInteract = { cancelled = true } }
 WoW.cvars.softTargetInteract = "2"

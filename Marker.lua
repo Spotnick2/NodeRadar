@@ -529,7 +529,10 @@ local loginDriver = CreateFrame("Frame")
 local function startRead()
     readDue = true
     loginDriver:SetScript("OnUpdate", function()
-        if loggingOut or loginPhase or (settleUntil and GetTime() < settleUntil) or API.Gamepad() then return end
+        -- Out of combat too: the read can write a claim again, and SetCVar is
+        -- blocked in combat (#93: ADDON_ACTION_BLOCKED on 70862).
+        if loggingOut or loginPhase or (settleUntil and GetTime() < settleUntil) or API.Gamepad()
+            or InCombatLockdown() then return end
         loginDriver:SetScript("OnUpdate", nil)
         readDue, settleUntil = nil, nil
         readAtLogin()
