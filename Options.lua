@@ -175,8 +175,17 @@ local function build()
     refreshers[#refreshers + 1] = function()
         version:SetText("Version " .. NR.VersionText() .. " for World of Warcraft: Forever, by Spotnick")
     end
-    local on = checkbox(page, version, "Radar on (with Find Herbs or Find Minerals on)", "enabled")
-    on:SetPoint("TOPLEFT", version, "BOTTOMLEFT", 0, -12)
+    -- #90: from 70862 the radar can't read the minimap; said here, in red, while it is so.
+    local blind = label(page, "", "GameFontNormalSmall")
+    blind:SetPoint("TOPLEFT", version, "BOTTOMLEFT", 0, -6)
+    blind:SetWidth(560)
+    blind:SetJustifyH("LEFT")
+    blind:SetTextColor(1, 0.35, 0.35)
+    refreshers[#refreshers + 1] = function()
+        blind:SetText(API.Blind() and ("The radar can't see nodes: " .. NR.BLIND_TEXT) or "")
+    end
+    local on = checkbox(page, blind, "Radar on (with Find Herbs or Find Minerals on)", "enabled")
+    on:SetPoint("TOPLEFT", blind, "BOTTOMLEFT", 0, -12)
 
     local looks = heading(page, on, "How often it looks")
     local still = radios(page, looks, "Standing still, every", "interval",

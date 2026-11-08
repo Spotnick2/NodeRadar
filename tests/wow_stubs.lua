@@ -91,6 +91,7 @@ function WoW.reset()
     WoW.timers = {}
     WoW.tickers = {}
     WoW.now = 0
+    WoW.build = "70450"     -- GetBuildInfo's build (#90: from 70862 the radar is blind)
 end
 
 --------------------------------------------------------------------------------
@@ -367,7 +368,7 @@ date = os.date
 function time(t) if t then return os.time(t) end return 1760000000 + math.floor(WoW.now) end
 function GetTime() return WoW.now end
 function GetServerTime() return time() end
-function GetBuildInfo() return "1.60.1", "70450", "Oct 15 2026", 16001 end
+function GetBuildInfo() return "1.60.1", WoW.build or "70450", "Oct 15 2026", 16001 end
 function InCombatLockdown() return WoW.combat == true end
 function GetCVar(name) return WoW.cvars[name] end
 function GetCVarBool(name) return WoW.cvars[name] == "1" end

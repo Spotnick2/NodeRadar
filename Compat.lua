@@ -68,6 +68,22 @@ end
 
 function API.Dead() return API.Yes(UnitIsDeadOrGhost("player")) end
 
+-- The client's build number, or nil (unreadable).
+function API.Build()
+    local ok, _, build = pcall(GetBuildInfo)
+    return ok and not API.IsSecret(build) and tonumber(build) or nil
+end
+
+-- From 70862 the minimap's mouseover follows only the real cursor (#90, measured:
+-- docs/FOREVER-PROBE.md, "70862: the mouseover can't be pointed"):
+-- Minimap:UpdateMouseoverAtPoint does nothing, so a sweep reads nothing. Blizzard
+-- says it's intentional (Stanzilla/WoWUIBugs#894). An unreadable build isn't blind.
+NR.BLIND_FROM = 70862
+function API.Blind()
+    local build = API.Build()
+    return build ~= nil and build >= NR.BLIND_FROM
+end
+
 -- The Gamepad UI (Options > "Enable Gamepad UI"), read the way Blizzard's own
 -- UI reads it (Blizzard_SharedXML/Mainline/InputUtil.lua:11). Not the
 -- GamePadEnable CVar: it reads true on a keyboard-and-mouse client with that
