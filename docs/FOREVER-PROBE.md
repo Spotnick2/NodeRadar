@@ -988,3 +988,26 @@ compass on a party Peacebloom at 20.8 yd (own nodes first: no ore of its own in 
 - `want`'s point agrees with the minimap's coordinates (the player at 44.3, 21.0; the herb 20.8 yd
   away at 44.6, 20.9).
 - No error, failure, secret or taint.
+
+### 70862: the mouseover can't be pointed: `/fp steps nr health`, 1.60.1.70862 (the owner, 2026-11-07, Ratchet, Herbalism 98) (#90)
+
+The radar went blind with the client update. Gates all passed (enabled, tracking on, skill read,
+no combat, no taxi, no failure), yet every sweep read 0 blips with herb dots on the minimap.
+Hovering a dot with the real mouse still showed its tooltip, our skill line included. The round's
+reads, cursor and point compared:
+
+- **The real cursor on the minimap:** every read, at the cursor or 30 units away, with the soft
+  cursor on or off, returned what lay under the real cursor (a quest marker in one run,
+  Stranglekelp in the next), whatever point `Minimap:UpdateMouseoverAtPoint` was given.
+- **The real cursor off the minimap:** with the soft cursor on, the herb's point given in six
+  spaces (`GetCursorPosition`'s, UI units, map-local in units and scaled, normalised 0..1,
+  centre-relative), after `Minimap:UpdateBlips()`, and read a frame later: all **nothing**. A full
+  sweep: 0 blips.
+- The 70862 API dump is identical to 70790's for these functions (Blizzard's documentation too).
+  Stanzilla/WoWUIBugs#894 (someone else's report of the same thing): "This is intentional and an
+  unwanted interaction. The API will be removed entirely in a future update ... Minimap is off
+  limits."
+
+So from 70862 `UpdateMouseoverAtPoint` does nothing: the minimap's mouseover is resolved only
+under the real cursor. NodeRadar stops sweeping from that build (`API.Blind`, `NR.BLIND_FROM`).
+The way back is to move the minimap under the cursor (#91), measured in its own round.

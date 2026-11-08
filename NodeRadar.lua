@@ -86,6 +86,21 @@ local function sameGeometry(a, b)
     return a and b and math.abs(a.w - b.w) < 0.5 and math.abs(a.h - b.h) < 0.5 and math.abs(a.es - b.es) < 0.001
 end
 
+-- 70862 on (#90): the radar can't read the minimap. Said in chat once per account
+-- and build (NodeRadarDB.blindNotice), while the radar is on; /nr and Options say it too.
+NR.BLIND_TEXT = "since client build 70862, Blizzard no longer lets addons read the minimap's dots, so "
+    .. "the radar can't find nodes: no alert, icons or compass. Hovering a node still shows the skill it "
+    .. "needs. An opt-in minimap scan mode is in the works."
+function NR.BlindNotice()
+    local db = NR.db
+    if not (db and db.enabled and API.Blind()) then return false end
+    local build = API.Build()
+    if db.blindNotice == build then return false end
+    db.blindNotice = build
+    API.Say(NR.BLIND_TEXT)
+    return true
+end
+
 -- The names the alert counts, so the sweep tells them apart side by side.
 local function isNode(name) return Learn.Kind(name) and true or false end
 
@@ -93,6 +108,7 @@ local function isNode(name) return Learn.Kind(name) and true or false end
 function NR.Step(now)
     local db = NR.db
     if not (db and db.enabled) or Learn.Busy() or Learn.loading or API.Gamepad() then return end
+    if API.Blind() then return end                  -- 70862 on: a sweep reads nothing (#90)
     local ok, shown = pcall(Minimap.IsVisible, Minimap)
     if not (ok and API.Yes(shown)) then return end
     if not Learn.AnyOn() then return end
@@ -212,6 +228,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         NR.Minimap.Register()                      -- the button (#46): no libraries, no button
         NR.Tooltip.Register()                      -- the skill in the minimap's tooltip (#62)
         NR.Share.Apply()                           -- the prefix and the roster, if sharing or showing (#83)
+        NR.BlindNotice()                           -- 70862 on: why nothing happens (#90)
     elseif event == "PLAYER_ENTERING_WORLD" then
         Icons.Clear()
         NR.Share.Clear()
@@ -306,6 +323,7 @@ local function status()
     if running ~= NR.MEASURED_ON_BUILD then
         API.Say("measured on " .. NR.MEASURED_ON_BUILD .. "; you're on " .. running .. ": report anything odd")
     end
+    if API.Blind() then API.Say(NR.BLIND_TEXT) end -- #90
 end
 
 local function known()
