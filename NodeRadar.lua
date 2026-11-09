@@ -231,6 +231,15 @@ API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
 local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
 
+-- What the minimap tracks, as one string (the gathering trackings' states), to tell a real
+-- change from a MINIMAP_UPDATE_TRACKING with nothing changed.
+local function trackingKey()
+    local parts = {}
+    for _, t in ipairs(Learn.Trackings()) do parts[#parts + 1] = t.spellID .. (t.active and "+" or "-") end
+    return table.concat(parts, ",")
+end
+local trackedKey
+
 -- The player's zoom (or an addon's) comes through Minimap:SetZoom and resets
 -- the alert: zooming out shows many nodes at once. The swap indoors or out
 -- fires MINIMAP_UPDATE_ZOOM with no call, so it keeps the history and a node
@@ -264,6 +273,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         Alert.NewArea(now)
         Learn.Resume(now)
         NR.MoveScan.AskSoon(now)                   -- the scan's prompt, once per account (#91)
+        trackedKey = trackingKey()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         Alert.NewArea(now)
         Learn.Void("the zone changed")
@@ -283,8 +293,16 @@ events:SetScript("OnEvent", function(_, event, ...)
         if not zoom then Alert.Reset("the zoom unreadable") end
         Learn.Void("the zoom changed")
     elseif event == "MINIMAP_UPDATE_TRACKING" then
-        Alert.Reset("MINIMAP_UPDATE_TRACKING")
-        Icons.Clear()
+        -- From 70862 only a real change of what the minimap tracks resets the alert and the
+        -- icons: the client also sends this with nothing changed (seen while mining), and with
+        -- the scan's sparse reads each reset made the next one a silent baseline (#91). The
+        -- sweep before 70862 keeps resetting at every one, as it always did.
+        local now2 = trackingKey()
+        if now2 ~= trackedKey or not API.Blind() then
+            Alert.Reset("tracking changed")
+            Icons.Clear()
+        end
+        trackedKey = now2
         Learn.OnTrackingChanged()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         API.OnCooldownUpdate()                     -- Cultivation's state (#26)

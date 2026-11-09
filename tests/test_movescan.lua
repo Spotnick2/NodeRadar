@@ -151,6 +151,22 @@ runBurst()
 C_TooltipInfo.GetMinimapMouseover = realRead2
 check(NR.MoveScan.stats.valid == valid0 + 1 and atHome(), "an empty read, then a good one the next frame: valid")
 
+-- MINIMAP_UPDATE_TRACKING with nothing changed (sent while mining on 70862) keeps the counts:
+-- the next new node still alerts. A real change starts afresh.
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+sounds = #WoW.sounds
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 10 } }
+WoW.now = WoW.now + 10
+untilBorrowed(400)
+runBurst()
+check(#WoW.sounds == sounds + 1, "a tracking update with nothing changed: the next new node still alerts")
+WoW.tracking[1].active = false
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+WoW.tracking[1].active = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+SlashCmdList.NODERADAR("scan log")
+check(chatHas("alert: reset %(tracking changed%)"), "a real tracking change resets the alert")
+
 --------------------------------------------------------------------------------
 -- 3. Unread is never absence: no observation at all.
 --------------------------------------------------------------------------------
@@ -230,6 +246,8 @@ NR = fresh()
 for i = 1, 60 do WoW.cursor = { 300 + i * 5, 300 }; frames(1) end
 check(NR.MoveScan.stats.bursts == 0, "a moving cursor: no burst")
 check(untilBorrowed(30), "...once it rests 0.2 s, one comes")
+SlashCmdList.NODERADAR("scan log")
+check(chatHas("scan: waited 1 s: the cursor is moving %(%d+ frames%)"), "/nr scan log says what kept it waiting")
 runBurst()
 
 --------------------------------------------------------------------------------

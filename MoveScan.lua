@@ -57,6 +57,7 @@ local lastDown = -math.huge
 local cursorX, cursorY, quietSince
 local looking, moving = false, false
 local followers = { at = -math.huge }
+local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
 
 MS.stats = { bursts = 0, valid = 0, unread = 0 }
 
@@ -750,7 +751,21 @@ function MS.Tick(now)
     if now < nextAt then return end
     local why = MS.Refusal(now)
     MS.lastRefusal = why
-    if why then return end
+    if why then
+        -- What kept it waiting since the last look, for /nr scan log.
+        waited[why] = (waited[why] or 0) + 1
+        waitedSince = waitedSince or now
+        return
+    end
+    if waitedSince and now - waitedSince >= 1 then
+        local list = {}
+        for reason, n in pairs(waited) do list[#list + 1] = { reason, n } end
+        table.sort(list, function(a, b) return a[2] > b[2] end)
+        local parts = {}
+        for i = 1, math.min(3, #list) do parts[i] = ("%s (%d frames)"):format(list[i][1], list[i][2]) end
+        API.Trace(("scan: waited %.0f s: %s"):format(now - waitedSince, table.concat(parts, ", ")))
+    end
+    waited, waitedSince = {}, nil
     borrow(now)
 end
 
