@@ -603,4 +603,22 @@ NR = fresh()
 check(NR.Locate._test.rebuild("Silverleaf", 100) and not NR.Locate._test.rebuild("Silverleaf", 110)
     and NR.Locate._test.rebuild("Silverleaf", 100 + NR.Locate.BACKOFF), "one rebuild a BACKOFF per name")
 
+-- The search's states in the trace (#91: one-window bursts in game, the cause unlogged).
+local function traced(pat)
+    for _, l in ipairs(NodeRadar.trace) do if l:find(pat) then return true end end
+    return false
+end
+NR = fresh()
+local undo2 = override(function(w) if isPresence(w) then return "model" end return { type = 21, lines = {} } end)
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(30, function() return traced("search ran out") end)
+bursts(2)
+undo2()
+check(traced("locate: Silverleaf search starts %(1 in range, 0 recorded%)"), "trace: a search starts")
+check(traced("locate: Silverleaf search ran out with 0 of 1 found: again in 20 s"), "trace: a search runs out")
+check(traced("locate: Silverleaf waits its backoff %(%d+ s left%)"), "trace: its backoff")
+NR.Locate.Unread({ window = { size = 15, tries = 0 } })
+check(traced("locate: a 15 yd window placed but not read %(try 1 of 2%)"), "trace: a window placed but not read")
+check(traced("; queued %d+ search, %d+ re%-check"), "trace: the burst line's queue")
+
 done("test_locate2")

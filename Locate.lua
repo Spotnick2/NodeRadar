@@ -190,7 +190,12 @@ function Locate.Presence(c, now)
             -- already hold a new node.
             local ran = before[name] or 0
             active[name] = nil
-            if ran > m then ended[name] = { at = now, n = ran } else ended[name] = nil end
+            if ran > m then
+                ended[name] = { at = now, n = ran }
+                API.Trace(("locate: %s search ran out with %d of %d found: again in %d s, or at a rise"):format(name, m, ran, Locate.BACKOFF))
+            else
+                ended[name] = nil
+            end
         end
         local e = ended[name]
         -- A rise since the last read is new demand, whatever the old search's count (Codex,
@@ -198,6 +203,9 @@ function Locate.Presence(c, now)
         if e and (n > e.n or n <= m or n > (before[name] or 0)) then ended[name], e = nil, nil end
         if n > m and not on and not (e and now - e.at < Locate.BACKOFF) then
             need[name], active[name] = true, true
+            API.Trace(("locate: %s search starts (%d in range, %d recorded)"):format(name, n, m))
+        elseif n > m and not on then
+            API.Trace(("locate: %s waits its backoff (%.0f s left)"):format(name, Locate.BACKOFF - (now - e.at)))
         end
         -- A rebuild done: the count met by nodes found again, the priors left are gone.
         if n <= m then
@@ -461,6 +469,8 @@ function Locate.Unread(p)
     local w = p and p.window
     if not w then return end
     w.tries = w.tries + 1
+    API.Trace(("locate: a %.0f yd window%s placed but not read (try %d of %d)"):format(w.size,
+        w.record and " (re-check)" or "", w.tries, Locate.TRIES))
     if w.tries < Locate.TRIES then
         windows[#windows + 1] = w
     elseif w.record then
@@ -490,6 +500,13 @@ end
 function Locate.Cancel() hits = {} end
 
 -- Search windows still open (re-checks aside): the scan comes back soon (MoveScan.LOCATE_GAP).
+-- Windows waiting: search windows, re-checks (the burst line, #91).
+function Locate.Queued()
+    local s, r = 0, 0
+    for _, w in ipairs(windows) do if w.record then r = r + 1 else s = s + 1 end end
+    return s, r
+end
+
 function Locate.Busy()
     for _, w in ipairs(windows) do if not w.record then return true end end
     return false

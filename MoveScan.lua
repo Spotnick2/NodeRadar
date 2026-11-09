@@ -667,7 +667,8 @@ function MS.TraceBurst(b, now, quick, soon)
         (now - b.t0) * 1000, b.frame, (b.dtMax or 0) * 1000, fps and ("%.0f"):format(fps) or "?",
         tostring(b.reason), b.observation and "read" or "not read",
         MS.stats.windows - (b.w0 or MS.stats.windows), MS.stats.windows - (b.w0 or MS.stats.windows) == 1 and "" or "s",
-        b.stop and (", then " .. b.stop) or "", soon, quick and " (locating)" or ""))
+        b.stop and (", then " .. b.stop) or "", soon, quick and " (locating)" or "")
+        .. (NR.Locate and ("; queued %d search, %d re-check"):format(NR.Locate.Queued()) or ""))
 end
 
 -- Seconds between bursts: scanEvery moving, three times that standing still.
