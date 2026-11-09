@@ -253,7 +253,11 @@ function Locate.Next(pn, pw, radius, es)
             for _, o in ipairs(records) do
                 if o ~= r and o.name == r.name and not o.prior then gap = math.min(gap, math.sqrt(d2(o, r.north, r.west))) end
             end
-            local size = math.max(Locate.MIN_CHECK, math.min(Locate.FINE, gap / 2))
+            -- Wide enough to cover the record's own uncertainty (its node can be r.err off it, on
+            -- each axis) when nothing of its name is near, so a negative there is conclusive;
+            -- in a cluster, no wider than half the gap (Read: a narrower negative proves nothing).
+            local err = r.err or Locate.FINE * Locate.REACH
+            local size = math.max(Locate.MIN_CHECK, math.min(2 * err, gap / 2))
             windows[#windows + 1] = { north = r.north, west = r.west, size = size, names = { [r.name] = true },
                                       depth = 99, tries = 0, record = r }
         end
@@ -312,13 +316,14 @@ local function located(name, north, west, now, size)
     -- A rebuild's prior here: the same node, found again (its record, icon and identity kept).
     for _, r in ipairs(records) do
         if r.name == name and r.prior and math.abs(r.north - north) <= reach and math.abs(r.west - west) <= reach then
-            r.prior, r.at, r.north, r.west = nil, now, north, west
+            r.prior, r.at, r.north, r.west, r.err = nil, now, north, west, reach
             dirty = true
             return
         end
     end
+    -- r.err: how far its node can be from this spot, per axis (a leaf's reach, Codex, PR #102).
     local r = { name = name, kind = NR.Learn.Kind(name), north = north, west = west, at = now,
-                instance = instanceNow(), misses = 0 }
+                instance = instanceNow(), misses = 0, err = reach }
     records[#records + 1] = r
     dirty = true
     -- A gathered spot keeps its node silent for all of GONE, whatever it's found again
@@ -425,8 +430,14 @@ function Locate.Read(p, c, pn, pw, now)
                 end
             end
             r.at, r.due, r.overdue = now, nil, nil
-        else
+        elseif w.size / 2 + 0.01 >= (r.err or Locate.FINE * Locate.REACH) then
             drop(r, "not at its spot")
+        else
+            -- A window narrower than the record's uncertainty (a cluster): its negative can't
+            -- tell a gone node from one a few yards off its estimate (Codex, PR #102: live
+            -- records dropped). A rebuild settles it; within BACKOFF, checked again later.
+            r.checkAfter = now + Locate.RECHECK
+            rebuild(r.name, now, "a narrow re-check found nothing")
         end
         return
     end

@@ -557,6 +557,30 @@ bursts(60, function() return #near(c8n, c8w, 16) == 1 and settled() end)
 check(#near(c8n, c8w, 16) == 1 and has(NR.Locate.Records(), A8) and not has(NR.Locate.Records(), A8d),
     "a near-duplicate filling the count: rebuilt, the waiting node found, the duplicate gone")
 
+-- Round 7: records whose estimates are 7 yards off their live nodes (within a leaf's reach),
+-- 14 yards apart: their narrower cluster re-checks miss the nodes, which proves nothing: the
+-- records keep their identity and nothing sounds, through several re-check cycles.
+NR = fresh()
+NR.db.cooldown = 0
+WoW.blips = { { "Silverleaf", 30, -7 / YARDS }, { "Silverleaf", 30, 21 / YARDS } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local pn9, pw9 = spot(30, 0)
+local E1, E2 = rec(pn9, pw9, 5), rec(pn9 + 14, pw9, 5)
+E1.err, E2.err = 9.375 * NR.Locate.REACH, 9.375 * NR.Locate.REACH
+table.insert(NR.Locate.Records(), E1)
+table.insert(NR.Locate.Records(), E2)
+local sounds9 = #WoW.sounds
+for _ = 1, 4 do
+    for _, r in ipairs(NR.Locate.Records()) do r.due = true end
+    WoW.now = WoW.now + NR.Locate.RECHECK
+    bursts(20, function() return settled() end)
+end
+local n1 = #near(pn9 - 7, pw9, 13)
+local n2 = #near(pn9 + 21, pw9, 13)
+check(#NR.Locate.Records() == 2 and n1 == 1 and n2 == 1, "two live nodes with approximate records: both kept (" .. n1 .. ", " .. n2 .. ")")
+check(#WoW.sounds == sounds9, "...and nothing sounds")
+
 -- A rebuild never fires twice within BACKOFF of a name.
 NR = fresh()
 check(NR.Locate._test.rebuild("Silverleaf", 100) and not NR.Locate._test.rebuild("Silverleaf", 110)
