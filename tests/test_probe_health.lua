@@ -55,3 +55,5 @@ WoW.flushTimers()
 poll()
 check(has("C8 screen next frame: read"), "C8 reads on the next frame")
 check(not WoW.softCursor, "the soft cursor is off after C")
+
+done("test_probe_health")

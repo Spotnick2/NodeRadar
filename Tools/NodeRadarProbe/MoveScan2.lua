@@ -468,6 +468,17 @@ end
 -- o: step, label, units | px, name, ignoreGate, abortOnDown, flavor, suppress, clicksOn,
 -- forceCombat, tipLog, logReads, holdPrepared (seconds), shot (a screenshot label for a hold),
 -- tolerateFocus (a sweep whose cursor may leave the map: those samples are unread, the burst goes on).
+-- The scan lease on Glass MiniMap, kept where the abort and the error exits can see it (a
+-- burst's coroutine is dropped by an abort and never resumes). Released once, whatever the exit.
+local glassLease                      -- { api = GlassMiniMap, rec = the burst's record }
+local function releaseGlass()
+    local l = glassLease
+    if not l then return end
+    glassLease = nil
+    local okE, errE = pcall(l.api.ScanEnd, "NodeRadarProbe")
+    if not okE and l.rec then l.rec.glass = tostring(l.rec.glass) .. "; ScanEnd threw " .. tostring(errE) end
+end
+
 local function session(o, body)
     local rec = { step = o.step, label = o.label, reads = {} }
     W.burstN = W.burstN + 1
@@ -545,10 +556,9 @@ local function session(o, body)
     -- Glass MiniMap's scan handshake (GlassMiniMap#56, PUBLIC_API_VERSION 1), as #91 will do it:
     -- ScanBegin before the first change, one ScanEnd after the restore, whatever happened.
     local gmm = rawget(_G, "GlassMiniMap")
-    local glassOwed = false
     if type(gmm) == "table" and rawget(gmm, "PUBLIC_API_VERSION") == 1 and type(rawget(gmm, "ScanBegin")) == "function" then
         local okB, acquired = pcall(gmm.ScanBegin, "NodeRadarProbe")
-        glassOwed = true
+        glassLease = { api = gmm, rec = rec }
         rec.glass = okB and tostring(acquired) or ("threw " .. tostring(acquired))
     else
         rec.glass = type(gmm) == "table" and "no v1 API" or "not loaded"
@@ -572,10 +582,7 @@ local function session(o, body)
         rok = M.restore(o.step .. " burst retry " .. i)
     end
     rec.restoreOK = rok == true
-    if glassOwed then
-        local okE, errE = pcall(gmm.ScanEnd, "NodeRadarProbe")
-        if not okE then rec.glass = rec.glass .. "; ScanEnd threw " .. tostring(errE) end
-    end
+    releaseGlass()
     pcall(Minimap.UpdateBlips, Minimap)
     S.isPlaced, S.restored = false, true
     W.phase = "restored"
@@ -750,6 +757,10 @@ listener:SetScript("OnEvent", onEvent)
 -- The main file's abort handler tells us first: combat starting, Edit Mode entering, a loading
 -- screen, the round stopping. What state the burst was in is the measurement.
 local function onAbort(reason, borrowed, hadJob)
+    if glassLease then                           -- the burst never reached its own ScanEnd: restore first, then release
+        if M.state() then pcall(M.restore, reason) end
+        releaseGlass()
+    end
     if reason:find("^job end") then              -- a step's job ended (or failed): nothing of ours may outlast it
         W.suppress, W.inBurst, W.abortOnDown, W.skin, W.hold = false, false, nil, nil, nil
         M.setQuiet(false)
@@ -1100,7 +1111,8 @@ local function pairBody()
     local rec = session({ step = "pair", label = "pair", units = units, name = A.name, logReads = false, tolerateFocus = true }, function(S)
         local t = -SWEEP
         while t <= dPxAt + SWEEP do
-            local r2 = S.sample(("t%+.0f"):format(t), A.dx * k, A.dy * k, t * ux, t * uy)
+            -- M.place puts the node `extra` px from the cursor, so the cursor passes over B when A moves the other way
+            local r2 = S.sample(("t%+.0f"):format(t), A.dx * k, A.dy * k, -t * ux, -t * uy)
             if S.dead then break end
             local c = r2 and r2.valid and (r2.counts[A.name] or 0) or nil
             line[#line + 1] = ("%+.0f:%s"):format(t, c == nil and "x" or tostring(c))

@@ -446,17 +446,6 @@ local n0, f0 = count("restore readback"), MS.frame()
 WoW.advance(5)
 check(count("restore readback") == n0 and not has("stray save"), "no restore runs after the end, over 5 s of frames")
 check(MS.frame() == f0 and select(1, MS.state()) == nil, "the per-frame driver is stopped when idle")
--- A readback that never matches: three more tries, a second apart, then the save is dropped.
-homeState(); wipeLines()
-Minimap.SetFrameStrata = function(w, v) if v == "TOOLTIP" then w._strata = v end end
-fp("nr movetest 21 0 0 tooltip")
-WoW.advance(8)
-check(count("restore readback") == 4 and has("GAVE UP"), "a stuck readback is tried 3 more times, then given up (" .. count("restore readback") .. " readbacks)")
-WoW.advance(5)
-check(count("restore readback") == 4 and select(1, MS.state()) == nil, "...and then nothing more runs")
-Minimap.SetFrameStrata = nil
-homeState()
-
 -- pair: two seeds of one name, listed twice at the small sizes.
 homeState(); wipeLines()
 WoW.blipsAt = { { "Silverleaf", 20, -15 }, { "Silverleaf", -30, 25 } }
@@ -579,5 +568,31 @@ check(rec.at == 4, "the hover step waits for a node under the cursor")
 WoW.advance(200)
 local res = rec.results[4]
 check(rec.at ~= 4 and res and res.check == "FAIL", "a seed step that times out FAILS (check " .. tostring(res and res.check) .. ")")
+
+-- A geometry restore that is blocked past any retry limit keeps its save (alpha 0 and clicks off stay
+-- pending on it), tries every 2 s, refuses a new borrow, and puts everything back once it is allowed.
+homeState(); wipeLines()
+local realSetSize, blocked = Minimap.SetSize, true
+Minimap.SetSize = function(w, a, b2) if blocked and a == 140 then return end return realSetSize(w, a, b2) end
+fp("nr movetest 21 0 0 hidden")
+WoW.advance(12)
+check(count("restore readback") > 4 and not has("GAVE UP"), "a blocked geometry restore keeps trying past 3 retries (" .. count("restore readback") .. " readbacks)")
+check(select(1, MS.state()) ~= nil, "...and keeps its save")
+check(Minimap:GetAlpha() == 0, "...alpha stays pending")
+check(MS.refusal() == "already borrowed", "...and no new borrow is allowed meanwhile")
+blocked = false
+WoW.advance(2.5)
+check(select(1, MS.state()) == nil and same(orig), "once allowed, the original geometry, alpha and input return")
+check(Minimap:GetAlpha() == 0.8 and Minimap:IsMouseClickEnabled() == true and Minimap:GetWidth() == 140, "...(alpha 0.8, clicks on, 140)")
+-- A recovery event retries at once, without waiting for the cadence.
+homeState(); wipeLines()
+blocked = true
+fp("nr movetest 21 0 0 hidden")
+WoW.advance(3)
+blocked = false
+WoW.fire("LOADING_SCREEN_DISABLED")
+check(select(1, MS.state()) == nil and Minimap:GetAlpha() == 0.8, "LOADING_SCREEN_DISABLED retries the pending restore at once")
+Minimap.SetSize = realSetSize
+homeState()
 
 done("test_probe_movescan")

@@ -7250,6 +7250,7 @@ local ubOn, nofocusOn            -- the dry run's flags: UpdateBlips after each 
 local hidden                   -- the dry run's hidden variant is on (alpha 0, icon scale 0.01)
 local wake                     -- starts the per-frame driver (it stops itself when idle)
 local strayTries, strayNext = 0, 0
+local STRAY_EVERY = 2         -- seconds between the retries of a restore that did not read back
 local dryRun                   -- a movetest, which the round's stop guard must leave alone
 local frameHook                -- called on every frame a placement waits (the steering round logs there)
 local forceCombat              -- movescan2/3 only: borrow even in combat, to measure what the client allows (#91)
@@ -7722,15 +7723,10 @@ local function onUpdate()
     if not j then
         if not S then driver:SetScript("OnUpdate", nil); return end   -- idle: nothing runs per frame
         local now = GetTime()
-        if now >= strayNext then                                       -- a failed readback: three more tries, a second apart
-            strayNext = now + 1
+        if now >= strayNext then                                       -- a failed readback: the save is kept (alpha and clicks may be
+            strayNext = now + STRAY_EVERY                              -- pending on it), tried again every 2 s and on the recovery events
             strayTries = strayTries + 1
             restore("stray save")
-            if S and strayTries >= 3 then
-                mlog("restore", "GAVE UP: the readback still differs after 3 more tries; the save is dropped")
-                S = nil
-                iconTouched = false
-            end
         end
         return
     end
@@ -7760,6 +7756,18 @@ do
     local er = rawget(_G, "EventRegistry")
     if type(er) == "table" and type(er.RegisterCallback) == "function" then
         pcall(er.RegisterCallback, er, "EditMode.Enter", function() abort("EditMode.Enter") end, guard)
+    end
+end
+-- A restore that did not read back is tried again when what blocked it may have cleared.
+local recover = CreateFrame("Frame")
+recover:SetScript("OnEvent", function(_, event)
+    if S and not job then strayNext = 0; restore(event) end
+end)
+Probe:RegisterEvents(recover, { "PLAYER_REGEN_ENABLED", "LOADING_SCREEN_DISABLED" })
+do
+    local er = rawget(_G, "EventRegistry")
+    if type(er) == "table" and type(er.RegisterCallback) == "function" then
+        pcall(er.RegisterCallback, er, "EditMode.Exit", function() if S and not job then strayNext = 0; restore("EditMode.Exit") end end, recover)
     end
 end
 guardRound({ KEY, Probe.name .. "/movescan2", Probe.name .. "/movescan3" }, function() return (S ~= nil or job ~= nil) and not dryRun end, function() abort("the round stopped") end)

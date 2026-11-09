@@ -371,6 +371,14 @@ WoW.blipsAt = { { "Silverleaf", 20, -15 }, { "Silverleaf", -30, 25 } }
 out = runJob("pair", ms2.pairBody, 20)
 check(results().pair and results().pair.presenceMultiplicity == 2, "two nodes of a name read twice at the presence size: " .. tostring(out.v))
 check(results().pair.twice == 0, "...and never together at a cursor 50 px from one")
+-- ...and the trace reaches each seeded node (the sweep goes from A to B, not away from B).
+do
+    local along, dPxAt = {}, results().pair.distancePxAt
+    for t, c in results().pair.along:gmatch("([%+%-]%d+):(%S+)") do along[tonumber(t)] = c end
+    local function near(target) local best; for t, c in pairs(along) do if math.abs(t - target) <= 2 and c == "1" then best = t end end return best end
+    check(near(0) ~= nil, "the A-to-B trace lists the name once at A's position")
+    check(near(dPxAt) ~= nil, "the A-to-B trace lists the name once at B's position (t = " .. string.format("%.1f", dPxAt) .. ")")
+end
 WoW.blipsAt = { { "Silverleaf", 20, -15 } }
 MS.seeds.pairA, MS.seeds.pairB = nil, nil
 
@@ -593,6 +601,31 @@ local rr = results().riding
 check(rr and rr.bursts >= 25 and rr.valid >= 25 and rr.restoreBad == nil, "the riding step: a burst every 2 s for a minute, all valid (" .. tostring(rr and rr.bursts) .. ")")
 check(rr.bursts <= 32, "...never faster than every 2 s")
 check(same(orig), "the map is home after riding")
+
+-- 15b. Glass MiniMap's scan lease is released once, on every exit ---------------------------------------------------------------
+
+do
+    local begins, ends = 0, 0
+    rawset(_G, "GlassMiniMap", { PUBLIC_API_VERSION = 1, ScanBegin = function() begins = begins + 1; return true end, ScanEnd = function() ends = ends + 1 end })
+    local function reset() begins, ends = 0, 0; homeState(); WoW.combat = false end
+    reset()
+    runJob("t", function() ms2.burst({ step = "t", label = "normal", px = 15.4, name = "Silverleaf" }) end)
+    check(begins == 1 and ends == 1, "a normal burst takes and releases the lease once (" .. begins .. "/" .. ends .. ")")
+    reset()
+    runJob("t", function() ms2.burst({ step = "t", label = "interrupted", px = 15.4, name = "Silverleaf", holdPlaced = 30 }) end, 0.3)
+    check(advanceUntil(function() return W.phase == "hold-placed" end, 5), "an interrupted burst gets to its hold")
+    check(begins == 1 and ends == 0, "...holding the lease")
+    WoW.combat = true
+    WoW.fire("PLAYER_REGEN_DISABLED")
+    WoW.advance(2, 0.02)
+    check(begins == 1 and ends == 1, "combat mid-burst releases the lease exactly once (" .. begins .. "/" .. ends .. ")")
+    WoW.combat = false
+    reset()
+    runJob("t", function() ms2.burst({ step = "t", label = "error", px = 15.4, name = "Silverleaf", placeFn = function() error("boom") end }) end, 1)
+    check(begins == 1 and ends == 1, "a burst that throws releases the lease exactly once (" .. begins .. "/" .. ends .. ")")
+    check(select(1, MS.state()) == nil and same(orig), "...with the map home")
+    rawset(_G, "GlassMiniMap", nil)
+end
 
 -- 16. The rounds exist ----------------------------------------------------------------------------------------------------------------
 
