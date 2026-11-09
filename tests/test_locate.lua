@@ -140,6 +140,26 @@ sounds = #WoW.sounds
 bursts(12, function() return #NR.Locate.Records() > 0 end)
 check(#NR.Locate.Records() == 1 and #WoW.sounds == sounds, "still there: found again at its spot, no sound")
 
+-- Fewer in range than recorded (a mined vein whose record sat off its spot): the least
+-- recently confirmed one goes at once, the count winning over re-checks that can't read.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 } }
+bursts(30, function() return #NR.Locate.Records() >= 2 end)
+local recs = NR.Locate.Records()
+recs[1].at, recs[2].at = WoW.now - 100, WoW.now      -- the first confirmed long ago
+local stale = recs[1]
+local realRead3 = C_TooltipInfo.GetMinimapMouseover
+C_TooltipInfo.GetMinimapMouseover = function()            -- every window read empty, as in game
+    if Minimap:GetWidth() > 20 then return { type = 21, lines = {} } end
+    return realRead3()
+end
+WoW.blips = { { "Silverleaf", -40, 30 } }
+bursts(1)
+C_TooltipInfo.GetMinimapMouseover = realRead3
+local kept = false
+for _, r in ipairs(NR.Locate.Records()) do if r == stale then kept = true end end
+check(#NR.Locate.Records() == 1 and not kept, "the count falls to 1: the least recently confirmed record goes at once")
+
 --------------------------------------------------------------------------------
 -- 6. A name gone from range: its records go at the next presence read.
 --------------------------------------------------------------------------------

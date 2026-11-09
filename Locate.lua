@@ -136,7 +136,14 @@ function Locate.Presence(c, now)
         local m = ofName(name)
         if n > m and not searching(name) then need[name] = true end
         if n < m then
-            for _, r in ipairs(records) do if r.name == name then r.due = true end end
+            -- Fewer in range than recorded: the surplus goes now, least recently confirmed first
+            -- (the count is the most reliable read; a re-check that can't read kept a mined vein
+            -- as a ghost icon in game), the rest re-checked.
+            local mine = {}
+            for _, r in ipairs(records) do if r.name == name then mine[#mine + 1] = r end end
+            table.sort(mine, function(a, b) return a.at < b.at end)
+            for i = 1, m - n do drop(mine[i], "fewer in range than recorded") end
+            for i = m - n + 1, #mine do mine[i].due = true end
         end
     end
     if next(need) then
@@ -255,7 +262,7 @@ end
 
 -- The player gathered a node of that name: its records within NEAR yards go, their spots
 -- remembered as the same node for GONE seconds (a vein mined again).
-Locate.NEAR = 15
+Locate.NEAR = 25           -- a located spot can be ~10 yards off (the 7 to 15 yard leaves, their reach)
 function Locate.Gathered(name, now)
     local ok, n, w = pcall(UnitPosition, "player")
     n, w = ok and API.Num(n), ok and API.Num(w)
