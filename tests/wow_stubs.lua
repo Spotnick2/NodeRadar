@@ -827,7 +827,8 @@ function WoW.moveRead()
             lines[#lines + 1] = { leftText = WoW.secretNames and WoW.Secret("name") or bl.text or bl[1], type = 0 }
         end
     end
-    if #lines == 0 then return nil end
+    -- The minimap hovered with nothing under the cursor: a valid answer with no lines (in
+    -- game, a locate window away from the player's arrow; #91).
     return { type = 21, lines = lines }
 end
 

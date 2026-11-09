@@ -2420,7 +2420,10 @@ of an older generation or another instance is dropped.
   and which mean "unread" (nil, malformed, unsettled) is measured: a valid read always has lines
   (the player, a quest object), an unsettled one has none, nil never came from a valid read. So
   known empty is a valid read with at least one line and no accepted name; no lines or nil is
-  unread.
+  unread. That holds for the presence read, whose cursor sits on the player's arrow (always a
+  line). A locate window off to the side has nothing else to list: in play (the owner's scan log,
+  2026-11-09) 266 of 267 re-checks of veins gone since answered with no lines, so for a window an
+  answer with no lines is no node there; only an invalid read (focus, placement, size) is unread.
 
 What each consumer changes (Codex, round 1):
 

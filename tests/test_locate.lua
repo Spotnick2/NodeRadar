@@ -160,6 +160,23 @@ sounds = #WoW.sounds
 bursts(12, function() return #NR.Locate.Records() > 0 end)
 check(#NR.Locate.Records() == 1 and #WoW.sounds == sounds, "still there: found again at its spot, no sound")
 
+-- A vein mined by someone else: its re-check at its spot answers with no lines (nothing
+-- there), and the record goes at once (in game such answers were kept as ghosts).
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 } }
+bursts(30, function() return #NR.Locate.Records() >= 2 end)
+local minedBy = recordNear("Silverleaf", n1, w1, 16)
+WoW.blips = { { "Silverleaf", -40, 30 } }
+NR.Locate.OVERDUE = 99                               -- the re-check alone must settle it
+bursts(6, function()
+    for _, r in ipairs(NR.Locate.Records()) do if r == minedBy then return false end end
+    return true
+end)
+local still = false
+for _, r in ipairs(NR.Locate.Records()) do if r == minedBy then still = true end end
+check(minedBy ~= nil and not still, "a re-check answering with no lines drops the record (no ghost)")
+NR.Locate.OVERDUE = 3
+
 -- Fewer in range than recorded (a mined vein whose record sat off its spot): the least
 -- recently confirmed one goes at once, the count winning over re-checks that can't read.
 NR = fresh()
@@ -168,14 +185,14 @@ bursts(30, function() return #NR.Locate.Records() >= 2 end)
 local recs = NR.Locate.Records()
 recs[1].at, recs[2].at = WoW.now - 100, WoW.now      -- the first confirmed long ago
 local stale = recs[1]
-local realRead3 = C_TooltipInfo.GetMinimapMouseover
-C_TooltipInfo.GetMinimapMouseover = function()            -- every window read empty, as in game
-    if Minimap:GetWidth() > 20 then return { type = 21, lines = {} } end
-    return realRead3()
-end
+local realFoci = GetMouseFoci
+rawset(_G, "GetMouseFoci", function()                      -- every window read invalid (not the top focus)
+    if Minimap:GetWidth() > 20 then return { WorldFrame } end
+    return realFoci()
+end)
 WoW.blips = { { "Silverleaf", -40, 30 } }
 bursts(4)
-C_TooltipInfo.GetMinimapMouseover = realRead3
+rawset(_G, "GetMouseFoci", realFoci)
 local kept = false
 for _, r in ipairs(NR.Locate.Records()) do if r == stale then kept = true end end
 check(#NR.Locate.Records() == 1 and not kept,

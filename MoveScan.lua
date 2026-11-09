@@ -787,13 +787,15 @@ local function read(b, now)
     local why = invalid(b)
     local names
     if not why then names, why = MS.ReadNames() end
-    if not names and why == "no lines" and (b.rereads or 0) < MS.REREADS then
+    if not names and why == "no lines" and b.cur.kind == "presence" and (b.rereads or 0) < MS.REREADS then
         b.rereads = (b.rereads or 0) + 1
         return false
     end
     if b.cur.kind ~= "presence" then
-        -- A locate window: nothing at all there is no node there (only positives are
-        -- followed); an invalid or empty read is tried again (Locate.TRIES).
+        -- A locate window: an empty answer is no node there. The presence read always lists
+        -- the player (the cursor on its arrow), so an empty one there is a failed read; a window
+        -- off to the side has nothing else to list (in game 266 of 267 re-checks of gone veins
+        -- came back with no lines and were kept as ghosts). An invalid read is tried again.
         b.cur.read = true
         MS.stats.windows = MS.stats.windows + 1
         local w = b.cur.window
@@ -802,7 +804,7 @@ local function read(b, now)
         API.Trace(("locate: window %.0f yd%s at %.0f,%.0f from you: %s"):format(w.size, w.record and " (re-check)" or "",
             b.cur.ox * (2 * (b.cur.radius or 0) / b.cur.units), b.cur.oy * (2 * (b.cur.radius or 0) / b.cur.units),
             names and (#listed > 0 and table.concat(listed, ", ") or "no node") or ("unread: " .. tostring(why))))
-        if names or why == "nothing" then
+        if names or why == "nothing" or why == "no lines" then
             local pn, pw = playerPos()
             if NR.Locate then NR.Locate.Read(b.cur, names and countsOf(names) or {}, pn, pw, now) end
         elseif NR.Locate then
