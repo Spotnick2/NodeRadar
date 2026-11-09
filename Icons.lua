@@ -895,7 +895,10 @@ function Icons.SetRecords(list, now)
     local keep = {}
     for _, r in ipairs(list) do keep[r] = true end
     for _, r in ipairs(records) do if not keep[r] then release(r) end end
-    records = list
+    -- A copy (the same record tables): Locate removes from its own list, and a record gone from
+    -- both before this call would keep its frame shown, unreachable (Codex, PR #102).
+    records = {}
+    for i, r in ipairs(list) do records[i] = r end
     local _, _, inst = player()
     instance, lastSweep = inst, now
     for _, r in ipairs(records) do

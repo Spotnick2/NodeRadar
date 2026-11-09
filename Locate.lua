@@ -100,6 +100,28 @@ function Locate.Presence(c, now)
     end
     if not pn then return end
     counts = c
+    -- World positions need a map that doesn't turn (Scan.Where: nil when it rotates, in an
+    -- instance, or unreadable; Codex, PR #102): no locating then, what was located forgotten.
+    -- The presence alert doesn't need it.
+    if not NR.Scan.Where() then
+        if #records > 0 or #windows > 0 then
+            records, windows = {}, {}
+            dirty = true
+            API.Trace("locate: the map rotates or is unreadable here: nothing located")
+        end
+        return
+    end
+    -- Out of the minimap's range: gone from it, whatever the count says (Codex, PR #102: a
+    -- node ridden away from while another of its name came in kept the count at 1).
+    do
+        local okR, radius = pcall(C_Minimap.GetViewRadius)
+        radius = okR and API.Num(radius)
+        if radius then
+            for i = #records, 1, -1 do
+                if d2(records[i], pn, pw) > radius ^ 2 then drop(records[i], "out of range") end
+            end
+        end
+    end
     if not quiet then
         quiet = {}
         for name, n in pairs(c) do quiet[name] = n - ofName(name) end
@@ -128,6 +150,7 @@ end
 -- deepest search window (a node found sooner); out of range or no longer needed, dropped.
 function Locate.Next(pn, pw, radius, es)
     local now = GetTime()
+    if not NR.Scan.Where() then return nil end
     for _, r in ipairs(records) do
         if (r.due or now - r.at >= Locate.RECHECK) and not r.checking then
             r.checking = true
@@ -143,8 +166,11 @@ function Locate.Next(pn, pw, radius, es)
             if w.record or (counts[name] or 0) > ofName(name) then wanted = true end
         end
         if not wanted or math.sqrt(d2(w, pn, pw)) > radius + w.size / 2 then
-            if w.record then w.record.checking = nil end
             table.remove(windows, i)
+            if w.record then
+                w.record.checking = nil
+                if d2(w.record, pn, pw) > radius ^ 2 then drop(w.record, "out of range") end
+            end
         elseif not best or w.depth > best.depth then
             best, bestI = w, i
         end

@@ -164,7 +164,7 @@ function Alert.Counts(counts, now, blips, result, every, blink)
     -- sound (Alert.Located).
     if API.Blind() then
         for _, name in ipairs(new) do
-            owed[name] = (owed[name] or 0) + (counts[name] or 0) - (risenFrom[name] or 0)
+            if Alert.Wanted(name) then owed[name] = (owed[name] or 0) + (counts[name] or 0) - (risenFrom[name] or 0) end
         end
     end
     -- Counted whatever the skill and the choices (a skill-up or a node tracked
@@ -357,6 +357,7 @@ function Alert.Located(r, now)
         local k = radius / (w / 2)
         blip = { x = -(r.west - pw) / k, y = (r.north - pn) / k }
     end
+    if not Alert.Wanted(r.name) then return end          -- skipped or beyond the skill: nothing (Codex, PR #102)
     if (owed[r.name] or 0) > 0 then
         owed[r.name] = owed[r.name] - 1
         API.Trace("alert: " .. r.name .. " located, already announced: its sonar")
@@ -364,7 +365,6 @@ function Alert.Located(r, now)
         return
     end
     if r.quiet then return end                          -- there at the first look after a reset
-    if not Alert.Wanted(r.name) then return end
     if now - lastAlert < NR.db.cooldown then
         API.Trace("alert: cooldown, silent: " .. r.name .. " (located)")
         return

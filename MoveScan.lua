@@ -777,9 +777,11 @@ local function stepBurst(b, now)
         if saved then restore() end
         if b.observation and b.gen ~= gen then API.Trace("scan: the read was cancelled (gen " .. b.gen .. " vs " .. gen .. ")") end
         if b.observation and b.gen == gen and NR.Observe then NR.Observe("presence", b.observation, now) end
+        -- The consumers after every burst that read (Share's heartbeat and retries, the
+        -- compass's choice as the player moves; Codex, PR #102), or when the records changed.
         if NR.Locate and NR.Located then
             local changed, new = NR.Locate.Take()
-            if changed then NR.Located(new, now) end
+            if changed or (b.observation and b.gen == gen) then NR.Located(new, now) end
         end
         return
     end

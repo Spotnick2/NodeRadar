@@ -151,6 +151,78 @@ bursts(2)
 check(#NR.Locate.Records() == 0, "no Silverleaf in range: its record goes")
 
 --------------------------------------------------------------------------------
+-- 8. Codex's review of PR #102.
+--------------------------------------------------------------------------------
+
+-- A record Locate drops takes its icon with it (no ghost frame).
+NR = fresh({ moveScan = true, moveScanAsked = true, icons = true })
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 } }
+bursts(30, function() return #NR.Locate.Records() >= 2 end)
+frames(2)
+local gone1 = recordNear("Silverleaf", n1, w1, 12)
+local ghost = gone1 and gone1.frame
+check(ghost and ghost:IsShown(), "(control) both icons drawn")
+WoW.blips = { { "Silverleaf", -40, 30 } }            -- the first one gone, the second stays
+bursts(4, function() return #NR.Locate.Records() == 1 end)
+frames(2)
+check(#NR.Locate.Records() == 1 and not ghost:IsShown(), "the dropped record's icon is hidden, not left behind")
+
+-- Ridden out of range while another of its name came in (the count stays 1): the old record
+-- goes, the new one is searched for, located and alerts.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+local old = NR.Locate.Records()[1]
+WoW.pos = { WoW.pos[1] + 300, WoW.pos[2], 0, 0 }   -- 300 yards north: the old one out of range
+WoW.blips = { { "Silverleaf", -40, 30 } }
+local n3, w3 = spot(-40, 30)
+sounds = #WoW.sounds
+check(bursts(20, function() return recordNear("Silverleaf", n3, w3, 12) ~= nil end), "the one in range now is located")
+local stillOld = false
+for _, r in ipairs(NR.Locate.Records()) do if r == old then stillOld = true end end
+check(not stillOld, "...the one out of range dropped")
+check(#WoW.sounds == sounds + 1, "...and the new one alerts")
+
+-- The consumers run after every burst that read, the set unchanged: sharing's heartbeat, the
+-- compass's choice as the player moves.
+NR = fresh({ moveScan = true, moveScanAsked = true, compass = true })
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 } }
+bursts(30, function() return #NR.Locate.Records() >= 2 end)
+local nA, wA = spot(20, -15)
+local nB, wB = spot(-40, 30)
+check(NR.Compass.Chosen() and recordNear("Silverleaf", nA, wA, 12) == NR.Compass.Chosen(), "(control) the nearer, A, chosen")
+local sends, realSend = 0, NR.Share.Send
+NR.Share.Send = function(...) sends = sends + 1; return realSend(...) end
+WoW.pos = { nB, wB, 0, 0 }                          -- the player walks to B
+local function offset(n, w) return -(w - WoW.pos[2]) / YARDS, (n - WoW.pos[1]) / YARDS end
+local ax, ay = offset(nA, wA)
+WoW.blips = { { "Silverleaf", ax, ay }, { "Silverleaf", 0, 0 } }
+bursts(2)
+NR.Share.Send = realSend
+check(sends >= 2, "Share.Send after each burst, the record set unchanged")
+check(NR.Compass.Chosen() and recordNear("Silverleaf", nB, wB, 12) == NR.Compass.Chosen(), "...and the compass now chooses B")
+
+-- A rotating minimap: nothing is located (screen up isn't north), the presence alert stays.
+NR = fresh()
+WoW.cvars.rotateMinimap = "1"
+WoW.blips = { { "Silverleaf", 20, -15 } }
+sounds = #WoW.sounds
+bursts(8)
+check(#NR.Locate.Records() == 0 and NR.MoveScan.stats.windows == 0, "a rotating minimap: no locate window, no record")
+check(#WoW.sounds == sounds + 1, "...the presence alert still sounds")
+WoW.cvars.rotateMinimap = "0"
+
+-- A node the player doesn't want (skipped, beyond the skill): its rise is silent and its
+-- location doesn't ripple.
+NR = fresh()
+NR.Alert.Wanted = function() return false end
+local sonars, realSonar = 0, NR.Alert.Sonar
+NR.Alert.Sonar = function(...) sonars = sonars + 1; return realSonar(...) end
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+check(#NR.Locate.Records() == 1 and sonars == 0, "an unwanted node is located without a sonar")
+
+--------------------------------------------------------------------------------
 -- 7. The trace saved at logout (or a reload) while the scan is on, the session before kept.
 --------------------------------------------------------------------------------
 
