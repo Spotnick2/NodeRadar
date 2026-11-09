@@ -186,8 +186,13 @@ local function build()
     end
     local on = checkbox(page, blind, "Radar on (with Find Herbs or Find Minerals on)", "enabled")
     on:SetPoint("TOPLEFT", blind, "BOTTOMLEFT", 0, -12)
+    -- #91: the minimap scan, opt-in, the only way to see nodes from 70862.
+    local scan = checkbox(page, on, "The minimap scan (client build 70862 and later)", "moveScan")
+    local scanWhy = note(page, scan, NR.SCAN_TEXT)
+    local scanEvery = radios(page, scanWhy, "The scan looks, while you move, every", "scanEvery",
+        { { 1, "1 s" }, { 2, "2 s" }, { 3, "3 s" }, { 5, "5 s" } }, "s")
 
-    local looks = heading(page, on, "How often it looks")
+    local looks = heading(page, scanEvery, "How often it looks")
     local still = radios(page, looks, "Standing still, every", "interval",
         { { 1, "1 s" }, { 2, "2 s" }, { 5, "5 s" } }, "s")
     local moving = radios(page, still, "Moving, about every", "yards",

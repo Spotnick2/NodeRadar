@@ -2257,7 +2257,10 @@ rounds 1 to 3 on 2026-11-08, each "approve with changes", all taken below; round
 > Only the explicitly enabled minimap scan (#91), from build 70862, may temporarily change an
 > unprotected `Minimap`'s anchors, width and height, own alpha, icon scale, screen-clamp flag,
 > mouse-click state and mouse-wheel state. It leaves mouse motion enabled and never changes frame
-> strata, level, parent, scripts, or another addon's frames.
+> strata, level, parent, scripts, or another addon's frames. Two of Blizzard's own frames anchored
+> to `Minimap`, its player coordinates (`MinimapCluster.MinimapContainer.PlayerCoords`) and the LFG
+> eye (`QueueStatusButton`), get alpha 0 and mouse off for the borrow, saved and restored with the
+> minimap's own visibility and input (the owner, 2026-11-09).
 >
 > A scan starts only outside combat, Edit Mode, loading screens and the gamepad UI, with the
 > cursor quiet over open world and every admission gate met. Each burst has a placement and a time
@@ -2324,8 +2327,7 @@ an older burst does nothing.
   (`IsMouseButtonDown`); `GetMouseFoci()[1] == WorldFrame`, or a frame drawn below `Minimap`
   (a lower strata, or the same strata at a lower level: a UI suite's full-screen layer, which the
   borrowed map will be above); no **follower** (below); the cursor still (under 2 px) for 0.2 s,
-  not over the minimap's home rect; `GameTooltip` hidden; no open menu; the LFG eye
-  (`QueueStatusButton`, anchored to `Minimap`) not shown; a minimum time since the
+  not over the minimap's home rect; `GameTooltip` hidden; no open menu; a minimum time since the
   last button release (0.3 s).
 - **Continuation** (every frame of the burst): the setting on, the environment as at admission
   (combat, Edit Mode, loading, gamepad, mouselook, buttons), the scan context unchanged (zone,
@@ -2375,12 +2377,12 @@ checked). A setter that throws leaves that part pending.
 
 **Followers.** A frame outside `Minimap`'s tree but anchored into it (through its `GetPoint`
 chain) travels with the borrowed map without taking its alpha: Glass MiniMap's before #56, a
-skin's border, a clock moved onto the map, the LFG eye. Never hidden or changed by us (the
-contract); found instead, and the scan refuses while one is shown and visible (effective alpha
+skin's border, a clock moved onto the map. Never hidden or changed by us (the contract; Blizzard's
+coordinates and LFG eye are the two exceptions, hidden for the borrow); found instead, and the scan refuses while one is shown and visible (effective alpha
 above 0), with one chat line per session naming it (`GetDebugName`). The search walks `UIParent`
 and `MinimapCluster` three levels deep, each frame answered once, **when the scan is turned on, at
-login, and every 10 s while on**, never per frame; the LFG eye is checked every frame of a burst
-(shown mid-burst: the burst ends). Glass MiniMap v1 anchors nothing to `Minimap` (#56, measured
+login, and every 10 s while on**, never per frame. The LFG eye shown mid-burst (it wasn't at the
+borrow, so it isn't hidden) ends the burst: it's checked every frame. Glass MiniMap v1 anchors nothing to `Minimap` (#56, measured
 before release with the probe's handshake).
 
 **Blizzard's tooltip.** `hooksecurefunc(GameTooltip, "SetMinimapMouseover", ...)` at load: while
@@ -2543,8 +2545,8 @@ Reading while steering (impossible, measured). Reading in combat (impossible too
 is none in combat, measured). Raising `Minimap`'s strata. Moving Blizzard's LFG eye or any other
 addon's frame. What travels with `Minimap`: Glass MiniMap stops it on its side (#56); others are
 measured below and, if they show or catch input, scanning refuses in that configuration rather
-than widening the contract. Measured: `QueueStatusButton` (the LFG eye) is anchored to `Minimap`,
-so **no burst while it is shown** (an admission check) until its look in a queue is measured.
+than widening the contract. Measured: `QueueStatusButton` (the LFG eye) and Blizzard's player
+coordinates are anchored to `Minimap`: hidden for the borrow (the contract, above).
 
 ### Probe before the code (`/fp steps nr movescan`, one more round)
 

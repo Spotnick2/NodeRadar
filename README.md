@@ -11,9 +11,13 @@ on the map, green for herbs, gold for ore. Look up, go grab it, carry on.
 Made for **World of Warcraft: Forever**.
 
 > **Client build 70862 and later:** Blizzard no longer lets addons read the minimap's dots the way
-> NodeRadar did, on purpose. On these builds the radar can't find nodes: NodeRadar says so once in
-> chat, in `/nr` and in its Options, instead of silently doing nothing. Hovering a node still shows
-> the skill it needs. An opt-in minimap scan mode that works on these builds is on its way.
+> NodeRadar did, on purpose. On these builds the radar finds nodes only with the **minimap scan**
+> on (`/nr scan`, Options, or the question NodeRadar asks once at login): while your mouse rests over
+> the world, NodeRadar briefly moves your minimap, invisible, under it and reads what lies there.
+> Your minimap disappears from its corner for a split second each time; it can't look while you
+> steer with a mouse button held, or in combat. For now the scan alerts with the sound and a chat
+> line; the icons, the compass and the marker come next. With Glass MiniMap, it needs version
+> 1.1.0 or later.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
 ![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)
@@ -151,8 +155,17 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
 - `/nr snooze [15 | 30 | 60 | session]`: snooze the compass's node (the key binding's length, in
   Key Bindings > NodeRadar); `/nr snooze clear`
 - `/nr learn`: learning by turning tracking off and on (off by default: it costs a global cooldown)
+- `/nr scan`: the minimap scan, client build 70862 and later (off by default); `/nr scan <1-10>`:
+  seconds between its looks while you move (three times that standing still, at most 10)
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`
+
+## Thanks
+
+- **ThPi** ([ThorbenP](https://github.com/ThorbenP) on GitHub), for the idea behind the minimap scan
+  mode (#91). When client build 70862 stopped addons from reading the minimap's dots from afar,
+  they shared the way back in a comment on [NodeRadar's CurseForge page](https://www.curseforge.com/wow/addons/node-radar): move the minimap itself
+  under the resting mouse for an instant and read what lies there.
 
 ## License
 

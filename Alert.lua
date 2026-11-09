@@ -22,13 +22,49 @@ local gathered = {}   -- [name] = when the player last gathered one
 
 -- The player gathered a node of that name: the drop that follows is that node
 -- gone, not one blinking at the edge, so the next of that name alerts.
-function Alert.Gathered(name, now) gathered[name] = now end
+--
+-- From 70862 (the minimap scan, #91) the gathered node is also counted out at once: the scan's
+-- reads are sparse, and mining a vein then reaching the next one read 1 then 1, never the 0 in
+-- between (the owner's run: no sound). The loot window keeps the scan from reading the gathered
+-- dot back in (the cursor isn't over the world). Before 70862 the sweep's own drop does it.
+-- A vein can be mined more than once: while the player is still within NEAR yards of where
+-- they gathered, a rise of that name is that same node, back in the count (the owner's run:
+-- a sound on the vein being mined).
+Alert.NEAR = 15
+local spots = {}      -- [name] = { north, west }: where the player gathered one (70862 on)
+
+local function here()
+    local ok, north, west = pcall(UnitPosition, "player")
+    north, west = ok and API.Num(north), ok and API.Num(west)
+    if north and west then return north, west end
+end
+
+local function near(spot)
+    local n, w = here()
+    return n ~= nil and (n - spot[1]) ^ 2 + (w - spot[2]) ^ 2 <= Alert.NEAR ^ 2
+end
+
+function Alert.Gathered(name, now)
+    gathered[name] = now
+    if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
+        hist.counts[name] = hist.counts[name] - 1
+        local n, w = here()
+        spots[name] = n and { n, w } or nil
+        API.Trace("alert: gathered " .. tostring(name) .. ", counted out")
+    end
+end
 
 -- The next successful sweep sets the counts without alerting.
-function Alert.Reset() hist = nil end
+function Alert.Reset(why)
+    hist = nil
+    API.Trace("alert: reset (" .. tostring(why or "?") .. "): the next read is a silent baseline")
+end
 
 -- A new area: counts from zero, so its nodes alert.
-function Alert.NewArea(now) hist = { counts = {}, drops = {}, at = now } end
+function Alert.NewArea(now)
+    hist = { counts = {}, drops = {}, at = now }
+    API.Trace("alert: a new area, counts from zero")
+end
 
 -- Whether the player can gather a node of that name (#26): only a known
 -- requirement above a readable skill says no, and for herbs not while
@@ -70,18 +106,41 @@ end
 
 -- After each successful radar sweep. Returns the names that alerted.
 function Alert.Update(result, now)
-    if hist and now - hist.at > Alert.STALE + NR.db.interval then hist = nil end
     local counts, blips = nodes(result)
+    return Alert.Counts(counts, now, blips, result)
+end
+
+-- Node counts by name: the old sweep's, or the minimap scan's presence read (#91), which has
+-- no positions (blips nil: the sound and the chat line's names, no sonar, no ping). `every`:
+-- the seconds between successful reads at most, so a scan's slower cadence never blanks the
+-- baseline (the old sweep's interval otherwise).
+-- `blink`: the seconds a rise after a drop counts as the same node at the edge (BLINK by
+-- default; the scan's sparse reads use a shorter one, #91).
+function Alert.Counts(counts, now, blips, result, every, blink)
+    if hist and now - hist.at > Alert.STALE + (every or NR.db.interval) then
+        hist = nil
+        API.Trace("alert: stale, baseline")
+    end
     if not hist then
         hist = { counts = counts, drops = {}, at = now }
+        API.Trace("alert: baseline set")
         return nil
     end
     local new = {}
+    for name, spot in pairs(spots) do
+        if not near(spot) then spots[name] = nil end      -- moved away: a new one alerts again
+    end
     for name, n in pairs(counts) do
         local before = hist.counts[name] or 0
-        if n > before then
+        if n > before and spots[name] then
+            API.Trace("alert: " .. name .. " back while still at the one gathered: the same node, silent")
+        elseif n > before then
             local drop = hist.drops[name]
-            if not (drop and now - drop <= Alert.BLINK) then new[#new + 1] = name end
+            if not (drop and now - drop <= (blink or Alert.BLINK)) then
+                new[#new + 1] = name
+            else
+                API.Trace(("alert: %s rose %.1f s after a drop: a blink, silent"):format(name, now - drop))
+            end
         end
     end
     for name, before in pairs(hist.counts) do
@@ -103,9 +162,17 @@ function Alert.Update(result, now)
     for _, name in ipairs(new) do
         if Alert.Wanted(name) then fire[#fire + 1] = name end
     end
-    if #fire == 0 or now - lastAlert < NR.db.cooldown then return nil end
+    if #fire == 0 then
+        if #new > 0 then API.Trace("alert: new but not wanted: " .. table.concat(new, ", ")) end
+        return nil
+    end
+    if now - lastAlert < NR.db.cooldown then
+        API.Trace("alert: cooldown, silent: " .. table.concat(fire, ", "))
+        return nil
+    end
     lastAlert = now
     table.sort(fire)
+    API.Trace("alert: FIRED " .. table.concat(fire, ", "))
     Alert.Fire(fire, blips, result)
     return fire
 end

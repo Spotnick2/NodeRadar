@@ -39,6 +39,9 @@ local DEFAULTS = {
     cooldown = 5,       -- seconds between alerts
     interval = 2,       -- seconds between sweeps standing still; moving, NR.Interval adapts it
     yards    = 4,       -- moving: about this many yards between sweeps
+    moveScan = false,   -- the minimap scan (#91), from build 70862: opt-in; moveScanAsked: the
+                        -- login prompt asked once per account
+    scanEvery = 2,      -- the scan's seconds between looks moving (standing still: three times, at most 10)
 }
 -- Settings no longer used: v1's (it never worked on Forever), and the ring's
 -- colour (the sonar is green for herbs, gold for ore). Dropped.
@@ -90,11 +93,15 @@ end
 -- 70862 on (#90): the radar can't read the minimap. Said in chat once per account
 -- and build (NodeRadarDB.blindNotice), while the radar is on; /nr and Options say it too.
 NR.BLIND_TEXT = "since client build 70862, Blizzard no longer lets addons read the minimap's dots, so "
-    .. "the radar can't find nodes: no alert, icons or compass. Hovering a node still shows the skill it "
-    .. "needs. An opt-in minimap scan mode is in the works."
+    .. "the radar can't find nodes unless the minimap scan is on (/nr scan, or Options): it briefly moves "
+    .. "your minimap, invisible, under your resting mouse. Hovering a node still shows the skill it needs."
+NR.SCAN_TEXT = "Since build 70862, NodeRadar can only see nodes by briefly moving your minimap under your "
+    .. "mouse. While you move it looks every couple of seconds (every few seconds standing still), and your "
+    .. "minimap disappears for a split second each time. It can't look while you steer with a mouse button "
+    .. "held, or in combat. For now it alerts by sound and chat; the icons, the compass and the marker come next."
 function NR.BlindNotice()
     local db = NR.db
-    if not (db and db.enabled and API.Blind()) then return false end
+    if not (db and db.enabled and API.Blind()) or db.moveScan then return false end
     local build = API.Build()
     if db.blindNotice == build then return false end
     db.blindNotice = build
@@ -115,7 +122,7 @@ function NR.Step(now)
     if not Learn.AnyOn() then return end
     local result = Scan.Sweep(isNode)
     if not result then return end
-    if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset() end
+    if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset("the map's geometry changed") end
     lastGeometry = result.geometry
     Track.Follow()                                  -- smart: the list by the skill first (Codex, #47)
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
@@ -148,7 +155,7 @@ end
 -- follows from it done.
 function NR.Set(key, value)
     NR.db[key] = value
-    if key == "enabled" then Alert.Reset() end
+    if key == "enabled" then Alert.Reset("the radar toggled") end
     if key == "enabled" then Icons.Clear() end
     if key == "shareNodes" then
         if not Icons.Keeping() then Icons.Clear() end
@@ -174,6 +181,24 @@ function NR.Set(key, value)
     if key == "iconStyle" or key == "compassSize" then Compass.Restyle() end
     if key == "compassLock" then Compass.UpdateGrip() end
     if key == "minimapButton" then NR.Minimap.Apply() end
+    if key == "moveScan" or key == "enabled" then
+        Alert.Reset(key .. " set")                  -- the first scan sets the counts silently
+        NR.MoveScan.Apply()
+    end
+end
+
+-- What a minimap scan saw (#91), on completion: presence, the counts of each node name in range.
+-- Positions come with the locate step (later); until then the alert is the sound and the chat line.
+-- No stale reset: the scan reads only while the mouse rests over the world, so long gaps are
+-- normal (the owner's run: 15 looks in 4 minutes) and a silent baseline after each one never
+-- alerted. A zone, tracking or zoom change and turning the scan on still start afresh.
+function NR.Observe(kind, obs, now)
+    if kind ~= "presence" or not (NR.db and NR.db.enabled) then return end
+    Track.Follow()
+    -- The blink rule (a rise soon after a drop is the same node at the edge) was made for a
+    -- sweep every half second; between the scan's sparse reads, riding from one node to the
+    -- next looked like a blink for 20 s (the owner's run): two scan intervals instead.
+    Alert.Counts(obs.counts, now, nil, nil, math.huge, 2 * NR.MoveScan.Every())
 end
 
 function NR.VersionText()
@@ -206,6 +231,15 @@ API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SENT", "player")
 API.RegisterUnitEvent(events, "UNIT_SPELLCAST_SUCCEEDED", "player")
 local gathering   -- { guid, target }: the gathering cast just sent, until it succeeds
 
+-- What the minimap tracks, as one string (the gathering trackings' states), to tell a real
+-- change from a MINIMAP_UPDATE_TRACKING with nothing changed.
+local function trackingKey()
+    local parts = {}
+    for _, t in ipairs(Learn.Trackings()) do parts[#parts + 1] = t.spellID .. (t.active and "+" or "-") end
+    return table.concat(parts, ",")
+end
+local trackedKey
+
 -- The player's zoom (or an addon's) comes through Minimap:SetZoom and resets
 -- the alert: zooming out shows many nodes at once. The swap indoors or out
 -- fires MINIMAP_UPDATE_ZOOM with no call, so it keeps the history and a node
@@ -214,7 +248,7 @@ local gathering   -- { guid, target }: the gathering cast just sent, until it su
 local zoom = API.Num(Minimap:GetZoom())
 hooksecurefunc(Minimap, "SetZoom", function()
     local z = API.Num(Minimap:GetZoom())
-    if not z or z ~= zoom then Alert.Reset() end
+    if not z or z ~= zoom then Alert.Reset("zoom " .. tostring(zoom) .. " to " .. tostring(z)) end
     zoom = z
 end)
 events:SetScript("OnEvent", function(_, event, ...)
@@ -230,6 +264,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         NR.Tooltip.Register()                      -- the skill in the minimap's tooltip (#62)
         NR.Share.Apply()                           -- the prefix and the roster, if sharing or showing (#83)
         NR.BlindNotice()                           -- 70862 on: why nothing happens (#90)
+        NR.MoveScan.Apply()
     elseif event == "PLAYER_ENTERING_WORLD" then
         Icons.Clear()
         NR.Share.Clear()
@@ -237,6 +272,8 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.loading = false
         Alert.NewArea(now)
         Learn.Resume(now)
+        NR.MoveScan.AskSoon(now)                   -- the scan's prompt, once per account (#91)
+        trackedKey = trackingKey()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         Alert.NewArea(now)
         Learn.Void("the zone changed")
@@ -253,11 +290,19 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.Void("the player died")
     elseif event == "MINIMAP_UPDATE_ZOOM" then
         zoom = API.Num(Minimap:GetZoom())          -- a swap indoors or out: the history kept (#63)
-        if not zoom then Alert.Reset() end
+        if not zoom then Alert.Reset("the zoom unreadable") end
         Learn.Void("the zoom changed")
     elseif event == "MINIMAP_UPDATE_TRACKING" then
-        Alert.Reset()
-        Icons.Clear()
+        -- From 70862 only a real change of what the minimap tracks resets the alert and the
+        -- icons: the client also sends this with nothing changed (seen while mining), and with
+        -- the scan's sparse reads each reset made the next one a silent baseline (#91). The
+        -- sweep before 70862 keeps resetting at every one, as it always did.
+        local now2 = trackingKey()
+        if now2 ~= trackedKey or not API.Blind() then
+            Alert.Reset("tracking changed")
+            Icons.Clear()
+        end
+        trackedKey = now2
         Learn.OnTrackingChanged()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
         API.OnCooldownUpdate()                     -- Cultivation's state (#26)
@@ -324,7 +369,21 @@ local function status()
     if running ~= NR.MEASURED_ON_BUILD then
         API.Say("measured on " .. NR.MEASURED_ON_BUILD .. "; you're on " .. running .. ": report anything odd")
     end
-    if API.Blind() then API.Say(NR.BLIND_TEXT) end -- #90
+    if API.Blind() then                            -- #90, #91
+        if db.moveScan then
+            local why = NR.MoveScan.lastRefusal
+            local MS = NR.MoveScan
+            API.Say(("the minimap scan is on: every %s s moving; %d looks, %d read%s"):format(tostring(db.scanEvery),
+                MS.stats.bursts, MS.stats.valid, (why and why ~= "off") and ("; waiting: " .. why) or ""))
+            local seen = {}
+            for name, n in pairs(MS.lastCounts or {}) do seen[#seen + 1] = n > 1 and (name .. " x" .. n) or name end
+            table.sort(seen)
+            API.Say(("last read: %s; last unread: %s"):format(MS.lastCounts and (#seen > 0 and table.concat(seen, ", ")
+                or "no node") or "none yet", tostring(MS.lastUnread or "none")))
+        else
+            API.Say(NR.BLIND_TEXT)
+        end
+    end
 end
 
 local function known()
@@ -357,6 +416,9 @@ local function help()
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
         .. "length, set here too); /nr snooze clear. A reload clears them")
+    API.Say("/nr scan: the minimap scan, client build 70862 and later (off by default): NodeRadar briefly moves "
+        .. "your minimap, invisible, under your resting mouse to see the nodes. /nr scan <1-10>: seconds between "
+        .. "looks while moving")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -459,6 +521,21 @@ SlashCmdList.NODERADAR = function(msg)
         else
             API.Say("/nr cd <1-60>")
         end
+    elseif cmd == "scan" and rest == "log" then
+        if #NR.trace == 0 then API.Say("the scan's log is empty") end
+        for _, line in ipairs(NR.trace) do API.Say(line) end
+    elseif cmd == "scan" and rest ~= "" then
+        local secs = tonumber(rest)
+        if secs and secs >= 1 and secs <= 10 then
+            NR.Set("scanEvery", secs)
+            API.Say(("the minimap scan looks every %d s while you move"):format(secs))
+        else
+            API.Say("/nr scan <1-10>: seconds between looks while you move")
+        end
+    elseif cmd == "scan" then
+        NR.Set("moveScan", not db.moveScan)
+        API.Say("the minimap scan " .. onOff(db.moveScan)
+            .. (db.moveScan and not API.Blind() and " (it runs from client build 70862; this client's radar reads the minimap itself)" or ""))
     elseif cmd == "test" then
         Alert.Test()
     elseif cmd == "status" then
@@ -486,6 +563,7 @@ SlashCmdList.NODERADAR = function(msg)
         NR.Marker.Toggle()                         -- off by default: ours cleared, the CVar put back (Codex, PR #74)
         NR.FarMarker.Toggle()
         NR.Share.Apply()                           -- both off by default: the party's nodes forgotten (#83)
+        NR.MoveScan.Apply()                        -- off by default: the minimap home if borrowed (#91)
         API.Say("settings reset (learned names kept)")
     else
         help()

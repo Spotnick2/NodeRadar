@@ -95,6 +95,7 @@ end
 function Tooltip.PostCall(tooltip, data)
     local db = NR.db
     if not (db and db.tooltipSkill) or tooltip ~= GameTooltip then return end
+    if NR.MoveScan and NR.MoveScan.Suppressing() then return end   -- a scan's own read (#91)
     local ok, err = pcall(add, tooltip, data)
     if not ok and not failed then
         failed = true
