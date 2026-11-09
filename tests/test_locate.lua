@@ -328,6 +328,35 @@ quest = { name = "Quest areas", filterID = 65536, active = false }
 table.insert(WoW.tracking, quest)
 WoW.fire("PLAYER_LOGIN")
 check(quest.active == true and NR.db.questOff == nil, "a cut-short scan's quest areas are back on at login")
+-- The geometry restore refused: the quest areas stay off while it's pending (their outlines
+-- ignore alpha), back on with the geometry (Codex, PR #102).
+NR = fresh()
+quest = { name = "Quest areas", filterID = 65536, active = true }
+table.insert(WoW.tracking, quest)
+for _ = 1, 400 do frames(1); if NR.MoveScan._test.burst() then break end end
+frames(1)
+Minimap._protected, WoW.combat = true, true
+WoW.fire("PLAYER_REGEN_DISABLED")
+for _ = 1, 5 do frames(1) end
+check(NR.MoveScan.Pending() == "geometry" and quest.active == false, "geometry pending: the quest areas stay off")
+WoW.now = WoW.now + 3
+frames(2)
+check(quest.active == false, "...through the retries while refused")
+Minimap._protected, WoW.combat = false, false
+WoW.fire("PLAYER_REGEN_ENABLED")
+check(NR.MoveScan.Pending() == nil and quest.active == true and NR.db.questOff == nil, "...back on with the geometry")
+-- A saved obligation whose restore is refused at login: retried on its own, the scan off.
+NR = fresh({ moveScan = false, moveScanAsked = true, questOff = true })
+quest = { name = "Quest areas", filterID = 65536, active = false }
+table.insert(WoW.tracking, quest)
+WoW.refuseTrackingOn = true
+WoW.fire("PLAYER_LOGIN")
+check(quest.active == false and NR.db.questOff == true, "(control) refused at login: still owed")
+WoW.refuseTrackingOn = false
+WoW.now = WoW.now + 3
+frames(2)
+check(quest.active == true and NR.db.questOff == nil, "...retried with the scan off: back on, nothing owed")
+
 -- Off before (by the player, or never on): left alone.
 NR = fresh()
 quest = { name = "Quest areas", filterID = 65536, active = false }

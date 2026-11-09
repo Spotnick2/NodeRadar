@@ -366,7 +366,8 @@ end
 
 -- At login and after a loading screen: a scan cut short (a crash, a logout) put back.
 function MS.QuestAreasBack()
-    if burst or not (NR.db and NR.db.questOff) then return end
+    if burst or saved or not (NR.db and NR.db.questOff) then return end
+    lastQuestTry = GetTime()
     if MS.QuestAreas(true) then API.Trace("scan: the quest areas a cut-short scan turned off are back on") end
 end
 
@@ -376,6 +377,7 @@ local function gatheringKey()
     return table.concat(parts, ",")
 end
 local lastGathering
+local lastQuestTry = -math.huge
 
 local function halt(why)
     if not halted then
@@ -408,7 +410,6 @@ local function restore(keep)
     local s = saved
     if not s then return true end
     if s.scaled and iconScale(lastScale or 1) then s.scaled = false end   -- kept until the setter works
-    if s.quest and MS.QuestAreas(true) then s.quest = nil end         -- likewise the quest areas
     if not geometryHome(s) then
         -- Invisible and inert again first: a correction after the visibility came back (the
         -- settle frame's readback) must never leave a shown, clickable map away from home
@@ -420,6 +421,8 @@ local function restore(keep)
         end
         setOn(Minimap, "SetMouseClickEnabled", false)
         setOn(Minimap, "EnableMouseWheel", false)
+        -- The quest areas ignore alpha and mask: off again too (Codex, PR #102).
+        if not s.quest then s.quest = MS.QuestAreas(false) end
         setOn(Minimap, "ClearAllPoints")
         for _, p in ipairs(s.points) do setOn(Minimap, "SetPoint", p[1], p[2], p[3], p[4], p[5]) end
         setOn(Minimap, "SetSize", s.w, s.h)
@@ -431,6 +434,8 @@ local function restore(keep)
         halt("the minimap couldn't be put back yet; retried until it can")
         return false
     end
+    -- The geometry is home: the quest areas back on now, never while the map is away.
+    if s.quest and MS.QuestAreas(true) then s.quest = nil end
     setOn(Minimap, "SetAlpha", s.alpha)
     for _, h in ipairs(s.held) do
         setOn(h.f, "SetAlpha", h.alpha)
@@ -908,6 +913,9 @@ function MS.Cancel() gen = gen + 1 end
 
 function MS.Tick(now)
     if pending and not burst and now - lastRetry >= MS.RETRY then MS.Retry() end
+    -- A saved quest-area obligation (a scan cut short) retried on its own, scan on or not
+    -- (Codex, PR #102: a refused restore at login waited for the next loading screen).
+    if NR.db and NR.db.questOff and not (burst or saved) and now - lastQuestTry >= MS.RETRY then MS.QuestAreasBack() end
     if not (MS.On() or burst) then return end
     local x, y = cursor()
     local look = mouselooking()
@@ -981,7 +989,7 @@ events:SetScript("OnEvent", function(_, event)
         end
     elseif event == "PLAYER_REGEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         if pending then MS.Retry() end
-        if event == "LOADING_SCREEN_DISABLED" then MS.QuestAreasBack() end
+        MS.QuestAreasBack()
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         -- Our own quest-area toggle isn't a reason to stop; a gathering tracking change is.
         local key = gatheringKey()
