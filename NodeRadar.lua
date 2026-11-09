@@ -195,7 +195,10 @@ end
 function NR.Observe(kind, obs, now)
     if kind ~= "presence" or not (NR.db and NR.db.enabled) then return end
     Track.Follow()
-    Alert.Counts(obs.counts, now, nil, nil, math.huge)
+    -- The blink rule (a rise soon after a drop is the same node at the edge) was made for a
+    -- sweep every half second; between the scan's sparse reads, riding from one node to the
+    -- next looked like a blink for 20 s (the owner's run): two scan intervals instead.
+    Alert.Counts(obs.counts, now, nil, nil, math.huge, 2 * NR.MoveScan.Every())
 end
 
 function NR.VersionText()

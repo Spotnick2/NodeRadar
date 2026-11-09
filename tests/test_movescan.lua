@@ -120,6 +120,35 @@ check(#WoW.sounds == sounds + 1, "...a third Silverleaf in range: the sound, the
 SlashCmdList.NODERADAR("status")
 check(chatHas("last read: Silverleaf x3"), "/nr status shows the last read's counts")
 
+-- Riding from one node to the next: a read with none, then the next one in range within a
+-- few seconds. The sweep's 20 s blink rule took that for one node at the edge; on the scan
+-- it's two scan intervals (the owner's run: no sound at a new vein).
+WoW.blips = {}
+WoW.now = WoW.now + 10
+untilBorrowed(400)
+runBurst()
+check(observed[#observed].counts.Silverleaf == nil, "(control) none in range")
+sounds = #WoW.sounds
+WoW.blips = { { "Silverleaf", 20, -15 } }
+WoW.now = WoW.now + 13
+untilBorrowed(400)
+runBurst()
+check(#WoW.sounds == sounds + 1, "a node in range 13 s after the last one left: the sound")
+
+-- An empty read (no lines) is read again next frame before it counts as unread.
+local empties = 1
+local realRead2 = C_TooltipInfo.GetMinimapMouseover
+C_TooltipInfo.GetMinimapMouseover = function()
+    if empties > 0 then empties = empties - 1; return { type = 21, lines = {} } end
+    return realRead2()
+end
+local valid0 = NR.MoveScan.stats.valid
+WoW.now = WoW.now + 10
+untilBorrowed(400)
+runBurst()
+C_TooltipInfo.GetMinimapMouseover = realRead2
+check(NR.MoveScan.stats.valid == valid0 + 1 and atHome(), "an empty read, then a good one the next frame: valid")
+
 --------------------------------------------------------------------------------
 -- 3. Unread is never absence: no observation at all.
 --------------------------------------------------------------------------------

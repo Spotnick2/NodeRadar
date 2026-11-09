@@ -78,7 +78,9 @@ end
 -- no positions (blips nil: the sound and the chat line's names, no sonar, no ping). `every`:
 -- the seconds between successful reads at most, so a scan's slower cadence never blanks the
 -- baseline (the old sweep's interval otherwise).
-function Alert.Counts(counts, now, blips, result, every)
+-- `blink`: the seconds a rise after a drop counts as the same node at the edge (BLINK by
+-- default; the scan's sparse reads use a shorter one, #91).
+function Alert.Counts(counts, now, blips, result, every, blink)
     if hist and now - hist.at > Alert.STALE + (every or NR.db.interval) then hist = nil end
     if not hist then
         hist = { counts = counts, drops = {}, at = now }
@@ -89,7 +91,7 @@ function Alert.Counts(counts, now, blips, result, every)
         local before = hist.counts[name] or 0
         if n > before then
             local drop = hist.drops[name]
-            if not (drop and now - drop <= Alert.BLINK) then new[#new + 1] = name end
+            if not (drop and now - drop <= (blink or Alert.BLINK)) then new[#new + 1] = name end
         end
     end
     for name, before in pairs(hist.counts) do

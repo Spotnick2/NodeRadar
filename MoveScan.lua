@@ -659,14 +659,21 @@ local function invalid(b)
     return nil
 end
 
+-- Returns true when the read is final; false: read again next frame (an empty read, at most
+-- MS.REREADS times, within the budget: 5 of 16 in the owner's run came back with no lines).
+MS.REREADS = 2
 local function read(b, now)
     local why = invalid(b)
     local names
     if not why then names, why = MS.ReadNames() end
+    if not names and why == "no lines" and (b.rereads or 0) < MS.REREADS then
+        b.rereads = (b.rereads or 0) + 1
+        return false
+    end
     if not names then
         MS.stats.unread = MS.stats.unread + 1
         MS.lastUnread = why
-        return
+        return true
     end
     MS.stats.valid = MS.stats.valid + 1
     local counts = {}
@@ -691,7 +698,7 @@ local function stepBurst(b, now)
     if why then return finish(b, why) end
     if b.phase == "off" then return place(b) end
     if b.frame >= b.placedAt + 2 then
-        read(b, now)
+        if read(b, now) == false then return end
         return finish(b, "done")
     end
 end
