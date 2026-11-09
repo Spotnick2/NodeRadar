@@ -229,16 +229,25 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   once. The login prompt (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs'
   move model (`WoW.moveModel`).
 - `Locate.lua` (#91, step 2): where the scan's nodes are. Windows in world yards (`M = 2R·9/W` px: the
-  16 px hit square less twice its 3.5 px offset), the map's quarters split while positive down to
-  `FINE` (12 yards); each read paired with the player's move since its placement. Records live on
-  evidence (a presence count of 0, a re-check at the spot every `RECHECK` s, out of range, a gather),
-  never time; a gathered spot (`gone`, `GONE` s) is the same node. Published once a burst with the map
+  16 px hit square less twice its 3.5 px offset), the map's sixteenths split while positive down to
+  `FINE` (16 yards), deepest then nearest first; each read paired with the player's move since its
+  placement; a window's empty answer is no node there (nil is unread), and a failed presence read ends
+  the burst. A burst's positive leaves settle at its end, grouped per axis within a leaf's reach
+  (complete-link, in a fixed order), never more new records than the count leaves room for. Records
+  live on evidence (a presence count of 0, a re-check at the spot every `RECHECK` s, out of range by
+  more than `SLACK`, a gather), never time; each keeps its uncertainty `err`. A re-check window covers
+  it when the record is isolated (its negative drops it), or half the gap to the nearest record of its
+  name in a cluster (its negative proves nothing). Identity errors (an ambiguous or narrow re-check, a
+  group beyond the count) trigger a **rebuild**: the name's records become priors (drawn, not counted),
+  a fresh search finds every node again, a node found where a prior was keeps that record silently,
+  the priors left go once the count is met; one per name per `BACKOFF`. A gathered spot (`gone`, `GONE`
+  s) is the same node. Tests: `test_locate`, `test_locate2` (Codex's review rounds on PR #102). Published once a burst with the map
   home (`NR.Located`): `Icons.SetRecords`, `Share.Send`, `Compass.Reconcile`, `FarMarker.Update`, then
   `Alert.Located` for the new ones (owed by a count's rise: its sonar; there at the first look after a
   reset: silent; else the full alert: a node replaced another between reads). The consumers'
   freshness is `API.LocalFresh` (the sweep's interval before 70862, the scan being on after). The
   trace (`/nr scan log`) is saved at logout while the scan is on: `NodeRadarDB.scanLog`
-  (`scanLogPrevious` the session before). Tests: `test_locate`.
+  (`scanLogPrevious` the session before).
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.

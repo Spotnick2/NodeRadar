@@ -2508,6 +2508,18 @@ drop them. Locate runs whatever the consumers: a node replacing another between 
 found only by its new spot. A count's rise owes its located node a sonar, not a second sound; what
 was there at the first look after a reset is located silently.
 
+**Identity, after eight Codex rounds on PR #102:** a located spot is approximate (its node can be a
+leaf's reach off, per axis), so two estimates of one node can look like two nodes and two near nodes
+like one. Rather than guess which record to sacrifice, each record keeps its uncertainty; re-checks
+are conclusive only when their window covers it (isolated records), and cluster re-checks use half
+the gap to the nearest record so they can't see the neighbour. Anything still ambiguous (a near-
+duplicate, a narrow negative, a group beyond the count) triggers a rebuild of that name: its records
+become priors, still drawn but not counted, a fresh search finds every node again, a node found where
+a prior was keeps that record silently, and the priors not found again go once the count is met. A
+burst stopped mid-way discards its pending leaves; an unresolved search restarts only after
+`BACKOFF`, unless the count rose; Alert's owed tokens keep their own ages (`OWED_TTL`) and are
+retired by falls, gathers and new areas.
+
 ### Cadence
 
 - **Frame schedule** of a presence burst (the scanner's, above): borrow + prepare (frame 1), place
