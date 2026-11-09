@@ -2491,6 +2491,16 @@ Presence says how many of each name. Locate finds where, only while something ne
 - **Budgets**: at most 8 placements and 250 ms per burst, then restore; the search resumes at the
   next burst. Its target is under 20 placements for a new node, a performance target, not a bound.
 
+**As built (step 2, Locate.lua):** windows sized for the hit square's guaranteed cover
+(16 − 2 × 3.5 = 9 px); every positive window split, so a neighbour's positive only costs reads.
+A window read with nothing at all is negative (only positives are followed); an empty or invalid
+one is tried twice. Records live on evidence instead of `RECORD_TTL`: the owner's play left 30
+to 100 s between reads (mouse steering), so a time limit blanked them; a presence count of 0, a
+re-check at the spot (every `RECHECK`, or at once when the count falls) and the minimap's range
+drop them. Locate runs whatever the consumers: a node replacing another between two reads is
+found only by its new spot. A count's rise owes its located node a sonar, not a second sound; what
+was there at the first look after a reset is located silently.
+
 ### Cadence
 
 - **Frame schedule** of a presence burst (the scanner's, above): borrow + prepare (frame 1), place

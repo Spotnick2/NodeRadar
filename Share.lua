@@ -394,7 +394,7 @@ end
 -- sender's list goes out at once if its sweep is fresh; the receiver's shared
 -- entries of that name by the player go until the sender's next snapshot.
 function Share.Gathered(name, now)
-    if Share.Sending() and lastSweep and now - lastSweep <= NR.db.interval + 2 then push(now) end
+    if Share.Sending() and API.LocalFresh(lastSweep, 2) then push(now) end
     if not Share.Showing() then return end
     local pn, pw = player()
     if not pn then return end

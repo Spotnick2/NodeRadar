@@ -63,7 +63,7 @@ local lookEnded                       -- when mouselook last ended (the trace)
 -- (in game: empty reads 0.5 s after mouselook, and four in a row standing still after a click).
 local movedSince = true
 
-MS.stats = { bursts = 0, valid = 0, unread = 0 }
+MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
 
 local function rg(name) return rawget(_G, name) end
 
@@ -557,6 +557,8 @@ end
 local function finish(b, reason)
     if burst ~= b then return end
     b.reason = reason
+    -- A window placed but not read (interrupted): back in Locate's queue.
+    if b.cur and b.cur.kind == "window" and not b.cur.read and NR.Locate then NR.Locate.Unread(b.cur) end
     restore(true)
     pcall(Minimap.UpdateBlips, Minimap)
     b.phase = "settle"
@@ -595,7 +597,8 @@ local function borrow(now)
     local x, y = cursor()
     gen = gen + 1
     local b = { gen = gen, t0 = now, frame = 1, x = x, y = y, phase = "off", context = context(),
-                es = s.es, homeW = s.w, eye = eyeShown() }
+                es = s.es, homeW = s.w, eye = eyeShown(), placements = 0 }
+    b.cur = { units = MS.PRESENCE_PX / s.es, ox = 0, oy = 0, kind = "presence" }
     saved, burst, suppress = s, b, true
     MS.stats.bursts = MS.stats.bursts + 1
     -- Invisible and inert before it moves.
@@ -610,15 +613,32 @@ local function borrow(now)
     s.scaled = iconScale(0.01)
     setOn(Minimap, "ClearAllPoints")
     setOn(Minimap, "SetPoint", "CENTER", UIParent, "BOTTOMLEFT", MS.OFF, MS.OFF)
-    b.units = MS.PRESENCE_PX / s.es
-    setOn(Minimap, "SetSize", b.units, b.units)
+    setOn(Minimap, "SetSize", b.cur.units, b.cur.units)
+    b.resized = true
     return b
 end
 
-local function place(b)
+-- The player in UnitPosition's frame (north, west), for a placement's context.
+local function playerPos()
+    local ok, n, w = pcall(UnitPosition, "player")
+    n, w = ok and API.Num(n), ok and API.Num(w)
+    if n and w then return n, w end
+end
+
+-- Put placement p's map point (ox, oy: map units from the map's centre, at its own size)
+-- under the cursor. A new size needs the settle frame (measured): the read at +2, else +1.
+local function place(b, p)
+    if not b.resized and not same(ask(Minimap, "GetWidth"), p.units) then
+        setOn(Minimap, "SetSize", p.units, p.units)
+        b.resized = true
+    end
+    b.wait = b.resized and 2 or 1
+    b.resized = false
     setOn(Minimap, "ClearAllPoints")
-    setOn(Minimap, "SetPoint", "CENTER", UIParent, "BOTTOMLEFT", b.x / b.es, b.y / b.es)
-    b.placedAt, b.phase = b.frame, "placed"
+    setOn(Minimap, "SetPoint", "CENTER", UIParent, "BOTTOMLEFT", b.x / b.es - p.ox, b.y / b.es - p.oy)
+    b.cur, b.placedAt, b.phase, b.rereads = p, b.frame, "placed", 0
+    b.placements = b.placements + 1
+    p.pn, p.pw = playerPos()
     b.blipsOK = pcall(Minimap.UpdateBlips, Minimap)
 end
 
@@ -651,7 +671,8 @@ end
 
 -- Why this frame's read can't count, or nil.
 local function invalid(b)
-    if b.frame < b.placedAt + 2 then return "unsettled" end
+    local p = b.cur
+    if b.frame < b.placedAt + b.wait then return "unsettled" end
     if topFocus() ~= Minimap then return "not the top focus" end
     if not b.blipsOK then return "UpdateBlips failed" end
     local cx, cy = Minimap:GetCenter()
@@ -660,12 +681,21 @@ local function invalid(b)
     local h = API.Num(ask(Minimap, "GetHeight"))
     if not (cx and cy and w and h and w > 0) then return "the placement is unreadable" end
     -- The read's size, really (a refused or overridden resize reads a normal map's centre only).
-    if math.abs(w - b.units) > 0.01 or math.abs(h - b.units) > 0.01 then return "not the read's size" end
+    if math.abs(w - p.units) > 0.01 or math.abs(h - p.units) > 0.01 then return "not the read's size" end
     local k = b.homeW / w
-    if math.abs((b.x / b.es - cx) * k) > MS.PLACE_TOL or math.abs((b.y / b.es - cy) * k) > MS.PLACE_TOL then
+    if math.abs((b.x / b.es - cx - p.ox) * k) > MS.PLACE_TOL or math.abs((b.y / b.es - cy - p.oy) * k) > MS.PLACE_TOL then
         return "the map is not where it was put"
     end
     return nil
+end
+
+-- Node names' counts in a read's names.
+local function countsOf(names)
+    local counts = {}
+    for _, name in ipairs(names) do
+        if NR.Learn.Kind(name) then counts[name] = (counts[name] or 0) + 1 end
+    end
+    return counts
 end
 
 -- Returns true when the read is final; false: read again next frame (an empty read, at most
@@ -679,7 +709,21 @@ local function read(b, now)
         b.rereads = (b.rereads or 0) + 1
         return false
     end
+    if b.cur.kind ~= "presence" then
+        -- A locate window: nothing at all there is no node there (only positives are
+        -- followed); an invalid or empty read is tried again (Locate.TRIES).
+        b.cur.read = true
+        MS.stats.windows = MS.stats.windows + 1
+        if names or why == "nothing" then
+            local pn, pw = playerPos()
+            if NR.Locate then NR.Locate.Read(b.cur, names and countsOf(names) or {}, pn, pw, now) end
+        elseif NR.Locate then
+            NR.Locate.Unread(b.cur)
+        end
+        return true
+    end
     if not names then
+        b.cur.read = true
         MS.stats.unread = MS.stats.unread + 1
         MS.lastUnread = why
         if why == "no lines" then
@@ -691,7 +735,7 @@ local function read(b, now)
             local w = API.Num(ask(Minimap, "GetWidth"))
             API.Trace(("scan: unread (no lines): type %s, frame +%d, %d rereads, size %s/%s, cursor %s from the centre, mouse over %s, mouselook ended %s s ago"):format(
                 tostring(MS.emptyType), b.frame - b.placedAt, b.rereads or 0, w and ("%.2f"):format(w) or "?",
-                ("%.2f"):format(b.units), (x and cx) and ("%.2f,%.2f"):format(x / b.es - cx, y / b.es - cy) or "?",
+                ("%.2f"):format(b.cur.units), (x and cx) and ("%.2f,%.2f"):format(x / b.es - cx, y / b.es - cy) or "?",
                 tostring(ask(Minimap, "IsMouseOver")), lookEnded and ("%.1f"):format(now - lookEnded) or "never"))
         else
             API.Trace("scan: unread (" .. tostring(why) .. ")")
@@ -699,16 +743,29 @@ local function read(b, now)
         return true
     end
     MS.stats.valid = MS.stats.valid + 1
-    local counts = {}
-    for _, name in ipairs(names) do
-        if NR.Learn.Kind(name) then counts[name] = (counts[name] or 0) + 1 end
-    end
+    local counts = countsOf(names)
+    b.cur.read = true
     b.observation = { counts = counts, at = now, gen = b.gen }
+    if NR.Locate then NR.Locate.Presence(counts, now) end
     MS.lastCounts = counts                               -- /nr status
     local seen = {}
     for name, n in pairs(counts) do seen[#seen + 1] = name .. " x" .. n end
     table.sort(seen)
     API.Trace("scan: read " .. (#seen > 0 and table.concat(seen, ", ") or "no node"))
+    return true
+end
+
+-- The next placement of this burst, if there's room: Locate's windows, up to MS.PLACEMENTS a
+-- burst and while the budget allows another (a margin for its settle frame).
+MS.PLACEMENTS = 8
+MS.MARGIN = 0.06
+local function nextPlacement(b, now)
+    if b.placements >= MS.PLACEMENTS or now - b.t0 > MS.BUDGET - MS.MARGIN or not NR.Locate then return nil end
+    local okR, radius = pcall(C_Minimap.GetViewRadius)
+    radius = okR and API.Num(radius)
+    local pn, pw = playerPos()
+    if not (radius and pn) then return nil end
+    return NR.Locate.Next(pn, pw, radius, b.es)
 end
 
 local function stepBurst(b, now)
@@ -720,13 +777,19 @@ local function stepBurst(b, now)
         if saved then restore() end
         if b.observation and b.gen ~= gen then API.Trace("scan: the read was cancelled (gen " .. b.gen .. " vs " .. gen .. ")") end
         if b.observation and b.gen == gen and NR.Observe then NR.Observe("presence", b.observation, now) end
+        if NR.Locate and NR.Located then
+            local changed, new = NR.Locate.Take()
+            if changed then NR.Located(new, now) end
+        end
         return
     end
     local why = interrupted(b, now)
     if why then return finish(b, why) end
-    if b.phase == "off" then return place(b) end
-    if b.frame >= b.placedAt + 2 then
+    if b.phase == "off" then return place(b, b.cur) end
+    if b.frame >= b.placedAt + b.wait then
         if read(b, now) == false then return end
+        local p = nextPlacement(b, now)
+        if p then return place(b, p) end
         return finish(b, "done")
     end
 end
@@ -799,10 +862,20 @@ driver:SetScript("OnUpdate", function() MS.Tick(GetTime()) end)
 local events = CreateFrame("Frame")
 API.RegisterEvents(events, { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_LEAVING_WORLD",
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "GLOBAL_MOUSE_DOWN", "MINIMAP_UPDATE_ZOOM",
-    "MINIMAP_UPDATE_TRACKING", "ZONE_CHANGED_NEW_AREA", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "PLAYER_LOGIN" })
+    "MINIMAP_UPDATE_TRACKING", "ZONE_CHANGED_NEW_AREA", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "PLAYER_LOGIN",
+    "PLAYER_LOGOUT" })
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         MS.HookTooltip()
+    elseif event == "PLAYER_LOGOUT" then
+        -- The session's trace, saved (a reload too) while the scan is on: the next look at it
+        -- needs no paste. The session before it is kept as scanLogPrevious.
+        local db = NR.db
+        if db and db.moveScan and API.Blind() and #NR.trace > 0 then
+            local build, version = API.Build(), NR.VersionText and NR.VersionText() or "?"
+            db.scanLogPrevious = db.scanLog
+            db.scanLog = { build = build, version = version, saved = time(), stats = MS.stats, lines = NR.trace }
+        end
     elseif event == "PLAYER_REGEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         if pending then MS.Retry() end
     elseif event == "GLOBAL_MOUSE_DOWN" then
@@ -838,7 +911,7 @@ MS._test = {
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
         cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
         followers = { at = -math.huge }
-        MS.stats = { bursts = 0, valid = 0, unread = 0 }
+        MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
     end,
     burst = function() return burst end,
     saved = function() return saved end,

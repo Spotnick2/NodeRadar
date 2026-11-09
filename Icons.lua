@@ -427,6 +427,7 @@ function Icons.Clear()
     dropProvisional()
     records, tries, gone, lastSweep, instance = {}, {}, {}, nil, nil
     stop()
+    if API.Blind() and NR.Locate then NR.Locate.Reset() end   -- the scan's records are these (#91)
     if NR.Compass then NR.Compass.LocalCleared() end   -- a party node's target stays (#83)
 end
 
@@ -536,7 +537,7 @@ local function draw()
     local half = geometry and w / 2
     local k = geometry and radius / half
     local edge = geometry and half - look.extent
-    local fresh = Icons.On() and lastSweep and GetTime() - lastSweep <= db.interval + Icons.GRACE
+    local fresh = Icons.On() and API.LocalFresh(lastSweep, Icons.GRACE)
     local localDrawn = false
     if fresh and geometry and inst == instance then
         place(records, pn, pw, k, edge)
@@ -889,8 +890,23 @@ end
 
 -- The player gathered a node of that name: its records within GATHERED yards
 -- go, so a node of the name beside it is measured, not matched to it (Codex).
+-- From 70862 the scan's records are Locate's (#91): it drops them itself (Locate.Gathered).
+function Icons.SetRecords(list, now)
+    local keep = {}
+    for _, r in ipairs(list) do keep[r] = true end
+    for _, r in ipairs(records) do if not keep[r] then release(r) end end
+    records = list
+    local _, _, inst = player()
+    instance, lastSweep = inst, now
+    for _, r in ipairs(records) do
+        r.misses = 0
+        if r.icon == nil then r.icon = iconOf(r.name, r.kind) end
+    end
+    Icons.Show()
+end
+
 function Icons.Gathered(name)
-    if not Icons.Keeping() then return end
+    if not Icons.Keeping() or API.Blind() then return end
     local pn, pw = player()
     if not pn then return end
     local kept, dropped = {}, false

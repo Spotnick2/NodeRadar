@@ -219,7 +219,7 @@ local function fresh()
     local r = want.record
     if NR.Compass.Chosen() ~= r or NR.Compass.Snoozed(r) then return false end
     if r.party then return NR.Share.Live(r) end
-    return GetTime() - want.at <= NR.db.interval + Far.GRACE and NR.Alert.Wanted(r.name)
+    return API.LocalFresh(want.at, Far.GRACE) and NR.Alert.Wanted(r.name)
 end
 local function usable()
     return NR.Marker.On() and not exiting and NR.Marker.Settled() and not API.Gamepad()

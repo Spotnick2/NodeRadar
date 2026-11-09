@@ -1,0 +1,256 @@
+-- Locate.lua: where the minimap scan's nodes are (#91, step 2), from 70862.
+--
+-- The scan's presence read says how many of each node name are in range; this finds where.
+-- A read lists what lies within a node's hit square of the cursor: 16 screen px, its centre
+-- up to 3.5 px off the node (measured, docs/FOREVER-PROBE.md "The scan's last round"). So a
+-- map M px wide over a view radius of R yards covers, for sure, a window W yards wide around
+-- the map point under the cursor when W/2 yards is at most GUARANTEE_PX/2 px: M = 2R·G/W.
+--
+-- The search: the map's four quarters (W = R), each one that lists a name split in four
+-- (W/2), down to FINE yards; a positive at that size is the node (the centroid of the
+-- positive leaves within MATCH). One read serves every name it lists. Windows are held in
+-- world yards and each read paired with where the player was at its placement and at the
+-- read: the map follows the player, the frame stays, so what the read covered is the window
+-- moved by the player's own move. A positive that came from a neighbour (the reach is wider
+-- than the guarantee) only costs reads: the window that really holds the node is positive too.
+--
+-- Records live on evidence, not time: a valid read at a record's spot without its name, a
+-- presence count of 0, or the record leaving the minimap's range drops it; one is re-checked
+-- at its spot every RECHECK seconds, and all of a name when the count falls below them.
+--
+-- A node located where none was known alerts, unless a count's rise already did (then only
+-- its sonar), it was there at the scan's first look after a reset (quiet), or it is a node the
+-- player gathered from (`gone`: the same node, kept silently).
+
+NodeRadar = NodeRadar or {}
+local NR = NodeRadar
+local API = NR.API
+local Locate = {}
+NR.Locate = Locate
+
+Locate.GUARANTEE_PX = 9   -- the hit square 16 px less twice its 3.5 px offset
+Locate.FINE = 12          -- yards: a window this small is a node's place
+Locate.MATCH = 20         -- yards: a located node this near a record of its name is that record
+Locate.RECHECK = 15       -- seconds between re-checks of a record at its spot
+Locate.GONE = 120         -- seconds a gathered node's spot is the same node
+Locate.TRIES = 2          -- unread windows are tried this many times
+
+local records = {}        -- { name, kind, north, west, at, instance, misses = 0 }
+local windows = {}        -- { north, west, size, names = {[name] = true}, depth, tries, record }
+local gone = {}           -- { name, north, west, at }
+local counts = {}         -- the last presence read's counts
+local quiet = nil         -- [name] = nodes in range at the first read after a reset, silent
+local dirty = false
+local found = {}          -- new records to announce, at the burst's end (the map home again)
+
+local function d2(a, n, w) return (a.north - n) ^ 2 + (a.west - w) ^ 2 end
+
+local function instanceNow()
+    local ok, _, _, _, inst = pcall(UnitPosition, "player")
+    return ok and API.Num(inst) or nil
+end
+
+function Locate.Records() return records end
+
+-- Everything forgotten: a zone, tracking or zoom change, the scan turned on (quiet: the next
+-- read's nodes are the baseline, located silently).
+function Locate.Reset()
+    records, windows, gone, counts, found = {}, {}, {}, {}, {}
+    quiet = nil
+    dirty = true
+end
+
+local function ofName(name)
+    local n = 0
+    for _, r in ipairs(records) do if r.name == name then n = n + 1 end end
+    return n
+end
+
+local function drop(r, why)
+    for i, x in ipairs(records) do
+        if x == r then
+            table.remove(records, i)
+            dirty = true
+            API.Trace(("locate: %s dropped (%s)"):format(r.name, why))
+            return
+        end
+    end
+end
+
+-- The four windows of a square (the map's, or a positive window's).
+local function split(north, west, size, names, depth)
+    local q = size / 4
+    for _, d in ipairs({ { q, q }, { q, -q }, { -q, q }, { -q, -q } }) do
+        windows[#windows + 1] = { north = north + d[1], west = west + d[2], size = size / 2, names = names,
+                                  depth = depth, tries = 0 }
+    end
+end
+
+local function searching(name)
+    for _, w in ipairs(windows) do if not w.record and w.names[name] then return true end end
+    return false
+end
+
+-- A presence read (MoveScan): what needs finding or re-checking.
+function Locate.Presence(c, now)
+    local pn, pw
+    do
+        local ok, n, w = pcall(UnitPosition, "player")
+        pn, pw = ok and API.Num(n), ok and API.Num(w)
+    end
+    if not pn then return end
+    counts = c
+    if not quiet then
+        quiet = {}
+        for name, n in pairs(c) do quiet[name] = n - ofName(name) end
+    end
+    -- A name no longer in range: its records go (a valid read lists every node in range).
+    for i = #records, 1, -1 do
+        local r = records[i]
+        if not c[r.name] then drop(r, "not in range") end
+    end
+    local need = {}
+    for name, n in pairs(c) do
+        local m = ofName(name)
+        if n > m and not searching(name) then need[name] = true end
+        if n < m then
+            for _, r in ipairs(records) do if r.name == name then r.due = true end end
+        end
+    end
+    if next(need) then
+        local okR, radius = pcall(C_Minimap.GetViewRadius)
+        radius = okR and API.Num(radius)
+        if radius then split(pn, pw, 2 * radius, need, 1) end
+    end
+end
+
+-- The next window to read, as a placement for MoveScan, or nil: re-checks first, then the
+-- deepest search window (a node found sooner); out of range or no longer needed, dropped.
+function Locate.Next(pn, pw, radius, es)
+    local now = GetTime()
+    for _, r in ipairs(records) do
+        if (r.due or now - r.at >= Locate.RECHECK) and not r.checking then
+            r.checking = true
+            windows[#windows + 1] = { north = r.north, west = r.west, size = Locate.FINE, names = { [r.name] = true },
+                                      depth = 99, tries = 0, record = r }
+        end
+    end
+    local best, bestI
+    for i = #windows, 1, -1 do
+        local w = windows[i]
+        local wanted = false
+        for name in pairs(w.names) do
+            if w.record or (counts[name] or 0) > ofName(name) then wanted = true end
+        end
+        if not wanted or math.sqrt(d2(w, pn, pw)) > radius + w.size / 2 then
+            if w.record then w.record.checking = nil end
+            table.remove(windows, i)
+        elseif not best or w.depth > best.depth then
+            best, bestI = w, i
+        end
+    end
+    if not best then return nil end
+    table.remove(windows, bestI)
+    local px = 2 * radius * Locate.GUARANTEE_PX / best.size       -- the map's width, screen px
+    local units = px / es
+    local k = 2 * radius / units                                   -- yards per map unit
+    return { kind = "window", window = best, units = units,
+             ox = -(best.west - pw) / k, oy = (best.north - pn) / k }
+end
+
+-- A node of `name` located near (north, west): an existing record renewed, a gathered spot's
+-- node kept silently, or a new record (and its alert).
+local function located(name, north, west, now)
+    for _, r in ipairs(records) do
+        if r.name == name and d2(r, north, west) <= Locate.MATCH ^ 2 then
+            r.at, r.due = now, nil
+            return
+        end
+    end
+    local r = { name = name, kind = NR.Learn.Kind(name), north = north, west = west, at = now,
+                instance = instanceNow(), misses = 0 }
+    records[#records + 1] = r
+    dirty = true
+    for i, g in ipairs(gone) do
+        if g.name == name and now - g.at <= Locate.GONE and d2(g, north, west) <= Locate.MATCH ^ 2 then
+            table.remove(gone, i)
+            API.Trace("locate: " .. name .. " at a gathered spot: the same node, silent")
+            return
+        end
+    end
+    -- There at the scan's first look after a reset: no sound of its own (a rise that
+    -- announced it still gets its sonar, Alert.Located).
+    if quiet and (quiet[name] or 0) > 0 then
+        quiet[name] = quiet[name] - 1
+        r.quiet = true
+    end
+    API.Trace("locate: " .. name .. " found at a new spot" .. (r.quiet and " (there at the first look)" or ""))
+    found[#found + 1] = r
+end
+
+-- A window's read (MoveScan): `c` the counts it listed; (pn, pw) the player at the read.
+function Locate.Read(p, c, pn, pw, now)
+    local w = p.window
+    if not w then return end
+    -- What the read covered: the window moved by the player's own move since the placement.
+    local north, west = w.north, w.west
+    if pn and p.pn then north, west = north + (pn - p.pn), west + (pw - p.pw) end
+    if w.record then
+        local r = w.record
+        r.checking = nil
+        if c[r.name] then
+            r.at, r.due = now, nil
+        else
+            drop(r, "not at its spot")
+        end
+        return
+    end
+    local positive = {}
+    for name in pairs(w.names) do if c[name] then positive[name] = true end end
+    if not next(positive) then return end
+    if w.size <= Locate.FINE then
+        for name in pairs(positive) do located(name, north, west, now) end
+    else
+        split(north, west, w.size, positive, w.depth + 1)
+    end
+end
+
+-- A read that didn't count: the window tried again later, TRIES times.
+function Locate.Unread(p)
+    local w = p and p.window
+    if not w then return end
+    w.tries = w.tries + 1
+    if w.tries < Locate.TRIES then
+        windows[#windows + 1] = w
+    elseif w.record then
+        w.record.checking = nil
+    end
+end
+
+-- The player gathered a node of that name: its records within NEAR yards go, their spots
+-- remembered as the same node for GONE seconds (a vein mined again).
+Locate.NEAR = 15
+function Locate.Gathered(name, now)
+    local ok, n, w = pcall(UnitPosition, "player")
+    n, w = ok and API.Num(n), ok and API.Num(w)
+    if not n then return end
+    for i = #records, 1, -1 do
+        local r = records[i]
+        if r.name == name and d2(r, n, w) <= Locate.NEAR ^ 2 then
+            table.remove(records, i)
+            dirty = true
+        end
+    end
+    gone[#gone + 1] = { name = name, north = n, west = w, at = now }
+end
+
+-- Whether the records changed since the last call, and the new ones to announce (the
+-- consumers are told once a burst, with the map home).
+function Locate.Take()
+    local d, f = dirty, found
+    dirty, found = false, {}
+    return d or #f > 0, f
+end
+
+Locate._test = { windows = function() return windows end, gone = function() return gone end,
+                 quiet = function() return quiet end }

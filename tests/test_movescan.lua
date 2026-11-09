@@ -34,6 +34,7 @@ local function fresh(db, build)
     WoW.blips = {}
     local NR = loadAddon({ db = db or { moveScan = true, moveScanAsked = true } })
     NR.db.learn = false
+    NR.MoveScan.PLACEMENTS = 1                     -- step 1's checks: the presence read alone (test_locate: the rest)
     HOME = home()
     return NR
 end

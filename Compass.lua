@@ -181,7 +181,7 @@ end
 -- Each candidate by its own freshness (#83, Codex): a local record while the
 -- local sweep is recent, a party node while Share says it's live.
 local function localFresh()
-    return lastSweep ~= nil and GetTime() - lastSweep <= NR.db.interval + Compass.GRACE
+    return API.LocalFresh(lastSweep, Compass.GRACE)
 end
 local function live(t)
     if t.party then return NR.Share.Live(t) end
