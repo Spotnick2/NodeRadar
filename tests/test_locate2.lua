@@ -447,58 +447,119 @@ for _, how in ipairs({ "fall", "gather" }) do
 end
 
 --------------------------------------------------------------------------------
--- Rounds 4 and 5: a group beyond the count never evicts a record by itself; it waits as a
--- candidate, the records no group pointed at are re-checked, a confirmed isolated record
--- stays, an ambiguous one yields after two inconclusive re-checks, and the candidate is placed.
+-- Rounds 4-6: identity errors in a cluster of one name settle by a rebuild, through real
+-- bursts: the name's records become priors (still drawn, not counted), a fresh search finds
+-- every node again, a node found where a prior was keeps that record, the priors not found
+-- again go once the count is met. No live node is lost, none starved.
 --------------------------------------------------------------------------------
 
-local L = 12.5
-local function hitAt(n, w)
-    NR.Locate.Read({ window = { north = n, west = w, size = L, names = { Silverleaf = true }, depth = 6, tries = 0 } },
-        { Silverleaf = 1 }, nil, nil, WoW.now)
+local function spot(dx, dy) return WoW.pos[1] + dy * YARDS, WoW.pos[2] - dx * YARDS end
+local function rec(n, w, ago) return { name = "Silverleaf", north = n, west = w, at = WoW.now - (ago or 5), misses = 0 } end
+local function near(n, w, within)
+    local list = {}
+    for _, r in ipairs(NR.Locate.Records()) do
+        if not r.prior and math.abs(r.north - n) <= within and math.abs(r.west - w) <= within then list[#list + 1] = r end
+    end
+    return list
 end
-local function recheck(r, positive)
-    NR.Locate.Read({ window = { north = r.north, west = r.west, size = 16, names = { Silverleaf = true }, record = r, tries = 0 } },
-        positive and { Silverleaf = 1 } or {}, nil, nil, WoW.now)
+local function settled() 
+    for _, r in ipairs(NR.Locate.Records()) do if r.prior then return false end end
+    return not NR.Locate.Busy()
 end
-local function recAt(n) for _, r in ipairs(NR.Locate.Records()) do if math.abs(r.north - n) < 1 then return r end end end
 
--- Round 4: stale A beside live B, distant C, presence two.
+-- Round 4: stale A beside live B; C distant and not yet read; presence two, records two.
 NR = fresh()
 WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 } }
 bursts(2)
 for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
-local A0 = { name = "Silverleaf", north = 3000, west = 4000, at = WoW.now - 9, misses = 0 }   -- stale
-local B0 = { name = "Silverleaf", north = 3014, west = 4000, at = WoW.now - 5, misses = 0 }   -- live, beside it
-table.insert(NR.Locate.Records(), A0)
-table.insert(NR.Locate.Records(), B0)
-hitAt(3018.75, 4000)                                                   -- B's leaf
-hitAt(3081.25, 4000)                                                   -- C, distant
-NR.Locate.Take()
-check(#NR.Locate._test.candidates() == 1 and has(NR.Locate.Records(), A0), "C beyond the count waits as a candidate; nothing evicted")
-recheck(A0, true); recheck(A0, true)                                   -- lit by B: inconclusive twice
-NR.Locate.Take()
-check(not has(NR.Locate.Records(), A0) and recAt(3081.25) ~= nil and has(NR.Locate.Records(), B0),
-    "the ambiguous stale A yields; C is placed; B stays")
+local bn, bw = spot(20, -15)
+local cn, cw = spot(-60, 40)
+local A4 = rec(bn + 14, bw, 9)                                     -- stale, 14 yards from B
+local B4 = rec(bn, bw, 5)
+A4.due = true
+table.insert(NR.Locate.Records(), A4)
+table.insert(NR.Locate.Records(), B4)
+bursts(40, function() return #near(cn, cw, 16) == 1 and settled() end)
+check(#near(cn, cw, 16) == 1, "round 4: distant C gets its record")
+check(not has(NR.Locate.Records(), A4), "...stale A gone")
+check(has(NR.Locate.Records(), B4) and #NR.Locate.Records() == 2, "...live B kept, its own record (found again where it was)")
 
--- Round 5: live A isolated and not re-read, B seen again 18.75 from its record (a duplicate
--- B'), C new; presence three. A must not be evicted.
+-- Rounds 5 and 6: live A and X 25 yards apart (A isolated from B), B recorded twice (B and a
+-- duplicate B' 18.75 yards off), C new; presence four.
 NR = fresh()
-WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 }, { "Silverleaf", 40, 60 } }
+WoW.blips = { { "Silverleaf", 60, -50 }, { "Silverleaf", 60, -33.5 }, { "Silverleaf", 0, 0 }, { "Silverleaf", -50, 55 } }
 bursts(2)
 for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
-local A1 = { name = "Silverleaf", north = 2918.75, west = 4000, at = WoW.now - 10, misses = 0 }
-local B1 = { name = "Silverleaf", north = 3000, west = 4000, at = WoW.now - 5, misses = 0 }
-table.insert(NR.Locate.Records(), A1)
-table.insert(NR.Locate.Records(), B1)
-hitAt(3018.75, 4000)                                                   -- B again: B' (beyond B's reach)
-hitAt(3081.25, 4000)                                                   -- C
-NR.Locate.Take()
-check(has(NR.Locate.Records(), A1), "live A, not re-read this burst, isn't evicted")
-recheck(A1, true)                                                      -- isolated: confirmed
-recheck(B1, true); recheck(B1, true)                                   -- B' within reach: ambiguous twice
-NR.Locate.Take()
-check(has(NR.Locate.Records(), A1) and not has(NR.Locate.Records(), B1) and recAt(3081.25) ~= nil and recAt(3018.75) ~= nil,
-    "A confirmed stays; the ambiguous duplicate yields; C placed (A, B', C)")
+local an, aw = spot(60, -50)
+local xn, xw = spot(60, -33.5)
+local b5n, b5w = spot(0, 0)
+local c5n, c5w = spot(-50, 55)
+local A5, X5 = rec(an, aw, 10), rec(xn, xw, 8)
+local B5, B5d = rec(b5n, b5w, 5), rec(b5n + 18.75, b5w, 6)
+B5.due = true
+for _, r in ipairs({ A5, X5, B5, B5d }) do table.insert(NR.Locate.Records(), r) end
+bursts(80, function() return #near(c5n, c5w, 16) == 1 and settled() end)
+check(#near(c5n, c5w, 16) == 1, "rounds 5-6: new C gets its record")
+check(#near(an, aw, 10) == 1 and #near(xn, xw, 10) == 1, "...live A and X both kept (" .. #near(an, aw, 10) .. ", " .. #near(xn, xw, 10) .. ")")
+check(#near(b5n + 9, b5w, 20) == 1, "...B once, its duplicate gone")
+check(#NR.Locate.Records() == 4 and settled(), "...four records for four nodes, no prior left")
+local rebuilds = 0
+for _, l in ipairs(NR.trace) do if l:find("rebuilt", 1, true) then rebuilds = rebuilds + 1 end end
+check(rebuilds <= 1, "...without rebuilding over and over (" .. rebuilds .. ")")
+
+-- A near-duplicate (4 yards from the real record): its re-check is ambiguous even at the
+-- smallest window: a rebuild; the real node keeps its record, the duplicate goes.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local dn, dw = spot(20, -15)
+local R1, D1 = rec(dn, dw, 5), rec(dn + 4, dw, 6)
+D1.due = true
+table.insert(NR.Locate.Records(), R1)
+table.insert(NR.Locate.Records(), D1)
+local sounds6 = #WoW.sounds
+bursts(40, function() return #NR.Locate.Records() == 1 and settled() end)
+check(has(NR.Locate.Records(), R1) and not has(NR.Locate.Records(), D1) and #NR.Locate.Records() == 1,
+    "a near-duplicate: rebuilt, the real record kept (found again where it was), the duplicate gone")
+check(#WoW.sounds == sounds6, "...silently")
+
+-- A group beyond the count (one record wrong, far from any node): rebuilt, every node placed,
+-- the wrong record gone, the right one kept.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 }, { "Silverleaf", 50, 50 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local a7n, a7w = spot(20, -15)
+local A7, W7 = rec(a7n, a7w, 5), rec(WoW.pos[1] - 120, WoW.pos[2] + 10, 3)
+table.insert(NR.Locate.Records(), A7)
+table.insert(NR.Locate.Records(), W7)
+local b7n, b7w = spot(-60, 40)
+local c7n, c7w = spot(50, 50)
+bursts(80, function() return #near(b7n, b7w, 16) == 1 and #near(c7n, c7w, 16) == 1 and settled() end)
+check(#near(b7n, b7w, 16) == 1 and #near(c7n, c7w, 16) == 1 and has(NR.Locate.Records(), A7)
+    and not has(NR.Locate.Records(), W7) and #NR.Locate.Records() == 3,
+    "a wrong record and a group beyond the count: all three nodes placed, A kept, the wrong one gone")
+
+-- A near-duplicate filling the count while another node waits unrecorded (count 2: A and C;
+-- records A and A'): only a rebuild can tell, its re-checks being ambiguous at any size.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local a8n, a8w = spot(20, -15)
+local c8n, c8w = spot(-60, 40)
+local A8, A8d = rec(a8n, a8w, 5), rec(a8n + 4, a8w, 6)
+A8d.due = true
+table.insert(NR.Locate.Records(), A8)
+table.insert(NR.Locate.Records(), A8d)
+bursts(60, function() return #near(c8n, c8w, 16) == 1 and settled() end)
+check(#near(c8n, c8w, 16) == 1 and has(NR.Locate.Records(), A8) and not has(NR.Locate.Records(), A8d),
+    "a near-duplicate filling the count: rebuilt, the waiting node found, the duplicate gone")
+
+-- A rebuild never fires twice within BACKOFF of a name.
+NR = fresh()
+check(NR.Locate._test.rebuild("Silverleaf", 100) and not NR.Locate._test.rebuild("Silverleaf", 110)
+    and NR.Locate._test.rebuild("Silverleaf", 100 + NR.Locate.BACKOFF), "one rebuild a BACKOFF per name")
 
 done("test_locate2")
