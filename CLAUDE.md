@@ -227,9 +227,10 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   for a name listed twice at a point (none so far: no overlap counts). Each feature has its round
   (`/fp steps nr <name>`, e.g. `nodots`, `snooze`).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
-- `tests/`: `wow_stubs.lua` (strict globals as an allowlist of APIs verified in the dump, secrets,
-  event names checked against the dump or `events-70450.txt`, every widget method recorded, and a
-  minimap whose mouseover reads blips), `harness.lua`, `test_*.lua`, `run.ps1`.
+- `tests/`: `wow_stubs.lua` (WowTestKit's core, then this addon's own client APIs and a minimap
+  whose mouseover reads blips), `harness.lua` (the loaders; `checkMethods`, `done` wrapping the
+  kit's), `test_*.lua` (`test_methods`: every widget method the addon calls exists on the pinned
+  build), `kit.pin` and the kit's bootstrap copies, `run.ps1`.
 
 ## Forever basics (shared with the siblings)
 
@@ -249,8 +250,8 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
 - `C:\Projects\WoW\References\Docs\PORTING-TBC-TO-FOREVER.md`: measured, addon-agnostic field notes.
   Treat them as fact. New addon-agnostic findings go there, not into a copy here.
 - `C:\Projects\WoW\References\Forever\api\forever-api-<version>.<build>.md`: the API dump; use the **highest
-  build** there. This repo follows **1.60.1.70450** (the stubs and `tests\events-70450.txt`
-  follow it). **Presence is not a contract.**
+  build** there. This repo follows **1.60.1.70450** (the kit's data for 70450, `tests\kit.pin`,
+  follows it). **Presence is not a contract.**
 - `C:\Projects\WoW\References\Docs\PROBES.md` and `C:\Projects\WoW\ForeverProbe\docs\GUIDE.md`: probes.
 - `C:\Projects\WoW\wow-ui-source`: the client's own FrameXML. `Blizzard_Minimap/Mainline/Minimap.lua`
   (the hover tooltip, the tracking menu) first; check its `version.txt` against the build.
@@ -260,7 +261,7 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
 Lua 5.1 at `C:\Program Files (x86)\Lua\5.1\` (`lua.exe`, `luac.exe`). No build step.
 
 ```powershell
-pwsh tests\run.ps1                                                   # luac -p on the TOC files + probe, then every tests\test_*.lua (needs ..\ForeverProbe)
+pwsh tests\run.ps1                                                   # luac -p on the TOC files + probe, then every tests\test_*.lua (needs ..\ForeverProbe; -KitDev: the ..\WowTestKit copy)
 & 'C:\Program Files (x86)\Lua\5.1\lua.exe' tests\test_probe.lua     # one test, from the repo root
 pwsh Tools\deploy.ps1 -Probe                                        # NodeRadar + ForeverProbe + NodeRadarProbe into AddOns
 ```
@@ -272,6 +273,14 @@ pwsh Tools\deploy.ps1 -Probe                                        # NodeRadar 
   backslash escapes or Windows paths with the Write/Edit tools.
 
 ## Testing
+
+The test scaffolding is WowTestKit (`C:\Projects\WoW\WowTestKit`; its README is the reference)
+at the commit and client build `tests\kit.pin` names. `tests\run.ps1` puts that commit in
+`%LOCALAPPDATA%\WowTestKit\<sha>` and hands off to the kit's runner; CI fetches it with
+`tests\fetch_kit.sh`. `tests\kit.lua`, `kit.ps1` and `fetch_kit.sh` are the kit's bootstrap
+copies: never edit them here. A kit need is an issue on the kit, worked around in
+`tests\wow_stubs.lua` with a `-- WowTestKit #N:` comment meanwhile. `tests\run.ps1 -KitDev`
+runs against the `..\WowTestKit` working copy instead of the pin.
 
 **Mutation-test every new test**: break the behaviour, confirm it goes red. Offline tests can't
 cover taint, real secrets, rendering, or what the engine does with the minimap's mouseover; that's

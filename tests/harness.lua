@@ -1,42 +1,25 @@
--- harness.lua: assertions and loaders. dofile it after wow_stubs.lua.
--- GlassMail's harness, trimmed: no embedded library.
-
-local passed, failed = 0, 0
-
-function check(cond, msg)
-    if cond then passed = passed + 1 else
-        failed = failed + 1
-        io.write("  FAIL: " .. tostring(msg) .. "\n")
-    end
-end
-
-function eq(actual, expected, msg)
-    check(actual == expected, string.format("%s: expected %s, got %s", msg, tostring(expected), tostring(actual)))
-end
-
-function done(name)
-    io.write(string.format("%s: %d passed, %d failed\n", name, passed, failed))
-    os.exit(failed == 0 and 0 or 1)
-end
+-- harness.lua: the addon loaders. dofile it after wow_stubs.lua.
+-- check, eq and done are WowTestKit's (done() also fails on a stray "|" in
+-- any printed line). GlassMail's harness, trimmed: no embedded library.
 
 TOC = "NodeRadar.toc"
 TEST_LIBRARY = { enUS = { ["Silverleaf"] = "herbs", ["Stunted Silverleaf"] = "herbs", ["Wilted Peacebloom"] = "herbs" } }
 PROBE_TOC = "Tools/NodeRadarProbe/NodeRadarProbe.toc"
 
--- Lua files listed in a TOC, in load order. The vendored libraries (Libs\,
+-- Lua files listed in the TOC, in load order. The vendored libraries (Libs\,
 -- #46) are left out unless `all`: behaviour tests never load them, the stubs
 -- answer LibDataBroker and LibDBIcon with fakes (GuildSpy's recipe, Codex);
 -- run.ps1's luac -p checks every file.
 function tocFiles(toc, all)
     local files = {}
-    for line in io.lines(toc or TOC) do
-        line = line:gsub("\r", "")
-        if line ~= "" and not line:match("^#") and line:match("%.lua$") and (all or not line:match("^Libs\\")) then
-            files[#files + 1] = line:gsub("\\", "/")
-        end
+    for _, f in ipairs(Kit.tocFiles(toc or TOC)) do
+        if all or not f:match("^Libs/") then files[#files + 1] = f end
     end
     return files
 end
+
+-- The probe's Lua files, in load order, as paths.
+function probeFiles() return Kit.tocFiles("NodeRadarProbe.toc", "Tools/NodeRadarProbe/") end
 
 -- Load the addon the way the client does: every TOC file with (name, ns), its
 -- saved tables (opts.db, opts.charDb), then ADDON_LOADED, PLAYER_LOGIN,
@@ -99,57 +82,47 @@ end
 -- NodeRadarProbe, as the client loads it after its host. Returns its namespace.
 function loadProbe()
     local ns = {}
-    for _, f in ipairs(tocFiles(PROBE_TOC)) do
-        assert(loadfile("Tools/NodeRadarProbe/" .. f))("NodeRadarProbe", ns)
-    end
+    for _, f in ipairs(probeFiles()) do assert(loadfile(f))("NodeRadarProbe", ns) end
     WoW.fire("ADDON_LOADED", "NodeRadarProbe")
     WoW.fire("PLAYER_LOGIN")
     return ns
 end
 
--- Every widget method the test called exists on Forever (the API dump), and
--- the `required` ones ("Type:Method") were called. Skipped without the dump (CI).
-function checkMethods(required)
-    local f = io.open(WoW.DUMP, "r")
-    if not f then
-        io.write("  method check SKIPPED (no API dump at " .. WoW.DUMP .. ")\n")
-        return
-    end
-    local widget, documented = {}, {}
-    for line in f:lines() do
-        local wm = line:match("^(%a+:%a+)%s*$")
-        if wm then widget[wm] = true end
-        local fn = line:match("^([%a_]+)%(")
-        if fn then documented[fn] = true end
-    end
-    f:close()
-    -- Methods a template's Lua mixin adds aren't in the dump: found in the
-    -- client's own FrameXML instead (wow-ui-source, 70450).
-    local MIXINS = { ["DropdownButton:SetupMenu"] = "Blizzard_Menu/DropdownButton.lua",
-                     ["DropdownButton:GenerateMenu"] = "Blizzard_Menu/DropdownButton.lua" }
+-- Widget methods that are real on the client although the dump's widget walk can't
+-- see them (Kit.checkMethods' allow list: each with where it comes from).
+METHOD_ALLOW = {
+    -- A template's Lua mixin adds these (wow-ui-source, 70450).
+    ["DropdownButton:SetupMenu"] = "Blizzard_Menu/DropdownButton.lua (DropdownButtonMixin)",
+    ["DropdownButton:GenerateMenu"] = "Blizzard_Menu/DropdownButton.lua (DropdownButtonMixin)",
+    -- DropdownButton is an intrinsic <Button> (Blizzard_Menu/DropdownButton.xml), not a widget
+    -- type of the dump's walk: it has Button's methods.
+    ["DropdownButton:SetPoint"] = "Blizzard_Menu/DropdownButton.xml (an intrinsic Button)",
+    ["DropdownButton:SetWidth"] = "Blizzard_Menu/DropdownButton.xml (an intrinsic Button)",
     -- FrameXML's tooltip accessors (TooltipDataHandler.lua: `SetItemByID = "GetItemByID"`).
-    local ACCESSORS = { ["GameTooltip:SetItemByID"] = "Blizzard_SharedXMLGame/Tooltip/TooltipDataHandler.lua" }
-    local function inFrameXML(name)
-        local acc = ACCESSORS[name]
-        if acc then
-            local src = io.open("../wow-ui-source/Interface/AddOns/" .. acc, "r")
-            if not src then return false end
-            local body = src:read("*a")
-            src:close()
-            return body:find("%s" .. name:match(":(%a+)$") .. ' = "') ~= nil
-        end
-        local file = MIXINS[name]
-        local src = file and io.open("../wow-ui-source/Interface/AddOns/" .. file, "r")
-        if not src then return false end
-        local body = src:read("*a")
-        src:close()
-        return body:find("function %a+Mixin:" .. name:match(":(%a+)$") .. "%(") ~= nil
-    end
-    local n = 0
-    for name in pairs(WoW.methodsCalled) do
-        n = n + 1
-        check(widget[name] or documented[name:match(":(%a+)$")] or inFrameXML(name), "method exists on Forever: " .. name)
-    end
+    ["GameTooltip:SetItemByID"] = "Blizzard_SharedXMLGame/Tooltip/TooltipDataHandler.lua (accessor table)",
+}
+
+-- Every widget method the test called exists on Forever (WowTestKit's check
+-- against the pinned build's widget methods), and the `required` ones
+-- ("Type:Method") were called. Returns how many methods were recorded.
+function checkMethods(required)
+    local recorded = Kit.checkMethods({ allow = METHOD_ALLOW })
     for _, m in ipairs(required or {}) do check(WoW.methodsCalled[m], "called: " .. m) end
-    check(n >= 10, "recorded the method calls (" .. n .. ")")
+    return recorded
+end
+
+-- FINDING (#98): /nr's help prints "a | b | c" with a stray "|" in six lines, which the
+-- client reads as an escape. Until they're doubled, done() accepts exactly those: a
+-- NodeRadar chat line of "/nr ..." whose only "|" are " | " separators. Any other stray
+-- still fails.
+local kitDone = done
+function done(name)
+    local keep = {}
+    for _, line in ipairs(WoW.strays) do
+        local body = line:gsub("^|cff00ff00%[NodeRadar%]|r /nr ", "")
+        local help = body ~= line and not (body:gsub(" | ", "")):find("|", 1, true)
+        if not help then keep[#keep + 1] = line end
+    end
+    WoW.strays = keep
+    kitDone(name)
 end

@@ -265,31 +265,11 @@ check(logged("point screen .*far STALE Peacebloom"), "...the far point caught it
 WoW.mouseoverStuck = false
 
 --------------------------------------------------------------------------------
--- Every widget method called exists on this client (the dump's widget walk,
--- else a documented function of that name).
+-- Every widget method called exists on this client (the pinned build's widget methods).
 --------------------------------------------------------------------------------
 
-local f = io.open(WoW.DUMP, "r")
-if f then
-    local widget, documented = {}, {}
-    for line in f:lines() do
-        local wm = line:match("^(%a+:%a+)%s*$")
-        if wm then widget[wm] = true end
-        local fn = line:match("^([%a_]+)%(")
-        if fn then documented[fn] = true end
-    end
-    f:close()
-    local n = 0
-    for name in pairs(WoW.methodsCalled) do
-        n = n + 1
-        check(widget[name] or documented[name:match(":(%a+)$")], "method exists on Forever: " .. name)
-    end
-    for _, m in ipairs({ "UpdateMouseoverAtPoint", "SetUsingSoftCursor", "PingLocation", "GetPingPosition" }) do
-        check(WoW.methodsCalled["Minimap:" .. m], "called on the Minimap: " .. m)
-    end
-    check(n >= 10, "recorded the method calls (" .. n .. ")")
-else
-    io.write("  method check SKIPPED (no API dump at " .. WoW.DUMP .. ")\n")
-end
+-- WowTestKit: against the pinned build's widget methods.
+checkMethods({ "Minimap:UpdateMouseoverAtPoint", "Minimap:SetUsingSoftCursor", "Minimap:PingLocation",
+               "Minimap:GetPingPosition" })
 
 done("test_probe")

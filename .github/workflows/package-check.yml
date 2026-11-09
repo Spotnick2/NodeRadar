@@ -60,10 +60,16 @@ jobs:
           echo "checking $count files"
           find . -name '*.lua' -not -path './.git/*' -print0 | xargs -0 luac5.1 -p
 
-      # Without the API dump (local only), events are checked against
-      # tests/events-70450.txt and the method check skips. NodeRadarProbe is a
-      # ForeverProbe module, and ForeverProbe is private and local
-      # (..\ForeverProbe): the probe tests skip here and run locally.
+      # WowTestKit, the tests' scaffolding, at the commit tests/kit.pin names,
+      # outside the tree (the syntax check above never sees it). Its build data
+      # replaces the API dump, so the events and the method checks run here too.
+      - name: Fetch WowTestKit at its pin
+        run: |
+          bash tests/fetch_kit.sh "$RUNNER_TEMP/WowTestKit"
+          echo "WOWTESTKIT=$RUNNER_TEMP/WowTestKit" >> "$GITHUB_ENV"
+
+      # NodeRadarProbe is a ForeverProbe module, and ForeverProbe is private
+      # and local (..\ForeverProbe): the probe tests skip here and run locally.
       - name: Unit tests
         env:
           FOREVERPROBE_OPTIONAL: "1"
