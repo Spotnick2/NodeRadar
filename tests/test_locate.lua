@@ -411,4 +411,20 @@ check(log and #log.lines > 0 and log.build == 70862 and log.stats.bursts > 0, "t
 WoW.fire("PLAYER_LOGOUT")
 check(NR.db.scanLogPrevious == log, "...the previous session's kept")
 
+-- A located node's sonar is drawn on the minimap: no burst hides or moves it before its rings
+-- are done (in game the next quick burst, 0.3 s on, cut every one short).
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Peacebloom", -50, 40 } }
+local sonarAt, startsAfter, inB2 = nil, {}, false
+local realSonar2 = NR.Alert.Sonar
+NR.Alert.Sonar = function(...) sonarAt = sonarAt or WoW.now; return realSonar2(...) end
+for _ = 1, 1500 do
+    frames(1)
+    local b = NR.MoveScan._test.burst() ~= nil
+    if b and not inB2 and sonarAt then startsAfter[#startsAfter + 1] = WoW.now end
+    inB2 = b
+    if #startsAfter > 0 then break end
+end
+check(sonarAt and startsAfter[1] and startsAfter[1] - sonarAt >= NR.MoveScan.SONAR_HOLD - 0.05,
+    ("a sonar on the map: no burst until its rings are done (%.2f s)"):format((startsAfter[1] or 0) - (sonarAt or 0)))
 done("test_locate")

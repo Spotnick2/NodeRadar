@@ -302,6 +302,7 @@ function Alert.Sonar(x, y, kind)
     s:SetPoint("CENTER", Minimap, "CENTER", x, y)
     s.kind = kind
     s:Show()
+    if NR.MoveScan and NR.MoveScan.On() then NR.MoveScan.Hold(NR.MoveScan.SONAR_HOLD) end   -- seen whole (#91)
     for _, f in ipairs({ s.rings[1], s.rings[2], s.glow }) do
         f.tex:SetVertexColor(c[1], c[2], c[3])
         f:SetAlpha(0)

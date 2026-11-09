@@ -59,6 +59,7 @@ local looking, moving = false, false
 local followers = { at = -math.huge }
 local quickAt = {}                    -- when the quick locate bursts of the last QUICK_WINDOW started
 local firstLook = nil                 -- { at, tries }: a first look owed (login, a new area, turned on)
+local holdUntil = -math.huge          -- no burst before this (MS.Hold: a sonar playing on the map)
 local lastTick, frameDt = nil, 0      -- the frame time (the burst budget's margin)
 local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
 local lookEnded                       -- when mouselook last ended (the trace)
@@ -680,6 +681,13 @@ function MS.WantFirst(now)
     nextAt = math.min(nextAt, now)
 end
 
+-- No burst for `seconds` (Alert.Sonar: the rings are drawn on the minimap, and a burst hides and
+-- moves it; in game the next quick burst, 0.3 s on, cut every located node's sonar short).
+MS.SONAR_HOLD = 1.5
+function MS.Hold(seconds)
+    holdUntil = math.max(holdUntil, GetTime() + seconds)
+end
+
 -- Quick locate bursts left in the rolling allowance (LOCATE_RUN a QUICK_WINDOW, every name's).
 function MS.QuickLeft(now)
     while quickAt[1] and now - quickAt[1] >= MS.QUICK_WINDOW do table.remove(quickAt, 1) end
@@ -1031,7 +1039,7 @@ function MS.Tick(now)
     else
         nextAt = math.min(nextAt, lastBurst + MS.Every())   -- starting to move: the shorter wait
     end
-    if now < nextAt then return end
+    if now < nextAt or now < holdUntil then return end
     local why = MS.Refusal(now)
     MS.lastRefusal = why
     if why then
@@ -1118,7 +1126,7 @@ MS._test = {
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
         cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
         prevX, prevY, settleUntil = nil, nil, -math.huge
-        quickAt, firstLook = {}, nil
+        quickAt, firstLook, holdUntil = {}, nil, -math.huge
         followers = { at = -math.huge }
         MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
     end,
