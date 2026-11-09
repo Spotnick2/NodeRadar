@@ -180,7 +180,7 @@ function Locate.Next(pn, pw, radius, es)
     local px = 2 * radius * Locate.GUARANTEE_PX / best.size       -- the map's width, screen px
     local units = px / es
     local k = 2 * radius / units                                   -- yards per map unit
-    return { kind = "window", window = best, units = units,
+    return { kind = "window", window = best, units = units, radius = radius,
              ox = -(best.west - pw) / k, oy = (best.north - pn) / k }
 end
 

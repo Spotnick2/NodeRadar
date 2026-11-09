@@ -289,6 +289,20 @@ check(NR.MoveScan.stats.bursts == 0, "after mouselook, the mouse not moved: no b
 WoW.cursor = { 302, 300 }
 check(untilBorrowed(30), "...the mouse nudged and resting: one comes")
 runBurst()
+-- The cursor's jump as mouselook ends (it reappears where it was) is no move (in game it
+-- passed for one, and every read after it came back empty).
+NR = fresh()
+frames(5)
+WoW.mouselook = true
+WoW.cursor = { 960, 540 }                       -- where it reads during mouselook
+frames(10)
+WoW.mouselook = false
+WoW.cursor = { 300, 300 }                       -- back where it was
+frames(100)
+check(NR.MoveScan.stats.bursts == 0, "the cursor's jump as mouselook ends is not a move: no burst")
+WoW.cursor = { 301, 300 }
+check(untilBorrowed(30), "...a real nudge after it: one comes")
+runBurst()
 -- The cursor must rest: moving every frame, nothing.
 NR = fresh()
 for i = 1, 60 do WoW.cursor = { 300 + i * 5, 300 }; frames(1) end

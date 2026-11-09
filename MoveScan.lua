@@ -62,6 +62,9 @@ local lookEnded                       -- when mouselook last ended (the trace)
 -- After mouselook or a click, the minimap's hover answers nothing until the mouse has moved
 -- (in game: empty reads 0.5 s after mouselook, and four in a row standing still after a click).
 local movedSince = true
+local prevX, prevY                    -- the cursor last frame
+local settleUntil = -math.huge        -- the cursor's jump as mouselook ends is no move
+MS.LOOK_SETTLE = 0.1
 
 MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
 
@@ -714,6 +717,12 @@ local function read(b, now)
         -- followed); an invalid or empty read is tried again (Locate.TRIES).
         b.cur.read = true
         MS.stats.windows = MS.stats.windows + 1
+        local w = b.cur.window
+        local listed = {}
+        for name in pairs(names and countsOf(names) or {}) do listed[#listed + 1] = name end
+        API.Trace(("locate: window %.0f yd%s at %.0f,%.0f from you: %s"):format(w.size, w.record and " (re-check)" or "",
+            b.cur.ox * (2 * (b.cur.radius or 0) / b.cur.units), b.cur.oy * (2 * (b.cur.radius or 0) / b.cur.units),
+            names and (#listed > 0 and table.concat(listed, ", ") or "no node") or ("unread: " .. tostring(why))))
         if names or why == "nothing" then
             local pn, pw = playerPos()
             if NR.Locate then NR.Locate.Read(b.cur, names and countsOf(names) or {}, pn, pw, now) end
@@ -818,15 +827,20 @@ function MS.Tick(now)
     if pending and not burst and now - lastRetry >= MS.RETRY then MS.Retry() end
     if not (MS.On() or burst) then return end
     local x, y = cursor()
+    local look = mouselooking()
+    if looking and not look then settleUntil = now + MS.LOOK_SETTLE end
     if x and y then
-        if cursorX and (x ~= cursorX or y ~= cursorY) then movedSince = true end
+        -- A real move only: frame to frame, outside mouselook and the jump as it ends (the
+        -- cursor reappears where it was: in game that jump passed for a move, and every read
+        -- after it was empty).
+        if prevX and not look and now >= settleUntil and (x ~= prevX or y ~= prevY) then movedSince = true end
+        prevX, prevY = x, y
         if not cursorX or math.abs(x - cursorX) > MS.STILL_PX or math.abs(y - cursorY) > MS.STILL_PX then
             quietSince, cursorX, cursorY = now, x, y
         end
     end
     if buttonDown() then lastDown, movedSince = now, false end
     -- The end of mouselook or a stop after moving asks for a burst sooner.
-    local look = mouselooking()
     local speed = API.Speed()
     local move = speed ~= nil and speed > 0
     if looking and not look then lookEnded = now end
@@ -912,6 +926,7 @@ MS._test = {
         gen, burst, saved, pending, suppress, halted, glassOwed, glassRefusals = 0, nil, nil, nil, false, nil, false, 0
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
         cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
+        prevX, prevY, settleUntil = nil, nil, -math.huge
         followers = { at = -math.huge }
         MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
     end,
