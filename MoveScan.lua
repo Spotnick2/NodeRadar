@@ -919,6 +919,7 @@ end
 -- Stop at once: whatever is borrowed goes home (the setting off, combat, a loading screen).
 function MS.Stop(reason)
     local b = burst
+    if b and b.phase ~= "settle" and NR.Locate then NR.Locate.Cancel() end
     if b and b.phase ~= "settle" then finish(b, reason or "stopped") end
     if burst then
         suppress, burst = false, nil

@@ -112,6 +112,7 @@ function Locate.Presence(c, now)
         pn, pw = ok and API.Num(n), ok and API.Num(w)
     end
     if not pn then return end
+    local before = counts                                  -- the read before: what an ended search ran under
     counts = c
     -- World positions need a map that doesn't turn (Scan.Where: nil when it rotates, in an
     -- instance, or unreadable; Codex, PR #102): no locating then, what was located forgotten.
@@ -144,16 +145,31 @@ function Locate.Presence(c, now)
         local r = records[i]
         if not c[r.name] then drop(r, "not in range") end
     end
+    -- Names gone from range: their search state and quiet allowances go with them (Codex,
+    -- PR #102: an allowance left by a vanished node silenced a later one of its name).
+    for name in pairs(active) do if not c[name] then active[name], ended[name] = nil, nil end end
+    for name in pairs(ended) do if not c[name] then ended[name] = nil end end
+    for name, q in pairs(quiet) do quiet[name] = math.min(q, math.max(0, (c[name] or 0) - ofName(name))) end
+    -- Expired gathered spots trimmed.
+    for i = #gone, 1, -1 do if now - gone[i].at > Locate.GONE then table.remove(gone, i) end end
     local need = {}
     for name, n in pairs(c) do
         local m = ofName(name)
-        -- A quiet allowance never outlives the demand it was for (Codex, PR #102).
-        if quiet[name] then quiet[name] = math.min(quiet[name], math.max(0, n - m)) end
-        -- A search that ended unresolved (two nodes too close to tell apart, one by the rim)
-        -- starts again only after BACKOFF (Codex, PR #102: it restarted every presence read).
+        -- A search that ran out unresolved (two nodes too close to tell apart, one by the rim)
+        -- starts again only after BACKOFF, unless the count rose since (Codex, PR #102: it
+        -- restarted every presence read; then the backoff also held a successful search's
+        -- successor and a node arriving later).
         local on = searching(name)
-        if active[name] and not on then active[name], ended[name] = nil, now end
-        if n > m and not on and now - (ended[name] or -math.huge) >= Locate.BACKOFF then
+        if active[name] and not on then
+            -- Judged by the count it ran under (the read before), not this one, which may
+            -- already hold a new node.
+            local ran = before[name] or 0
+            active[name] = nil
+            if ran > m then ended[name] = { at = now, n = ran } else ended[name] = nil end
+        end
+        local e = ended[name]
+        if e and (n > e.n or n <= m) then ended[name], e = nil, nil end
+        if n > m and not on and not (e and now - e.at < Locate.BACKOFF) then
             need[name], active[name] = true, true
         end
         if n < m then
@@ -246,9 +262,12 @@ end
 
 -- A node of `name` located near (north, west): an existing record renewed, a gathered spot's
 -- node kept silently, or a new record (and its alert).
-local function located(name, north, west, now)
+local function located(name, north, west, now, size)
+    -- The same node: within a leaf's reach on each axis (a fixed MATCH merged two nodes a
+    -- couple of leaves apart at a small radius; Codex, PR #102).
+    local reach = (size or Locate.FINE) * Locate.REACH
     for _, r in ipairs(records) do
-        if r.name == name and d2(r, north, west) <= Locate.MATCH ^ 2 then
+        if r.name == name and math.abs(r.north - north) <= reach and math.abs(r.west - west) <= reach then
             r.at, r.due, r.overdue = now, nil, nil
             return
         end
@@ -276,31 +295,30 @@ end
 -- A burst's positive leaves, one node each group of adjacent ones (a node lights the leaves
 -- within its reach, Codex, PR #102: one node made two records): grouped by name, linked when
 -- within a leaf and its reach, each group's centre located once.
+-- Per axis: one node lights leaves whose centres are up to 2 x 0.64 leaves apart on each (its
+-- reach), diagonal neighbours included.
+local function linked(a, b)
+    local link = (a.size + b.size) / 2 * Locate.REACH
+    return a.name == b.name and math.abs(a.north - b.north) <= link and math.abs(a.west - b.west) <= link
+end
+
 local function settleHits(now)
-    local done = {}
-    for i, h in ipairs(hits) do
-        if not done[i] then
-            local group, stack = {}, { i }
-            done[i] = true
-            while #stack > 0 do
-                local j = table.remove(stack)
-                local a = hits[j]
-                group[#group + 1] = a
-                for k, b in ipairs(hits) do
-                    -- Per axis: one node lights leaves whose centres are up to 2 x 0.64 leaves
-                    -- apart on each (its reach), diagonal neighbours included.
-                    local link = (a.size + b.size) / 2 * Locate.REACH
-                    if not done[k] and b.name == a.name and math.abs(a.north - b.north) <= link
-                        and math.abs(a.west - b.west) <= link then
-                        done[k] = true
-                        stack[#stack + 1] = k
-                    end
-                end
-            end
-            local n, w = 0, 0
-            for _, g in ipairs(group) do n, w = n + g.north, w + g.west end
-            located(h.name, n / #group, w / #group, now)
+    -- Each group compatible with one node: a leaf joins only when linked to every member
+    -- (Codex, PR #102: chaining neighbours merged two nodes into one record for good).
+    local groups = {}
+    for _, h in ipairs(hits) do
+        local home
+        for _, g in ipairs(groups) do
+            local all = true
+            for _, m in ipairs(g) do if not linked(h, m) then all = false; break end end
+            if all then home = g; break end
         end
+        if home then home[#home + 1] = h else groups[#groups + 1] = { h } end
+    end
+    for _, g in ipairs(groups) do
+        local n, w = 0, 0
+        for _, m in ipairs(g) do n, w = n + m.north, w + m.west end
+        located(g[1].name, n / #g, w / #g, now, g[1].size)
     end
     hits = {}
 end
@@ -371,6 +389,10 @@ function Locate.Gathered(name, now)
     if best then drop(best, "gathered") end
     gone[#gone + 1] = { name = name, north = best and best.north or n, west = best and best.west or w, at = now }
 end
+
+-- A burst stopped before its end: its positive leaves go with it (Codex, PR #102: kept, a later
+-- Take placed them after contradictory reads).
+function Locate.Cancel() hits = {} end
 
 -- Search windows still open (re-checks aside): the scan comes back soon (MoveScan.LOCATE_GAP).
 function Locate.Busy()

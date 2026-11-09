@@ -286,4 +286,99 @@ WoW.now = WoW.now + 2
 WoW.flushTimers(WoW.now)
 check(#WoW.sent > sent1, "a throttled withdrawal goes out when the throttle allows (" .. sent0 .. ", " .. sent1 .. ", " .. #WoW.sent .. ")")
 
+--------------------------------------------------------------------------------
+-- Round 2 (Codex's review of the corrections).
+--------------------------------------------------------------------------------
+
+-- Grouping: two nodes lighting leaves in a row (0, W | 2W, 3W) stay two records; one node's two
+-- diagonal leaves make one record at their centre.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local W = 15
+local function leafHit(n, w)
+    NR.Locate.Read({ window = { north = n, west = w, size = W, names = { Silverleaf = true }, depth = 6, tries = 0 } },
+        { Silverleaf = 1 }, nil, nil, WoW.now)
+end
+leafHit(1500, 2500); leafHit(1500 + W, 2500); leafHit(1500 + 2 * W, 2500); leafHit(1500 + 3 * W, 2500)
+NR.Locate.Take()
+check(#NR.Locate.Records() == 2, "four leaves in a row from two nodes: two records, not one chained (" .. #NR.Locate.Records() .. ")")
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+leafHit(1700, 2700); leafHit(1700 + W, 2700 + W)
+NR.Locate.Take()
+local one = NR.Locate.Records()[1]
+check(#NR.Locate.Records() == 1 and math.abs(one.north - (1700 + W / 2)) < 0.01, "one node's diagonal leaves: one record at their centre")
+
+-- An exhausted re-check of a due, old record isn't queued again for RECHECK, and Next doesn't
+-- hand it out.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+rec = NR.Locate.Records()[1]
+rec.due, rec.at = true, WoW.now - 100
+NR.Locate.Unread({ window = { north = rec.north, west = rec.west, size = 16, names = { Silverleaf = true }, record = rec, tries = 1 } })
+local handed = false
+for _ = 1, 2 do
+    local q = NR.Locate.Next(WoW.pos[1], WoW.pos[2], 150, 1.2)
+    if q and q.window.record == rec then handed = true end
+end
+check(not handed, "an exhausted re-check of a due record isn't handed out again before RECHECK")
+
+-- BACKOFF: a successful search doesn't hold the next; a node arriving later is searched at once.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+bursts(20, function() return not NR.Locate.Busy() end)
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 } }
+bursts(2)
+check(NR.Locate.Busy() or #NR.Locate.Records() == 2, "after a successful search, a second node's search starts at once")
+
+-- A cancelled burst's pending leaves don't become records later.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+for _ = 1, 800 do frames(1); if NR.MoveScan._test.burst() then break end end
+leafHit(1900, 2900)
+WoW.fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+NR.Locate.Take()
+check(#NR.Locate.Records() == 0, "a burst stopped mid-way: its pending leaf is discarded")
+
+-- A quiet allowance doesn't outlive its name leaving range.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(2)
+check((NR.Locate._test.quiet() or {}).Silverleaf ~= nil, "(control) a quiet allowance for the first look")
+WoW.blips = {}
+bursts(2)
+check(((NR.Locate._test.quiet() or {}).Silverleaf or 0) == 0, "the name gone from range: its allowance gone too")
+
+-- Tokens keep their own age: a later rise doesn't renew an older token.
+NR = fresh()
+A = NR.Alert
+A.Reset("test")
+A.Counts({ Silverleaf = 1 }, 100, nil, nil, math.huge)
+A.Counts({ Silverleaf = 2 }, 101, nil, nil, math.huge, 0)         -- token at 101
+A.Counts({ Silverleaf = 3 }, 151, nil, nil, math.huge, 0)         -- token at 151
+A.Located({ name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 30, west = WoW.pos[2] }, 170)
+sounds = #WoW.sounds
+A.Located({ name = "Silverleaf", kind = "herbs", north = WoW.pos[1] - 30, west = WoW.pos[2] }, 180)
+check(#WoW.sounds == sounds + 1, "the 101 token expired at 161, the later rise didn't renew it: located at 180, it alerts")
+
+-- A gathered spot stays silent all of GONE, rediscovered twice.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 2, -2 } }
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+NR.Locate.Gathered("Silverleaf", WoW.now)
+NR.Located(select(2, NR.Locate.Take()), WoW.now)
+sounds = #WoW.sounds
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+NR.Locate.Gathered("Silverleaf", WoW.now - 1)                      -- mined again, still there
+local g = NR.Locate._test.gone()
+for _, e in ipairs(g) do e.at = WoW.now - 30 end                   -- both within GONE
+NR.Located(select(2, NR.Locate.Take()), WoW.now)
+bursts(12, function() return #NR.Locate.Records() > 0 end)
+check(#WoW.sounds == sounds, "a gathered spot found again twice within GONE: silent each time")
+
 done("test_locate2")

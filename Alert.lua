@@ -32,14 +32,22 @@ local gathered = {}   -- [name] = when the player last gathered one
 -- a sound on the vein being mined).
 Alert.NEAR = 15
 local spots = {}      -- [name] = { north, west }: where the player gathered one (70862 on)
-local owed = {}       -- [name] = { n, at }: nodes a count's rise announced, not yet located (70862 on)
--- A token lives OWED_TTL seconds at most, never above the name's current count, and a gather or
--- a new area retires it (Codex, PR #102: an old token silenced a later, unrelated replacement).
+local owed = {}       -- [name] = { at, ... }: one time a token, nodes a count's rise announced,
+                      -- not yet located (70862 on)
+-- Each token lives OWED_TTL seconds at most (its own age: a later rise doesn't renew it), and a
+-- fall, a gather or a new area retires the oldest (Codex, PR #102: an old token silenced a later,
+-- unrelated replacement).
 Alert.OWED_TTL = 60
 local function owedLive(name, now)
-    local o = owed[name]
-    if o and (o.n <= 0 or now - o.at > Alert.OWED_TTL) then owed[name], o = nil, nil end
-    return o
+    local list = owed[name]
+    if not list then return nil end
+    for i = #list, 1, -1 do if now - list[i] > Alert.OWED_TTL then table.remove(list, i) end end
+    if #list == 0 then owed[name] = nil; return nil end
+    return list
+end
+local function owedRetire(name, n)
+    local list = owed[name]
+    for _ = 1, n do if list and #list > 0 then table.remove(list, 1) end end   -- the oldest first
 end
 local risenFrom = {}
 local prevCounts = {}
@@ -57,8 +65,7 @@ end
 
 function Alert.Gathered(name, now)
     gathered[name] = now
-    local o = owed[name]
-    if o then o.n = o.n - 1 end
+    owedRetire(name, 1)
     if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
         hist.counts[name] = hist.counts[name] - 1
         local n, w = here()
@@ -177,15 +184,15 @@ function Alert.Counts(counts, now, blips, result, every, blink)
     -- sound (Alert.Located).
     if API.Blind() then
         -- A fall retires as many tokens (the nodes they were for may be the ones gone).
-        for name, o in pairs(owed) do
+        for name in pairs(owed) do
             local fall = (prevCounts[name] or 0) - (counts[name] or 0)
-            if fall > 0 then o.n = o.n - fall end
+            if fall > 0 then owedRetire(name, fall) end
         end
         for _, name in ipairs(new) do
             if Alert.Wanted(name) then
-                local o = owedLive(name, now) or { n = 0 }
-                o.n, o.at = o.n + (counts[name] or 0) - (risenFrom[name] or 0), now
-                owed[name] = o
+                local list = owedLive(name, now) or {}
+                for _ = 1, (counts[name] or 0) - (risenFrom[name] or 0) do list[#list + 1] = now end
+                owed[name] = list
             end
         end
     end
@@ -380,9 +387,9 @@ function Alert.Located(r, now)
         blip = { x = -(r.west - pw) / k, y = (r.north - pn) / k }
     end
     if not Alert.Wanted(r.name) then return end          -- skipped or beyond the skill: nothing (Codex, PR #102)
-    local o = owedLive(r.name, now)
-    if o then
-        o.n = o.n - 1
+    local list = owedLive(r.name, now)
+    if list then
+        table.remove(list)                               -- the newest: the rise this node most likely is
         API.Trace("alert: " .. r.name .. " located, already announced: its sonar")
         if blip and NR.db.ring then Alert.Sonar(blip.x, blip.y, r.kind or NR.Learn.Kind(r.name)) end
         -- The solo ping the sound couldn't place, now it can (Codex, PR #102).
