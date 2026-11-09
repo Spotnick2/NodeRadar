@@ -289,6 +289,11 @@ WoW.fire("GROUP_ROSTER_UPDATE")
 WoW.blips = { { "Silverleaf", 3, -3 } }                 -- by the player: the gather takes it
 bursts(12, function() return #NR.Locate.Records() > 0 end)
 bursts(1)
+-- A change sent now (a second node), so the withdrawal below falls within the throttle
+-- whatever the scan's own timing (its sonar holds the next burst, #91).
+table.insert(NR.Locate.Records(), { name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 60, west = WoW.pos[2],
+    at = WoW.now, misses = 0, err = 20 })
+NR.Located({}, WoW.now)
 local sent0 = #WoW.sent
 NR.Locate.Gathered("Silverleaf", WoW.now)
 NR.Located(select(2, NR.Locate.Take()), WoW.now)    -- the withdrawal, within the throttle of the last send
