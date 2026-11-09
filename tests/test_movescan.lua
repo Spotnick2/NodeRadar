@@ -170,10 +170,19 @@ check(chatHas("alert: reset %(tracking changed%)"), "a real tracking change rese
 -- Mining a node, then reaching the next of its name with no read between (1, then 1): the
 -- gathered one is counted out at once, so the next alerts (the owner's run).
 WoW.blips = { { "Silverleaf", 20, -15 } }
+WoW.pos = { 100, 200, 0 }
 WoW.now = WoW.now + 30
 untilBorrowed(400)
 runBurst()
 NR.Alert.Gathered("Silverleaf", WoW.now)
+-- A vein mined more than once: still there, the player still at it: the same node, silent.
+sounds = #WoW.sounds
+WoW.now = WoW.now + 30
+untilBorrowed(400)
+runBurst()
+check(#WoW.sounds == sounds, "gathered, still there, the player still at it: no sound (the same node)")
+NR.Alert.Gathered("Silverleaf", WoW.now)
+WoW.pos = { 160, 200, 0 }                                  -- 60 yards on
 sounds = #WoW.sounds
 WoW.blips = { { "Silverleaf", -50, 30 } }
 WoW.now = WoW.now + 30

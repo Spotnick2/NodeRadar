@@ -27,10 +27,29 @@ local gathered = {}   -- [name] = when the player last gathered one
 -- reads are sparse, and mining a vein then reaching the next one read 1 then 1, never the 0 in
 -- between (the owner's run: no sound). The loot window keeps the scan from reading the gathered
 -- dot back in (the cursor isn't over the world). Before 70862 the sweep's own drop does it.
+-- A vein can be mined more than once: while the player is still within NEAR yards of where
+-- they gathered, a rise of that name is that same node, back in the count (the owner's run:
+-- a sound on the vein being mined).
+Alert.NEAR = 15
+local spots = {}      -- [name] = { north, west }: where the player gathered one (70862 on)
+
+local function here()
+    local ok, north, west = pcall(UnitPosition, "player")
+    north, west = ok and API.Num(north), ok and API.Num(west)
+    if north and west then return north, west end
+end
+
+local function near(spot)
+    local n, w = here()
+    return n ~= nil and (n - spot[1]) ^ 2 + (w - spot[2]) ^ 2 <= Alert.NEAR ^ 2
+end
+
 function Alert.Gathered(name, now)
     gathered[name] = now
     if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
         hist.counts[name] = hist.counts[name] - 1
+        local n, w = here()
+        spots[name] = n and { n, w } or nil
         API.Trace("alert: gathered " .. tostring(name) .. ", counted out")
     end
 end
@@ -108,9 +127,14 @@ function Alert.Counts(counts, now, blips, result, every, blink)
         return nil
     end
     local new = {}
+    for name, spot in pairs(spots) do
+        if not near(spot) then spots[name] = nil end      -- moved away: a new one alerts again
+    end
     for name, n in pairs(counts) do
         local before = hist.counts[name] or 0
-        if n > before then
+        if n > before and spots[name] then
+            API.Trace("alert: " .. name .. " back while still at the one gathered: the same node, silent")
+        elseif n > before then
             local drop = hist.drops[name]
             if not (drop and now - drop <= (blink or Alert.BLINK)) then
                 new[#new + 1] = name
