@@ -154,6 +154,13 @@ toggling tracking. Under it, **Herbs** and **Ores**: which to follow, the preset
 - `/nr cd <1-60>`: seconds between alerts
 - `/nr test`, `/nr status`, `/nr known`, `/nr forget <name>`, `/nr failures`, `/nr reset`
 
+## Thanks
+
+- **ThPi** ([ThorbenP](https://github.com/ThorbenP) on GitHub), for the idea behind the minimap scan
+  mode (#91). When client build 70862 stopped addons from reading the minimap's dots from afar,
+  they shared the way back in a comment on [NodeRadar's CurseForge page](https://www.curseforge.com/wow/addons/node-radar): move the minimap itself
+  under the resting mouse for an instant and read what lies there.
+
 ## License
 
 MIT, except the six alert sounds below.
