@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.7.1, after v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.8.0, after v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -58,9 +58,19 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   70862 NodeRadar stops sweeping and says why (#90, PR #92); what the toggle learned while blind is
   dropped (#95, PR #96); the marker's login read waits out combat (#93, PR #94). Offline tested.
 
-Next: the minimap scan mode (#91: move `Minimap` under the resting cursor, opt-in; measured on
-70862 and planned, docs/PLAN.md "The minimap scan mode", Codex approved after four rounds; a last
-probe round before the code; Glass MiniMap's side is GlassMiniMap#56); the public API for minimap
+- v1.8.0: the minimap scan mode (#91, opt-in, from 70862): step 1, presence alerts (PR #101), and
+  step 2, locating the nodes for the icons, sonar, compass, beacon and sharing (PR #102: eight Codex
+  rounds on the record lifecycle, then the in-game speed work: per-burst diagnostics, a rise
+  restarting the search, quick bursts as a rolling allowance, the first look retried, no burst over
+  a sonar). Glass MiniMap's side shipped in its v1.1.0 (GlassMiniMap#56). `/nr` help's separators
+  (#98, PR #105). Checked in game on 70862 (the owner's herbalist, 2026-11-09): foreground located
+  in 0.4-2.5 s; the background frame cap (30) and mouse steering are the limits.
+
+Next: the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
+suppression bound to one node, names interleaved in a search, no beacon on a coarse record, then
+refining the compass's target (5-yard windows, measured first) and keeping records across a reload;
+the probe of reads right after mouse steering; the background frame rate per character (#104,
+with the follower and party session); Glass MiniMap's stand-in face (#103); the public API for minimap
 skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
