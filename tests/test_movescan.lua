@@ -162,6 +162,11 @@ runBurst()
 C_TooltipInfo.GetMinimapMouseover = realRead2
 SlashCmdList.NODERADAR("scan log")
 check(chatHas("unread %(no lines%): type 21, frame %+4, 2 rereads, size"), "an empty read's details in /nr scan log")
+-- One line a burst (Codex, PR #102): its time, frames, frame rate, end, presence and windows.
+check(chatHas("scan: burst %d+ ms, %d+ frames %(slowest %d+ ms%), [%d?]+ fps; the presence read failed; presence not read; 0 windows; next in"),
+    "a failed burst's summary line")
+check(chatHas("scan: burst %d+ ms, %d+ frames %(slowest %d+ ms%), [%d?]+ fps; done; presence read; 0 windows, then the placement limit; next in"),
+    "a good burst's summary line, with why no window followed")
 
 -- MINIMAP_UPDATE_TRACKING with nothing changed (sent while mining on 70862) keeps the counts:
 -- the next new node still alerts. A real change starts afresh.

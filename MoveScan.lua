@@ -653,6 +653,21 @@ local function finish(b, reason)
     rapid = busy and rapid + 1 or 0
     local soon = (busy and rapid < MS.LOCATE_RUN) and MS.LOCATE_GAP or MS.Every()
     lastBurst, nextAt = GetTime(), GetTime() + soon
+    MS.TraceBurst(b, GetTime(), busy and rapid < MS.LOCATE_RUN, soon)
+end
+
+-- One line a burst (Codex, PR #102: one-window bursts in game, the cause unmeasured): how long
+-- the map was away and in how many frames, the slowest of them, the client's frame rate (30 is
+-- the background cap, maxFPSBk), what ended it, whether its presence read held, its windows,
+-- why no further window was placed, and when the next burst is due.
+function MS.TraceBurst(b, now, quick, soon)
+    local okF, fps = pcall(GetFramerate)
+    fps = okF and API.Num(fps)
+    API.Trace(("scan: burst %d ms, %d frames (slowest %d ms), %s fps; %s; presence %s; %d window%s%s; next in %.1f s%s"):format(
+        (now - b.t0) * 1000, b.frame, (b.dtMax or 0) * 1000, fps and ("%.0f"):format(fps) or "?",
+        tostring(b.reason), b.observation and "read" or "not read",
+        MS.stats.windows - (b.w0 or MS.stats.windows), MS.stats.windows - (b.w0 or MS.stats.windows) == 1 and "" or "s",
+        b.stop and (", then " .. b.stop) or "", soon, quick and " (locating)" or ""))
 end
 
 -- Seconds between bursts: scanEvery moving, three times that standing still.
@@ -671,6 +686,7 @@ local function borrow(now)
             glassEnd()
             glassRefusals = glassRefusals + 1
             if not ok then API.Fail("GlassMiniMap.ScanBegin", acquired) end
+            API.Trace("scan: Glass MiniMap refused the borrow")
             if glassRefusals >= MS.REFUSALS then halt("Glass MiniMap refused it " .. MS.REFUSALS .. " times") end
             lastBurst, nextAt = now, now + MS.Every()
             return nil
@@ -687,7 +703,7 @@ local function borrow(now)
     local x, y = cursor()
     gen = gen + 1
     local b = { gen = gen, t0 = now, frame = 1, x = x, y = y, phase = "off", context = context(),
-                es = s.es, homeW = s.w, eye = eyeShown(), placements = 0 }
+                es = s.es, homeW = s.w, eye = eyeShown(), placements = 0, w0 = MS.stats.windows }
     b.cur = { units = MS.PRESENCE_PX / s.es, ox = 0, oy = 0, kind = "presence" }
     saved, burst, suppress = s, b, true
     MS.stats.bursts = MS.stats.bursts + 1
@@ -819,7 +835,8 @@ local function read(b, now)
         for name in pairs(names and countsOf(names) or {}) do listed[#listed + 1] = name end
         API.Trace(("locate: window %.0f yd%s at %.0f,%.0f from you: %s"):format(w.size, w.record and " (re-check)" or "",
             b.cur.ox * (2 * (b.cur.radius or 0) / b.cur.units), b.cur.oy * (2 * (b.cur.radius or 0) / b.cur.units),
-            names and (#listed > 0 and table.concat(listed, ", ") or "no node") or ("unread: " .. tostring(why))))
+            names and (#listed > 0 and table.concat(listed, ", ") or "no node")
+                or (why == "no lines" and "no node (no lines)" or ("unread: " .. tostring(why)))))
         if names or why == "no lines" then                -- nil was never measured as a valid empty: unread
             local pn, pw = playerPos()
             if NR.Locate then NR.Locate.Read(b.cur, names and countsOf(names) or {}, pn, pw, now) end
@@ -871,22 +888,31 @@ local function nextPlacement(b, now)
     -- Room for a resized placement's three frames at the current frame rate (Codex, PR #102:
     -- a fixed margin at a low frame rate admitted placements that timed out unread).
     local margin = math.max(MS.MARGIN, 3 * frameDt)
-    if b.placements >= MS.PLACEMENTS or now - b.t0 > MS.BUDGET - margin or not NR.Locate then return nil end
+    if not NR.Locate then return nil end
+    if b.placements >= MS.PLACEMENTS then b.stop = "the placement limit"; return nil end
+    if now - b.t0 > MS.BUDGET - margin then
+        b.stop = ("the budget (%d ms in, margin %d ms)"):format((now - b.t0) * 1000, margin * 1000)
+        return nil
+    end
     -- The locate windows are large maps, where the quest areas' outlines would show: only once
     -- their tracking reads off (Codex, PR #102: a refused or thrown toggle went unchecked).
     if saved and saved.quest and not MS.QuestAreasOff() then
         API.Trace("scan: the quest areas didn't turn off: no locate window this burst")
+        b.stop = "the quest areas on"
         return nil
     end
     local okR, radius = pcall(C_Minimap.GetViewRadius)
     radius = okR and API.Num(radius)
     local pn, pw = playerPos()
-    if not (radius and pn) then return nil end
-    return NR.Locate.Next(pn, pw, radius, b.es)
+    if not (radius and pn) then b.stop = "no map geometry"; return nil end
+    local p = NR.Locate.Next(pn, pw, radius, b.es)
+    if not p then b.stop = "no window due" end
+    return p
 end
 
 local function stepBurst(b, now)
     b.frame = b.frame + 1
+    if b.phase ~= "settle" and frameDt > (b.dtMax or 0) then b.dtMax = frameDt end
     if b.phase == "settle" then
         -- The frame after the restore: the suppression ends, everything is read back.
         suppress, burst = false, nil

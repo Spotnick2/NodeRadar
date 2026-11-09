@@ -806,6 +806,8 @@ function GetMouseFoci()
 end
 function IsMouseButtonDown() return WoW.buttonDown == true end
 function IsMouselooking() return WoW.mouselook == true end
+-- The client's frame rate (the scan's burst line, #91): WoW.fps, else 60.
+function GetFramerate() return WoW.fps or 60 end
 function UnitAffectingCombat(unit) return unit == "player" and WoW.combat == true end
 
 -- What the moved map lists under the real cursor.
