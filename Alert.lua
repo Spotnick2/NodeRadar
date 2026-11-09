@@ -45,9 +45,9 @@ local function owedLive(name, now)
     if #list == 0 then owed[name] = nil; return nil end
     return list
 end
-local function owedRetire(name, n)
-    local list = owed[name]
-    for _ = 1, n do if list and #list > 0 then table.remove(list, 1) end end   -- the oldest first
+local function owedRetire(name, n, now)
+    local list = owedLive(name, now)                  -- the expired out first (Codex, PR #102)
+    for _ = 1, n do if list and #list > 0 then table.remove(list, 1) end end   -- the oldest live first
 end
 local risenFrom = {}
 local prevCounts = {}
@@ -65,7 +65,7 @@ end
 
 function Alert.Gathered(name, now)
     gathered[name] = now
-    owedRetire(name, 1)
+    owedRetire(name, 1, now)
     if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
         hist.counts[name] = hist.counts[name] - 1
         local n, w = here()
@@ -186,7 +186,7 @@ function Alert.Counts(counts, now, blips, result, every, blink)
         -- A fall retires as many tokens (the nodes they were for may be the ones gone).
         for name in pairs(owed) do
             local fall = (prevCounts[name] or 0) - (counts[name] or 0)
-            if fall > 0 then owedRetire(name, fall) end
+            if fall > 0 then owedRetire(name, fall, now) end
         end
         for _, name in ipairs(new) do
             if Alert.Wanted(name) then

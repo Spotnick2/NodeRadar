@@ -293,7 +293,7 @@ check(#WoW.sent > sent1, "a throttled withdrawal goes out when the throttle allo
 -- Grouping: two nodes lighting leaves in a row (0, W | 2W, 3W) stay two records; one node's two
 -- diagonal leaves make one record at their centre.
 NR = fresh()
-WoW.blips = { { "Silverleaf", 20, -15 } }
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 } }   -- presence: two in range
 bursts(2)
 for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
 local W = 15
@@ -304,6 +304,10 @@ end
 leafHit(1500, 2500); leafHit(1500 + W, 2500); leafHit(1500 + 2 * W, 2500); leafHit(1500 + 3 * W, 2500)
 NR.Locate.Take()
 check(#NR.Locate.Records() == 2, "four leaves in a row from two nodes: two records, not one chained (" .. #NR.Locate.Records() .. ")")
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+leafHit(1500 + W, 2500); leafHit(1500 + 2 * W, 2500); leafHit(1500, 2500); leafHit(1500 + 3 * W, 2500)
+NR.Locate.Take()
+check(#NR.Locate.Records() == 2, "...read in another order (W, 2W, 0, 3W): still two, never more than the count (" .. #NR.Locate.Records() .. ")")
 for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
 leafHit(1700, 2700); leafHit(1700 + W, 2700 + W)
 NR.Locate.Take()
@@ -329,7 +333,7 @@ check(not handed, "an exhausted re-check of a due record isn't handed out again 
 NR = fresh()
 WoW.blips = { { "Silverleaf", 20, -15 } }
 bursts(12, function() return #NR.Locate.Records() > 0 end)
-bursts(20, function() return not NR.Locate.Busy() end)
+check(bursts(20, function() return not NR.Locate.Busy() end) and #NR.Locate.Records() == 1, "(control) the first search done, resolved")
 WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 } }
 bursts(2)
 check(NR.Locate.Busy() or #NR.Locate.Records() == 2, "after a successful search, a second node's search starts at once")
@@ -349,7 +353,7 @@ check(#NR.Locate.Records() == 0, "a burst stopped mid-way: its pending leaf is d
 NR = fresh()
 WoW.blips = { { "Silverleaf", 20, -15 } }
 bursts(2)
-check((NR.Locate._test.quiet() or {}).Silverleaf ~= nil, "(control) a quiet allowance for the first look")
+check(((NR.Locate._test.quiet() or {}).Silverleaf or 0) > 0, "(control) an unspent quiet allowance for the first look")
 WoW.blips = {}
 bursts(2)
 check(((NR.Locate._test.quiet() or {}).Silverleaf or 0) == 0, "the name gone from range: its allowance gone too")
@@ -368,17 +372,75 @@ check(#WoW.sounds == sounds + 1, "the 101 token expired at 161, the later rise d
 
 -- A gathered spot stays silent all of GONE, rediscovered twice.
 NR = fresh()
+NR.db.cooldown = 0                                                  -- no cooldown hiding a sound
 WoW.blips = { { "Silverleaf", 2, -2 } }
 bursts(12, function() return #NR.Locate.Records() > 0 end)
-NR.Locate.Gathered("Silverleaf", WoW.now)
+NR.Locate.Gathered("Silverleaf", WoW.now)                          -- one gather
 NR.Located(select(2, NR.Locate.Take()), WoW.now)
 sounds = #WoW.sounds
-bursts(12, function() return #NR.Locate.Records() > 0 end)
-NR.Locate.Gathered("Silverleaf", WoW.now - 1)                      -- mined again, still there
-local g = NR.Locate._test.gone()
-for _, e in ipairs(g) do e.at = WoW.now - 30 end                   -- both within GONE
+local found1 = bursts(12, function() return #NR.Locate.Records() > 0 end)
+local r1 = NR.Locate.Records()[1]
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end   -- lost again, not gathered
 NR.Located(select(2, NR.Locate.Take()), WoW.now)
+local found2 = bursts(12, function() return #NR.Locate.Records() > 0 end)
+check(found1 and found2 and r1 and not r1.quiet and #WoW.sounds == sounds,
+    "a gathered spot found again twice within GONE after one gather: silent each time")
+
+--------------------------------------------------------------------------------
+-- Round 3.
+--------------------------------------------------------------------------------
+
+-- A Stop during the settle frame discards the burst's pending leaves too.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local inSettle = false
+for _ = 1, 800 do
+    frames(1)
+    local b = NR.MoveScan._test.burst()
+    if b and b.phase == "settle" then inSettle = true; break end
+end
+leafHit(1900, 2900)
+WoW.fire("GLOBAL_MOUSE_DOWN", "LeftButton")
+NR.Locate.Take()
+check(inSettle and #NR.Locate.Records() == 0, "a Stop in the settle frame: its pending leaf discarded")
+
+-- 3, 2, 3 within BACKOFF (one located): the rise is new demand, searched at once.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 } }
+local phantom = 2
+undo = override(function(w)
+    if isPresence(w) then
+        local lines = { { leftText = "Elegia", type = 0 }, { leftText = "Silverleaf", type = 0 } }
+        for _ = 1, phantom do lines[#lines + 1] = { leftText = "Silverleaf", type = 0 } end
+        return { type = 21, lines = lines }
+    end
+    return "model"
+end)
 bursts(12, function() return #NR.Locate.Records() > 0 end)
-check(#WoW.sounds == sounds, "a gathered spot found again twice within GONE: silent each time")
+bursts(20, function() return not NR.Locate.Busy() end)              -- ran out at 3, one located
+bursts(1)                                                            -- the end noticed: BACKOFF
+phantom = 1
+bursts(1)                                                            -- 2
+phantom = 2
+bursts(1)                                                            -- 3 again: a rise
+undo()
+check(NR.Locate.Busy(), "3, 2, 3 within BACKOFF: the rise searched at once")
+
+-- Retirement takes live tokens, not expired ones: a fall at 165 with tokens from 101 (expired)
+-- and 151 empties the debt; a replacement located at 170 alerts. Likewise a gather.
+for _, how in ipairs({ "fall", "gather" }) do
+    NR = fresh()
+    A = NR.Alert
+    A.Reset("test")
+    A.Counts({ Silverleaf = 1 }, 100, nil, nil, math.huge)
+    A.Counts({ Silverleaf = 2 }, 101, nil, nil, math.huge, 0)
+    A.Counts({ Silverleaf = 3 }, 151, nil, nil, math.huge, 0)
+    if how == "fall" then A.Counts({ Silverleaf = 2 }, 165, nil, nil, math.huge, 0) else A.Gathered("Silverleaf", 165) end
+    sounds = #WoW.sounds
+    A.Located({ name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 30, west = WoW.pos[2] }, 170)
+    check(#WoW.sounds == sounds + 1, "a " .. how .. " after the oldest token expired retires the live one: located, it alerts")
+end
 
 done("test_locate2")

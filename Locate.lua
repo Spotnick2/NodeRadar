@@ -168,7 +168,9 @@ function Locate.Presence(c, now)
             if ran > m then ended[name] = { at = now, n = ran } else ended[name] = nil end
         end
         local e = ended[name]
-        if e and (n > e.n or n <= m) then ended[name], e = nil, nil end
+        -- A rise since the last read is new demand, whatever the old search's count (Codex,
+        -- PR #102: 3, 2, 3 waited the old backoff).
+        if e and (n > e.n or n <= m or n > (before[name] or 0)) then ended[name], e = nil, nil end
         if n > m and not on and not (e and now - e.at < Locate.BACKOFF) then
             need[name], active[name] = true, true
         end
@@ -305,6 +307,13 @@ end
 local function settleHits(now)
     -- Each group compatible with one node: a leaf joins only when linked to every member
     -- (Codex, PR #102: chaining neighbours merged two nodes into one record for good).
+    -- In a fixed order (by north, then west), so the grouping doesn't depend on the read order
+    -- (Codex, PR #102: W, 2W, 0, 3W made three groups of two nodes' four leaves).
+    table.sort(hits, function(a, b)
+        if a.name ~= b.name then return a.name < b.name end
+        if a.north ~= b.north then return a.north < b.north end
+        return a.west < b.west
+    end)
     local groups = {}
     for _, h in ipairs(hits) do
         local home
@@ -315,10 +324,26 @@ local function settleHits(now)
         end
         if home then home[#home + 1] = h else groups[#groups + 1] = { h } end
     end
+    -- Never more new nodes than the presence count leaves unaccounted for: an extra group is an
+    -- ambiguous partition, left unresolved (the search carries on), not a published identity.
+    local room = {}
     for _, g in ipairs(groups) do
+        local name = g[1].name
+        if room[name] == nil then room[name] = math.max(0, (counts[name] or 0) - ofName(name)) end
         local n, w = 0, 0
         for _, m in ipairs(g) do n, w = n + m.north, w + m.west end
-        located(g[1].name, n / #g, w / #g, now, g[1].size)
+        n, w = n / #g, w / #g
+        local matches = false
+        local reach = g[1].size * Locate.REACH
+        for _, r in ipairs(records) do
+            if r.name == name and math.abs(r.north - n) <= reach and math.abs(r.west - w) <= reach then matches = true end
+        end
+        if matches or room[name] > 0 then
+            if not matches then room[name] = room[name] - 1 end
+            located(name, n, w, now, g[1].size)
+        else
+            API.Trace("locate: " .. name .. " an extra group beyond the count, left unresolved")
+        end
     end
     hits = {}
 end
