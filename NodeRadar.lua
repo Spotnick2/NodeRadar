@@ -122,7 +122,7 @@ function NR.Step(now)
     if not Learn.AnyOn() then return end
     local result = Scan.Sweep(isNode)
     if not result then return end
-    if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset() end
+    if lastGeometry and not sameGeometry(lastGeometry, result.geometry) then Alert.Reset("the map's geometry changed") end
     lastGeometry = result.geometry
     Track.Follow()                                  -- smart: the list by the skill first (Codex, #47)
     Icons.Update(result, now)                       -- before the alert and the learner (Codex, #28)
@@ -155,7 +155,7 @@ end
 -- follows from it done.
 function NR.Set(key, value)
     NR.db[key] = value
-    if key == "enabled" then Alert.Reset() end
+    if key == "enabled" then Alert.Reset("the radar toggled") end
     if key == "enabled" then Icons.Clear() end
     if key == "shareNodes" then
         if not Icons.Keeping() then Icons.Clear() end
@@ -182,7 +182,7 @@ function NR.Set(key, value)
     if key == "compassLock" then Compass.UpdateGrip() end
     if key == "minimapButton" then NR.Minimap.Apply() end
     if key == "moveScan" or key == "enabled" then
-        Alert.Reset()                               -- the first scan sets the counts silently
+        Alert.Reset(key .. " set")                  -- the first scan sets the counts silently
         NR.MoveScan.Apply()
     end
 end
@@ -239,7 +239,7 @@ local gathering   -- { guid, target }: the gathering cast just sent, until it su
 local zoom = API.Num(Minimap:GetZoom())
 hooksecurefunc(Minimap, "SetZoom", function()
     local z = API.Num(Minimap:GetZoom())
-    if not z or z ~= zoom then Alert.Reset() end
+    if not z or z ~= zoom then Alert.Reset("zoom " .. tostring(zoom) .. " to " .. tostring(z)) end
     zoom = z
 end)
 events:SetScript("OnEvent", function(_, event, ...)
@@ -280,10 +280,10 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.Void("the player died")
     elseif event == "MINIMAP_UPDATE_ZOOM" then
         zoom = API.Num(Minimap:GetZoom())          -- a swap indoors or out: the history kept (#63)
-        if not zoom then Alert.Reset() end
+        if not zoom then Alert.Reset("the zoom unreadable") end
         Learn.Void("the zoom changed")
     elseif event == "MINIMAP_UPDATE_TRACKING" then
-        Alert.Reset()
+        Alert.Reset("MINIMAP_UPDATE_TRACKING")
         Icons.Clear()
         Learn.OnTrackingChanged()
     elseif event == "SPELL_UPDATE_COOLDOWN" then
@@ -503,6 +503,9 @@ SlashCmdList.NODERADAR = function(msg)
         else
             API.Say("/nr cd <1-60>")
         end
+    elseif cmd == "scan" and rest == "log" then
+        if #NR.trace == 0 then API.Say("the scan's log is empty") end
+        for _, line in ipairs(NR.trace) do API.Say(line) end
     elseif cmd == "scan" and rest ~= "" then
         local secs = tonumber(rest)
         if secs and secs >= 1 and secs <= 10 then

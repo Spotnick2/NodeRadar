@@ -56,6 +56,16 @@ end
 
 function API.Say(msg) print("|cff00ff00[NodeRadar]|r " .. msg) end
 
+-- A short trace of the scan's reads and the alert's decisions (#91), in memory only:
+-- /nr scan log prints it. The last TRACE_MAX lines.
+NR.trace = {}
+NR.TRACE_MAX = 40
+function API.Trace(text)
+    local t = NR.trace
+    t[#t + 1] = ("%.1f %s"):format(GetTime(), text)
+    if #t > NR.TRACE_MAX then table.remove(t, 1) end
+end
+
 -- The player's speed, or nil when unreadable.
 function API.Speed()
     local ok, speed = pcall(GetUnitSpeed, "player")

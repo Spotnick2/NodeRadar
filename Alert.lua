@@ -25,10 +25,16 @@ local gathered = {}   -- [name] = when the player last gathered one
 function Alert.Gathered(name, now) gathered[name] = now end
 
 -- The next successful sweep sets the counts without alerting.
-function Alert.Reset() hist = nil end
+function Alert.Reset(why)
+    hist = nil
+    API.Trace("alert: reset (" .. tostring(why or "?") .. "): the next read is a silent baseline")
+end
 
 -- A new area: counts from zero, so its nodes alert.
-function Alert.NewArea(now) hist = { counts = {}, drops = {}, at = now } end
+function Alert.NewArea(now)
+    hist = { counts = {}, drops = {}, at = now }
+    API.Trace("alert: a new area, counts from zero")
+end
 
 -- Whether the player can gather a node of that name (#26): only a known
 -- requirement above a readable skill says no, and for herbs not while
@@ -81,9 +87,13 @@ end
 -- `blink`: the seconds a rise after a drop counts as the same node at the edge (BLINK by
 -- default; the scan's sparse reads use a shorter one, #91).
 function Alert.Counts(counts, now, blips, result, every, blink)
-    if hist and now - hist.at > Alert.STALE + (every or NR.db.interval) then hist = nil end
+    if hist and now - hist.at > Alert.STALE + (every or NR.db.interval) then
+        hist = nil
+        API.Trace("alert: stale, baseline")
+    end
     if not hist then
         hist = { counts = counts, drops = {}, at = now }
+        API.Trace("alert: baseline set")
         return nil
     end
     local new = {}
@@ -91,7 +101,11 @@ function Alert.Counts(counts, now, blips, result, every, blink)
         local before = hist.counts[name] or 0
         if n > before then
             local drop = hist.drops[name]
-            if not (drop and now - drop <= (blink or Alert.BLINK)) then new[#new + 1] = name end
+            if not (drop and now - drop <= (blink or Alert.BLINK)) then
+                new[#new + 1] = name
+            else
+                API.Trace(("alert: %s rose %.1f s after a drop: a blink, silent"):format(name, now - drop))
+            end
         end
     end
     for name, before in pairs(hist.counts) do
@@ -113,9 +127,17 @@ function Alert.Counts(counts, now, blips, result, every, blink)
     for _, name in ipairs(new) do
         if Alert.Wanted(name) then fire[#fire + 1] = name end
     end
-    if #fire == 0 or now - lastAlert < NR.db.cooldown then return nil end
+    if #fire == 0 then
+        if #new > 0 then API.Trace("alert: new but not wanted: " .. table.concat(new, ", ")) end
+        return nil
+    end
+    if now - lastAlert < NR.db.cooldown then
+        API.Trace("alert: cooldown, silent: " .. table.concat(fire, ", "))
+        return nil
+    end
     lastAlert = now
     table.sort(fire)
+    API.Trace("alert: FIRED " .. table.concat(fire, ", "))
     Alert.Fire(fire, blips, result)
     return fire
 end

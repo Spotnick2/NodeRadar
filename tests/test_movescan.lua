@@ -119,6 +119,8 @@ runBurst()
 check(#WoW.sounds == sounds + 1, "...a third Silverleaf in range: the sound, the gap notwithstanding")
 SlashCmdList.NODERADAR("status")
 check(chatHas("last read: Silverleaf x3"), "/nr status shows the last read's counts")
+SlashCmdList.NODERADAR("scan log")
+check(chatHas("scan: read Silverleaf x3") and chatHas("alert: FIRED Silverleaf"), "/nr scan log: the reads and what the alert decided")
 
 -- Riding from one node to the next: a read with none, then the next one in range within a
 -- few seconds. The sweep's 20 s blink rule took that for one node at the edge; on the scan

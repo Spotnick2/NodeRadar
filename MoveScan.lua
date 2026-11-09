@@ -673,6 +673,7 @@ local function read(b, now)
     if not names then
         MS.stats.unread = MS.stats.unread + 1
         MS.lastUnread = why
+        API.Trace("scan: unread (" .. tostring(why) .. ")")
         return true
     end
     MS.stats.valid = MS.stats.valid + 1
@@ -682,6 +683,10 @@ local function read(b, now)
     end
     b.observation = { counts = counts, at = now, gen = b.gen }
     MS.lastCounts = counts                               -- /nr status
+    local seen = {}
+    for name, n in pairs(counts) do seen[#seen + 1] = name .. " x" .. n end
+    table.sort(seen)
+    API.Trace("scan: read " .. (#seen > 0 and table.concat(seen, ", ") or "no node"))
 end
 
 local function stepBurst(b, now)
@@ -691,6 +696,7 @@ local function stepBurst(b, now)
         suppress, burst = false, nil
         pcall(Minimap.UpdateBlips, Minimap)
         if saved then restore() end
+        if b.observation and b.gen ~= gen then API.Trace("scan: the read was cancelled (gen " .. b.gen .. " vs " .. gen .. ")") end
         if b.observation and b.gen == gen and NR.Observe then NR.Observe("presence", b.observation, now) end
         return
     end
