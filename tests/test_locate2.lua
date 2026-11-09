@@ -249,6 +249,18 @@ SlashCmdList.NODERADAR("scan")
 SlashCmdList.NODERADAR("scan")
 check(#NR.Locate.Records() == 0 and NR.Locate._test.quiet() == nil, "off and on: Locate's records and baseline reset too")
 
+-- A zoom (Minimap:SetZoom) resets the alert: a node it shows is counted and located silently.
+NR = fresh()
+NR.db.cooldown = 0
+bursts(3)                                                -- a first look with nothing in range
+check(NR.Locate._test.quiet() ~= nil, "zoom: the first look taken")
+local sounds10 = #WoW.sounds
+Minimap:SetZoom(2)                                       -- the player zooms out
+WoW.blips = { { "Silverleaf", 20, -15 } }                -- and a node shows
+bursts(20, function() return #NR.Locate.Records() > 0 end)
+check(#NR.Locate.Records() == 1, "zoom: the node shown is located")
+check(#WoW.sounds == sounds10, "...silently, as its count was (one baseline)")
+
 --------------------------------------------------------------------------------
 -- 11. A gather takes the nearest record of its name only; its spot stays silent all of GONE.
 --------------------------------------------------------------------------------
@@ -462,7 +474,7 @@ local function near(n, w, within)
     end
     return list
 end
-local function settled() 
+local function settled()
     for _, r in ipairs(NR.Locate.Records()) do if r.prior then return false end end
     return not NR.Locate.Busy()
 end

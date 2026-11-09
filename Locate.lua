@@ -77,6 +77,10 @@ function Locate.Reset()
     dirty, fresh = true, false
 end
 
+-- The alert's silent baseline taken again (Alert.Reset: a zoom, Codex, PR #102): the next
+-- presence read's unrecorded nodes are located silently. The records stay (world yards).
+function Locate.Rebaseline() quiet = nil end
+
 -- Records of a name, its priors aside (a rebuild's: drawn, not counted, being found again).
 local function ofName(name)
     local n = 0

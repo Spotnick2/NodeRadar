@@ -78,6 +78,9 @@ end
 function Alert.Reset(why)
     hist = nil
     owed = {}
+    -- One baseline: a node the next read counts silently is located silently too (Codex,
+    -- PR #102: a node shown by a zoom out sounded once located).
+    if NR.Locate then NR.Locate.Rebaseline() end
     API.Trace("alert: reset (" .. tostring(why or "?") .. "): the next read is a silent baseline")
 end
 
