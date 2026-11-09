@@ -82,6 +82,31 @@ check(reads > 0, "the radar sweeps")
 NR.Options._test.panel:Show()
 check(not pageSays("can't see nodes"), "the Options page says nothing of it")
 
+-- #95: what the toggle experiment learned from 70862 on is dropped at load, every
+-- locale, "not a node" too, whatever build the client is on now; a gathering's
+-- evidence and older entries stay.
+local learned = {
+    enUS = {
+        ["Karuzo Macphisto"] = { kind = "herbs", source = "toggle", build = "70862" },  -- the owner's
+        ["The Missing Shipment"] = { kind = "herbs", source = "toggle", build = "70862" },
+        ["- 2/6 Roiling Winds destroyed"] = { kind = false, source = "toggle", build = "70901" },
+        ["Earthroot"] = { kind = "herbs", source = "gather", build = "70862" },        -- gathered: kept
+        ["Copper Vein"] = { kind = "ore", source = "toggle", build = "70840" },        -- before: kept
+        ["Odd"] = { kind = "herbs", source = "toggle", build = "beta" },               -- no number: kept
+    },
+    deDE = { ["Karuzo Macphisto"] = { kind = "herbs", source = "toggle", build = "70862" } },
+}
+NR = fresh("70790", { learned = learned })
+local en, de = NR.db.learned.enUS, NR.db.learned.deDE
+eq(en["Karuzo Macphisto"], nil, "a party member the toggle learned on 70862: dropped")
+eq(en["The Missing Shipment"], nil, "...a quest: dropped")
+eq(en["- 2/6 Roiling Winds destroyed"], nil, "...a 'not a node' from a later build: dropped")
+eq(de["Karuzo Macphisto"], nil, "...in every locale")
+check(en["Earthroot"] ~= nil, "a gathering's evidence from 70862: kept")
+check(en["Copper Vein"] ~= nil, "the toggle's answer from before 70862: kept")
+check(en["Odd"] ~= nil, "a build that isn't a number: kept")
+eq(NR.Learn.Kind("Karuzo Macphisto"), nil, "the party member is no node any more")
+
 -- An unreadable build isn't blind.
 NR = fresh("70862", {})
 local real = GetBuildInfo

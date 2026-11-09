@@ -70,6 +70,7 @@ local function initDB()
     if type(db.minimap) ~= "table" then db.minimap = {} end    -- LibDBIcon's, made once, never replaced (#46)
     NR.db = db
     Learn.CleanNames()
+    Learn.DropBlind()                               -- the toggle's 70862 garbage (#95)
     if type(NodeRadarCharDB) ~= "table" then NodeRadarCharDB = {} end
     NR.charDb = NodeRadarCharDB
     Track.Load()                                    -- which herbs and ores, this character's (#47)
