@@ -70,8 +70,16 @@ end
 
 -- After each successful radar sweep. Returns the names that alerted.
 function Alert.Update(result, now)
-    if hist and now - hist.at > Alert.STALE + NR.db.interval then hist = nil end
     local counts, blips = nodes(result)
+    return Alert.Counts(counts, now, blips, result)
+end
+
+-- Node counts by name: the old sweep's, or the minimap scan's presence read (#91), which has
+-- no positions (blips nil: the sound and the chat line's names, no sonar, no ping). `every`:
+-- the seconds between successful reads at most, so a scan's slower cadence never blanks the
+-- baseline (the old sweep's interval otherwise).
+function Alert.Counts(counts, now, blips, result, every)
+    if hist and now - hist.at > Alert.STALE + (every or NR.db.interval) then hist = nil end
     if not hist then
         hist = { counts = counts, drops = {}, at = now }
         return nil

@@ -39,6 +39,9 @@ local DEFAULTS = {
     cooldown = 5,       -- seconds between alerts
     interval = 2,       -- seconds between sweeps standing still; moving, NR.Interval adapts it
     yards    = 4,       -- moving: about this many yards between sweeps
+    moveScan = false,   -- the minimap scan (#91), from build 70862: opt-in; moveScanAsked: the
+                        -- login prompt asked once per account
+    scanEvery = 2,      -- the scan's seconds between looks moving (standing still: three times, at most 10)
 }
 -- Settings no longer used: v1's (it never worked on Forever), and the ring's
 -- colour (the sonar is green for herbs, gold for ore). Dropped.
@@ -90,11 +93,15 @@ end
 -- 70862 on (#90): the radar can't read the minimap. Said in chat once per account
 -- and build (NodeRadarDB.blindNotice), while the radar is on; /nr and Options say it too.
 NR.BLIND_TEXT = "since client build 70862, Blizzard no longer lets addons read the minimap's dots, so "
-    .. "the radar can't find nodes: no alert, icons or compass. Hovering a node still shows the skill it "
-    .. "needs. An opt-in minimap scan mode is in the works."
+    .. "the radar can't find nodes unless the minimap scan is on (/nr scan, or Options): it briefly moves "
+    .. "your minimap, invisible, under your resting mouse. Hovering a node still shows the skill it needs."
+NR.SCAN_TEXT = "Since build 70862, NodeRadar can only see nodes by briefly moving your minimap under your "
+    .. "mouse. While you move it looks every couple of seconds (every few seconds standing still), and your "
+    .. "minimap disappears for a split second each time. It can't look while you steer with a mouse button "
+    .. "held, or in combat. For now it alerts by sound and chat; the icons, the compass and the marker come next."
 function NR.BlindNotice()
     local db = NR.db
-    if not (db and db.enabled and API.Blind()) then return false end
+    if not (db and db.enabled and API.Blind()) or db.moveScan then return false end
     local build = API.Build()
     if db.blindNotice == build then return false end
     db.blindNotice = build
@@ -174,6 +181,18 @@ function NR.Set(key, value)
     if key == "iconStyle" or key == "compassSize" then Compass.Restyle() end
     if key == "compassLock" then Compass.UpdateGrip() end
     if key == "minimapButton" then NR.Minimap.Apply() end
+    if key == "moveScan" or key == "enabled" then
+        Alert.Reset()                               -- the first scan sets the counts silently
+        NR.MoveScan.Apply()
+    end
+end
+
+-- What a minimap scan saw (#91), on completion: presence, the counts of each node name in range.
+-- Positions come with the locate step (later); until then the alert is the sound and the chat line.
+function NR.Observe(kind, obs, now)
+    if kind ~= "presence" or not (NR.db and NR.db.enabled) then return end
+    Track.Follow()
+    Alert.Counts(obs.counts, now, nil, nil, NR.MoveScan.Every())
 end
 
 function NR.VersionText()
@@ -230,6 +249,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         NR.Tooltip.Register()                      -- the skill in the minimap's tooltip (#62)
         NR.Share.Apply()                           -- the prefix and the roster, if sharing or showing (#83)
         NR.BlindNotice()                           -- 70862 on: why nothing happens (#90)
+        NR.MoveScan.Apply()
     elseif event == "PLAYER_ENTERING_WORLD" then
         Icons.Clear()
         NR.Share.Clear()
@@ -237,6 +257,7 @@ events:SetScript("OnEvent", function(_, event, ...)
         Learn.loading = false
         Alert.NewArea(now)
         Learn.Resume(now)
+        NR.MoveScan.AskSoon(now)                   -- the scan's prompt, once per account (#91)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         Alert.NewArea(now)
         Learn.Void("the zone changed")
@@ -324,7 +345,16 @@ local function status()
     if running ~= NR.MEASURED_ON_BUILD then
         API.Say("measured on " .. NR.MEASURED_ON_BUILD .. "; you're on " .. running .. ": report anything odd")
     end
-    if API.Blind() then API.Say(NR.BLIND_TEXT) end -- #90
+    if API.Blind() then                            -- #90, #91
+        if db.moveScan then
+            local why = NR.MoveScan.lastRefusal
+            API.Say(("the minimap scan is on: every %s s moving; %d looks, %d read%s"):format(tostring(db.scanEvery),
+                NR.MoveScan.stats.bursts, NR.MoveScan.stats.valid,
+                (why and why ~= "off") and ("; waiting: " .. why) or ""))
+        else
+            API.Say(NR.BLIND_TEXT)
+        end
+    end
 end
 
 local function known()
@@ -357,6 +387,9 @@ local function help()
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
     API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
         .. "length, set here too); /nr snooze clear. A reload clears them")
+    API.Say("/nr scan: the minimap scan, client build 70862 and later (off by default): NodeRadar briefly moves "
+        .. "your minimap, invisible, under your resting mouse to see the nodes. /nr scan <1-10>: seconds between "
+        .. "looks while moving")
     API.Say("/nr cd <1-60>: seconds between alerts. /nr test: an alert now. /nr status")
     API.Say("/nr known: the names learned. /nr forget <name>. /nr failures. /nr reset: the settings")
 end
@@ -459,6 +492,18 @@ SlashCmdList.NODERADAR = function(msg)
         else
             API.Say("/nr cd <1-60>")
         end
+    elseif cmd == "scan" and rest ~= "" then
+        local secs = tonumber(rest)
+        if secs and secs >= 1 and secs <= 10 then
+            NR.Set("scanEvery", secs)
+            API.Say(("the minimap scan looks every %d s while you move"):format(secs))
+        else
+            API.Say("/nr scan <1-10>: seconds between looks while you move")
+        end
+    elseif cmd == "scan" then
+        NR.Set("moveScan", not db.moveScan)
+        API.Say("the minimap scan " .. onOff(db.moveScan)
+            .. (db.moveScan and not API.Blind() and " (it runs from client build 70862; this client's radar reads the minimap itself)" or ""))
     elseif cmd == "test" then
         Alert.Test()
     elseif cmd == "status" then
@@ -486,6 +531,7 @@ SlashCmdList.NODERADAR = function(msg)
         NR.Marker.Toggle()                         -- off by default: ours cleared, the CVar put back (Codex, PR #74)
         NR.FarMarker.Toggle()
         NR.Share.Apply()                           -- both off by default: the party's nodes forgotten (#83)
+        NR.MoveScan.Apply()                        -- off by default: the minimap home if borrowed (#91)
         API.Say("settings reset (learned names kept)")
     else
         help()

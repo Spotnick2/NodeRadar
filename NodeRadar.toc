@@ -32,4 +32,5 @@ Options.lua
 TrackOptions.lua
 Tooltip.lua
 Minimap.lua
+MoveScan.lua
 NodeRadar.lua

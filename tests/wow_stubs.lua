@@ -686,6 +686,7 @@ local function inside(b, dx, dy)
     if b.disc then return x * x + y * y <= half * half end
     return math.abs(x) <= half and math.abs(y) <= half
 end
+WoW.kindOn = kindOn
 local function blipsAt(dx, dy)
     local lines = {}
     for _, b in ipairs(WoW.blips) do
@@ -704,6 +705,7 @@ C_TooltipInfo = {
     -- makes every read throw.
     GetMinimapMouseover = function()
         if WoW.mouseoverThrows then error("GetMinimapMouseover failed") end
+        if WoW.moveModel then return WoW.moveRead() end
         local dx, dy
         local pointCounts = WoW.cursorOnMap or (WoW.softCursor and not WoW.softIgnored)
         if WoW.mouseoverPoint and pointCounts then
@@ -718,6 +720,131 @@ C_TooltipInfo = {
         return { type = 21, lines = lines }
     end,
 }
+
+--------------------------------------------------------------------------------
+-- The minimap scan's world (#91, 70862): the mouseover follows only the real cursor.
+-- With WoW.moveModel on:
+-- - Minimap sits at its home point (CENTER on MinimapCluster.MinimapContainer, _rect)
+--   until a point CENTER on UIParent's BOTTOMLEFT places its centre there, at its size;
+-- - GetMouseFoci: {} while mouselooking (measured), { Minimap } with the cursor in its rect,
+--   it visible and its mouse motion on, else { WoW.focus or WorldFrame };
+-- - a read, only with Minimap the top focus: the player (WoW.playerName) and every blip
+--   whose hit square (WoW.HIT_PX screen px, measured 16) holds the cursor, a blip's offset
+--   in a 198-unit map's units scaled to the map's width; empty lines (unsettled) the frame
+--   after a placement that followed a resize (measured), and until UpdateBlips after a
+--   placement (stale, measured).
+--------------------------------------------------------------------------------
+
+WorldFrame = newWidget("Frame", nil, "WorldFrame")
+MinimapCluster = CreateFrame("Frame", "MinimapCluster", UIParent)
+MinimapCluster.MinimapContainer = CreateFrame("Frame", nil, MinimapCluster)
+MinimapCluster.MinimapContainer.PlayerCoords = CreateFrame("Frame", nil, MinimapCluster.MinimapContainer)
+MinimapCluster.MinimapContainer.PlayerCoords:SetPoint("TOP", Minimap, "BOTTOM", 0, -4)
+QueueStatusButton = CreateFrame("Button", "QueueStatusButton", UIParent)
+QueueStatusButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", -10, -10)
+QueueStatusButton:EnableMouse(true)
+QueueStatusButton:Hide()
+Minimap:SetPoint("CENTER", MinimapCluster.MinimapContainer, "CENTER", 0, 0)
+Minimap:SetSize(198, 198)
+Minimap:SetFrameStrata("LOW")
+Minimap:SetFrameLevel(3)
+WoW.HIT_PX = 16
+WoW.playerName = "Elegia"
+WoW.frameCount = 0
+
+function Methods.GetNumPoints(w) return #w._points end
+function Methods.IsProtected(w) return w._protected == true end
+function Methods.SetClampedToScreen(w, on) w._clamp = on == true end
+function Methods.IsClampedToScreen(w) return w._clamp == true end
+function Methods.IsMouseClickEnabled(w) return w._click ~= false end
+function Methods.IsMouseMotionEnabled(w) return w._motion ~= false end
+function Methods.EnableMouseWheel(w, on) w._wheel = on == true end
+function Methods.IsMouseWheelEnabled(w) return w._wheel ~= false end
+function Methods.SetIconScale(w, v) w._iconScale = v end
+function Methods.UpdateBlips(w) w._blipsStale = false; WoW.updateBlips = (WoW.updateBlips or 0) + 1 end
+
+local homeRect = Methods.GetRect
+local function placed(w)
+    local p = w._points[#w._points]
+    if w == Minimap and p and p[1] == "CENTER" and p[2] == UIParent and p[3] == "BOTTOMLEFT" then return p[4], p[5] end
+end
+function Methods.GetRect(w)
+    local x, y = placed(w)
+    if x then return x - w._width / 2, y - w._height / 2, w._width, w._height end
+    return homeRect(w)
+end
+local centre = Methods.GetCenter
+function Methods.GetCenter(w)
+    if w == Minimap then
+        local l, b, wd, h = Methods.GetRect(w)
+        if l then return l + wd / 2, b + h / 2 end
+    end
+    return centre(w)
+end
+local setSize, setPoint = Methods.SetSize, Methods.SetPoint
+function Methods.SetSize(w, x, y)
+    if w == Minimap and (x ~= w._width or y ~= w._height) then w._resized = true end
+    return setSize(w, x, y)
+end
+function Methods.SetPoint(w, ...)
+    setPoint(w, ...)
+    if w == Minimap then
+        if w._resized then w._unsettledUntil, w._resized = WoW.frameCount + 1, false end
+        w._blipsStale = true
+    end
+end
+
+function GetMouseFoci()
+    if WoW.mouselook then return {} end
+    if WoW.moveModel and Methods.IsVisible(Minimap) and Minimap._motion ~= false then
+        local x, y = GetCursorPosition()
+        local s = Minimap._effScale
+        local l, b, w, h = Methods.GetRect(Minimap)
+        if l and x / s >= l and x / s <= l + w and y / s >= b and y / s <= b + h then return { Minimap } end
+    end
+    return { WoW.focus or WorldFrame }
+end
+function IsMouseButtonDown() return WoW.buttonDown == true end
+function IsMouselooking() return WoW.mouselook == true end
+function UnitAffectingCombat(unit) return unit == "player" and WoW.combat == true end
+
+-- What the moved map lists under the real cursor.
+function WoW.moveRead()
+    if GetMouseFoci()[1] ~= Minimap then return nil end
+    if WoW.frameCount <= (Minimap._unsettledUntil or -1) or Minimap._blipsStale then return { type = 21, lines = {} } end
+    local l, b, w, h = Methods.GetRect(Minimap)
+    local s, half = Minimap._effScale, WoW.HIT_PX / 2
+    local x, y = GetCursorPosition()
+    local cx, cy = (l + w / 2) * s, (b + h / 2) * s
+    local lines = {}
+    if math.abs(x - cx) <= half and math.abs(y - cy) <= half then
+        lines[#lines + 1] = { leftText = WoW.playerName, type = 0 }
+    end
+    local k = w / 198
+    for _, bl in ipairs(WoW.blips) do
+        local bx, by = cx + bl[2] * k * s, cy + bl[3] * k * s
+        if math.abs(x - bx) <= half and math.abs(y - by) <= half and (not bl.kind or WoW.kindOn(bl.kind)) then
+            lines[#lines + 1] = { leftText = WoW.secretNames and WoW.Secret("name") or bl.text or bl[1], type = 0 }
+        end
+    end
+    if #lines == 0 then return nil end
+    return { type = 21, lines = lines }
+end
+
+-- Blizzard's Lua methods and frames the scan uses (not in the dump's widget walk).
+GameTooltip.SetMinimapMouseover = function(self) return WoW.buildMinimapTooltip(self) end
+WoW.registry = {}
+EventRegistry = {
+    RegisterCallback = function(self, name, fn, owner)
+        WoW.registry[name] = WoW.registry[name] or {}
+        table.insert(WoW.registry[name], fn)
+    end,
+}
+function WoW.fireRegistry(name, ...)
+    for _, fn in ipairs(WoW.registry[name] or {}) do fn(nil, ...) end
+end
+EditModeManagerFrame = CreateFrame("Frame", "EditModeManagerFrame", UIParent)
+EditModeManagerFrame.IsEditModeActive = function() return WoW.editMode == true end
 
 -- Tracking: WoW.tracking = { { name, spellID, active } }.
 WoW.tracking = {
@@ -793,6 +920,7 @@ C_VignetteInfo = {
 -- One rendered frame: OnUpdate on every visible frame.
 function WoW.tick(elapsed)
     elapsed = elapsed or 0.02
+    WoW.frameCount = (WoW.frameCount or 0) + 1
     local list = {}
     for _, w in ipairs(WoW.frames) do list[#list + 1] = w end
     for _, w in ipairs(list) do

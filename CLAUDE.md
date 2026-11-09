@@ -66,8 +66,18 @@ live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)
 
-- **Never move, reparent, resize or hide `Minimap` / `MinimapCluster`.** They're Edit Mode systems
-  and a taint minefield (porting guide, "Edit Mode systems"). Our frames are unnamed children of
+- **Never move, resize, reparent, rescale or hide `MinimapCluster` or its container. Never reparent,
+  rescale, or call `Hide()` on `Minimap`.** The cluster is an Edit Mode system and a taint minefield
+  (porting guide, "Edit Mode systems"). **The one exception is the minimap scan** (#91, `MoveScan.lua`,
+  opt-in, from build 70862): it may temporarily change an unprotected `Minimap`'s anchors, width and
+  height, own alpha, icon scale, screen-clamp flag, mouse-click and mouse-wheel states, and give
+  Blizzard's player coordinates and LFG eye alpha 0 and mouse off; never its mouse motion, strata,
+  level, parent or scripts, nor another addon's frames. Only out of combat, Edit Mode, loading and the
+  gamepad UI, with the cursor resting over the world. Everything saved first and restored on every
+  exit, geometry before visibility and input; a restore that fails stays pending (the map invisible
+  and click-off), is retried, never dropped, and turns the scan off. Only the scan's own minimap
+  tooltip is hidden (a post-hook). An unread scan is never "nothing there". docs/PLAN.md, "The minimap
+  scan mode", has every rule. Our frames are unnamed children of
   `Minimap`, except the compass's ring (#29), an unnamed child of `UIParent` whose disc takes mouse
   motion only (its tooltip; clicks go through): the rule is about never touching the minimap, and
   the ring isn't on it. And NodeRadar's minimap button (#46): LibDBIcon's, a **named** child of
@@ -84,7 +94,7 @@ live game, WoWInterface (#37).
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
 `Track.lua` → `Icons.lua` → `Share.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
-`NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `API.Blind()` (#90: from build 70862, `NR.BLIND_FROM`, a sweep reads
   nothing, so `NR.Step` stops before it and `NR.BlindNotice` says why once per build); `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -205,6 +215,16 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   `snoozeFor`). Snoozes themselves are the compass's (`Compass.Snooze`, `Snoozed`: in memory, by name,
   instance and spot within 8 yards; a reload clears them). Tests never load `Libs\`: the stubs fake
   LibDataBroker, LibDBIcon and `MenuUtil`.
+- `MoveScan.lua` (#91, `moveScan`, off; `scanEvery`, 2): the minimap scan from build 70862. A burst on
+  its own driver: borrow and prepare (admission: `MS.Refusal`; Glass MiniMap v1's `ScanBegin`; the home
+  saved), place the map's centre under the resting cursor and `UpdateBlips`, a settle frame, read and
+  restore, a settle frame (the tooltip post-hook still hiding, everything read back). Every 2 s moving,
+  6 s still (`MS.Every`). A valid read (lines, `Minimap` the top focus, in place) is a **presence**
+  observation, `NR.Observe("presence", { counts })` → `Alert.Counts` (the sound and the chat line; no
+  positions yet: locate, icons, compass, marker and sharing are the next step). Followers (another
+  addon's frame anchored into the map) and a Glass MiniMap without version 1 refuse the scan, named
+  once. The login prompt (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs'
+  move model (`WoW.moveModel`).
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.

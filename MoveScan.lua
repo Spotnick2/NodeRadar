@@ -1,0 +1,847 @@
+-- MoveScan.lua: the minimap scan (#91), opt-in, from client build 70862.
+--
+-- From 70862 the minimap's mouseover follows only the real cursor (docs/FOREVER-PROBE.md,
+-- "70862: the mouseover can't be pointed"), so NodeRadar moves `Minimap` itself under the
+-- resting cursor for a few frames, invisible, reads what lies there and puts it back.
+-- docs/PLAN.md, "The minimap scan mode (#91)", has every rule; the measurements are in
+-- docs/FOREVER-PROBE.md ("Reading by moving the minimap", "The scan's last round").
+--
+-- A burst, one frame each (the plan's schedule):
+--   1. borrow + prepare: admission, Glass MiniMap's ScanBegin, the home saved; alpha 0,
+--      clicks and wheel off, clamp off, icon scale 0.01, Blizzard's coordinates and LFG eye
+--      hidden, off screen, the read's size;
+--   2. place: the map's centre under the cursor, UpdateBlips;
+--   3. settle (after a resize the first frame reads nothing, measured);
+--   4. read, then restore: geometry first, visibility and input only once it reads back;
+--   5. settle: the tooltip suppression one more frame, everything read back.
+-- An invalid or interrupted read is never evidence that nothing is there.
+
+NodeRadar = NodeRadar or {}
+local NR = NodeRadar
+local API = NR.API
+local MS = {}
+NR.MoveScan = MS
+
+MS.PRESENCE_PX = 15.4   -- screen px: one read lists every node in range (measured 12.8 to 18)
+MS.QUIET = 0.2          -- seconds the cursor rests before a burst
+MS.STILL_PX = 2         -- screen px it may drift and still be resting
+MS.RELEASE = 0.3        -- seconds after a mouse button comes up
+MS.BUDGET = 0.25        -- seconds a burst may take, checked every frame
+MS.RETRY = 2            -- seconds between retries of a restore left pending
+MS.FOLLOWERS_EVERY = 10 -- seconds between searches for frames anchored to the map
+MS.STILL_FACTOR = 3     -- standing still, a burst every scanEvery x 3 seconds, at most MAX_EVERY
+MS.MAX_EVERY = 10
+MS.SOONER = 1           -- a burst asked for sooner never comes closer than this to the last
+MS.REFUSALS = 3         -- Glass MiniMap's refusals in a row before the scan turns itself off
+MS.PLACE_TOL = 1        -- the cursor's offset from the map's centre, in home-map units
+MS.OFF = -2000          -- off screen, in the map's own units
+
+local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6,
+                 FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+
+local gen = 0           -- every burst's number; a cancelled one's later frames do nothing
+local burst             -- the burst under way, or nil
+local saved             -- what the borrow changed, to put back; kept while anything is pending
+local pending           -- a restore that couldn't finish: "geometry" or "visibility"
+local suppress = false  -- Blizzard's minimap tooltip hidden by the post-hook
+local halted            -- why the scan turned itself off this session, or nil
+local glassOwed = false -- one ScanEnd owed after any ScanBegin
+local glassRefusals = 0
+local said = {}         -- one chat line per session per key
+local ourScale = false  -- our own SetIconScale calls, ignored by the hook
+local lastScale         -- the last icon scale another addon set
+local nextAt = 0        -- the next burst is due
+local lastBurst = -math.huge
+local lastRetry = -math.huge
+local lastDown = -math.huge
+local cursorX, cursorY, quietSince
+local looking, moving = false, false
+local followers = { at = -math.huge }
+
+MS.stats = { bursts = 0, valid = 0, unread = 0 }
+
+local function rg(name) return rawget(_G, name) end
+
+local function say(key, msg)
+    if said[key] then return end
+    said[key] = true
+    API.Say(msg)
+end
+
+-- A method's answer, or nil when it's missing, throws or answers a secret.
+local function ask(obj, method, ...)
+    local f = obj and obj[method]
+    if type(f) ~= "function" then return nil end
+    local ok, v = pcall(f, obj, ...)
+    if not ok or API.IsSecret(v) then return nil end
+    return v
+end
+
+local function setOn(obj, method, ...)
+    local f = obj and obj[method]
+    if type(f) ~= "function" then return false end
+    return (pcall(f, obj, ...))
+end
+
+local function cursor()
+    local ok, x, y = pcall(GetCursorPosition)
+    if not ok then return nil end
+    return API.Num(x), API.Num(y)
+end
+
+--------------------------------------------------------------------------------
+-- The icon scale has no getter: the last value another addon set (a hook from load),
+-- else 1. A skin that set one before NodeRadar loaded can't be seen (a stated limit).
+--------------------------------------------------------------------------------
+
+if type(Minimap.SetIconScale) == "function" then
+    hooksecurefunc(Minimap, "SetIconScale", function(_, scale)
+        if not ourScale and API.Num(scale) then lastScale = scale end
+    end)
+end
+
+local function iconScale(v)
+    ourScale = true
+    local ok = setOn(Minimap, "SetIconScale", v)
+    ourScale = false
+    return ok
+end
+
+--------------------------------------------------------------------------------
+-- Blizzard's tooltip: entering the map installs Minimap_OnUpdate, which shows the names at the
+-- cursor every frame. Hidden right after its producer while a burst runs, through the settle.
+--------------------------------------------------------------------------------
+
+local tipHooked = false
+function MS.HookTooltip()
+    local tt = rg("GameTooltip")
+    if tipHooked or type(tt) ~= "table" or type(tt.SetMinimapMouseover) ~= "function" then return tipHooked end
+    tipHooked = pcall(hooksecurefunc, tt, "SetMinimapMouseover", function(self)
+        if suppress then pcall(self.Hide, self) end
+    end)
+    return tipHooked
+end
+MS.HookTooltip()
+
+function MS.Suppressing() return suppress end
+
+--------------------------------------------------------------------------------
+-- Glass MiniMap (GlassMiniMap#56, PUBLIC_API_VERSION 1): its frames stay home during a
+-- scan only after ScanBegin returned true. Not loaded: nothing to ask. Loaded without
+-- version 1 (every release before #56): its ring would follow the map, so no scan.
+--------------------------------------------------------------------------------
+
+function MS.Glass()
+    local addons = rg("C_AddOns")
+    local f = addons and addons.IsAddOnLoaded
+    local ok, loaded = false, nil
+    if type(f) == "function" then ok, loaded = pcall(f, "GlassMiniMap") end
+    if not (ok and loaded == true) then return "none" end
+    local g = rg("GlassMiniMap")
+    if type(g) == "table" and rawget(g, "PUBLIC_API_VERSION") == 1 and type(rawget(g, "ScanBegin")) == "function"
+        and type(rawget(g, "ScanEnd")) == "function" then
+        return "v1", g
+    end
+    return "old"
+end
+
+local function glassEnd()
+    if not glassOwed then return end
+    glassOwed = false
+    local _, g = MS.Glass()
+    local f = g and rawget(g, "ScanEnd")
+    if type(f) ~= "function" then return end
+    local ok, err = pcall(f, "NodeRadar")
+    if not ok then API.Fail("GlassMiniMap.ScanEnd", err) end
+end
+
+--------------------------------------------------------------------------------
+-- Followers: a shown frame outside the map's tree but anchored into it travels with the
+-- borrowed map without taking its alpha. Never touched (the contract): found, and the scan
+-- waits while one shows, naming it once. Searched every FOLLOWERS_EVERY seconds, not per
+-- frame. Blizzard's coordinates and LFG eye are the two the borrow hides itself.
+--------------------------------------------------------------------------------
+
+local function coords()
+    local cluster = rg("MinimapCluster")
+    local box = type(cluster) == "table" and rawget(cluster, "MinimapContainer")
+    local c = type(box) == "table" and rawget(box, "PlayerCoords")
+    return type(c) == "table" and c or nil
+end
+
+local function inside(f)
+    for _ = 1, 12 do
+        if f == Minimap then return true end
+        local p = ask(f, "GetParent")
+        if not p then return false end
+        f = p
+    end
+    return false
+end
+
+local function anchoredIn(f, memo, depth)
+    if memo[f] ~= nil then return memo[f] end
+    memo[f] = false
+    if depth > 6 then return false end
+    local n = API.Num(ask(f, "GetNumPoints")) or 0
+    for i = 1, n do
+        local ok, _, rel = pcall(f.GetPoint, f, i)
+        if ok and type(rel) == "table" and not API.IsSecret(rel) and (inside(rel) or anchoredIn(rel, memo, depth + 1)) then
+            memo[f] = true
+            return true
+        end
+    end
+    return false
+end
+
+local function shows(f)
+    if ask(f, "IsVisible") ~= true then return false end
+    local a = API.Num(ask(f, "GetEffectiveAlpha"))
+    return a == nil or a > 0
+end
+
+function MS.FindFollower()
+    local memo, seen = {}, { [Minimap] = true }
+    local own = coords()
+    if own then seen[own] = true end
+    local eye = rg("QueueStatusButton")
+    if type(eye) == "table" then seen[eye] = true end
+    local found
+    local function look(parent, depth)
+        local ok, kids = pcall(function() return { parent:GetChildren() } end)
+        if not ok then return end
+        for _, f in ipairs(kids) do
+            if found then return end
+            if not seen[f] then
+                seen[f] = true
+                if not inside(f) then
+                    if shows(f) and anchoredIn(f, memo, 0) then
+                        found = f
+                    elseif depth < 3 then
+                        look(f, depth + 1)
+                    end
+                end
+            end
+        end
+    end
+    look(UIParent, 1)
+    local cluster = rg("MinimapCluster")
+    if not found and type(cluster) == "table" then look(cluster, 1) end
+    return found
+end
+
+local function follower(now)
+    if now - followers.at >= MS.FOLLOWERS_EVERY then
+        local ok, f = pcall(MS.FindFollower)
+        followers.frame, followers.at = ok and f or nil, now
+    end
+    local f = followers.frame
+    if f and shows(f) then return f end
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- The home: what the borrow changes, saved before the first change.
+--------------------------------------------------------------------------------
+
+local function points()
+    local n = API.Num(ask(Minimap, "GetNumPoints"))
+    if not n then return nil end
+    local list = {}
+    for i = 1, n do
+        local ok, p, rel, rp, x, y = pcall(Minimap.GetPoint, Minimap, i)
+        if not ok or API.IsSecret(p) or API.IsSecret(rel) or API.IsSecret(rp) or API.IsSecret(x) or API.IsSecret(y) then
+            return nil
+        end
+        list[i] = { p, rel, rp, x, y }
+    end
+    return list
+end
+
+local function same(a, b) return a == b or (API.Num(a) and API.Num(b) and math.abs(a - b) < 0.01) end
+
+local function samePoints(a, b)
+    if not (a and b) or #a ~= #b then return false end
+    for i, p in ipairs(a) do
+        local q = b[i]
+        if not (p[1] == q[1] and p[2] == q[2] and p[3] == q[3] and same(p[4], q[4]) and same(p[5], q[5])) then
+            return false
+        end
+    end
+    return true
+end
+
+-- A Blizzard frame anchored to the map, hidden for the borrow: its alpha and mouse.
+local function holdFrame(f)
+    if type(f) ~= "table" then return nil end
+    local alpha = API.Num(ask(f, "GetAlpha"))
+    if not alpha then return nil end
+    return { f = f, alpha = alpha, mouse = ask(f, "IsMouseEnabled") }
+end
+
+local function home()
+    local s = {
+        points = points(),
+        w = API.Num(ask(Minimap, "GetWidth")), h = API.Num(ask(Minimap, "GetHeight")),
+        es = API.Num(ask(Minimap, "GetEffectiveScale")),
+        alpha = API.Num(ask(Minimap, "GetAlpha")),
+        clamp = ask(Minimap, "IsClampedToScreen"),
+        click = ask(Minimap, "IsMouseClickEnabled"),
+        wheel = ask(Minimap, "IsMouseWheelEnabled"),
+    }
+    if not (s.points and #s.points > 0 and s.w and s.h and s.es and s.alpha and s.w > 0 and s.es > 0)
+        or type(s.clamp) ~= "boolean" or type(s.click) ~= "boolean" or type(s.wheel) ~= "boolean" then
+        return nil
+    end
+    local eye = rg("QueueStatusButton")
+    s.held = {}
+    for _, f in ipairs({ coords(), type(eye) == "table" and eye or nil }) do
+        local h = holdFrame(f)
+        if h then s.held[#s.held + 1] = h end
+    end
+    return s
+end
+
+--------------------------------------------------------------------------------
+-- The restore: geometry first (anchors, size, clamp), read back; then visibility and input,
+-- only once the geometry is home: a map that can't go home stays invisible and click-off.
+-- The icon scale moves nothing: at once. Every call in its own pcall. Idempotent.
+--------------------------------------------------------------------------------
+
+local function halt(why)
+    if not halted then
+        halted = why
+        API.Fail("scan", why)
+        API.Say("the minimap scan turned itself off for this session: " .. why .. ". /nr scan turns it on again.")
+    end
+end
+
+local function geometryHome(s)
+    return samePoints(points(), s.points) and same(ask(Minimap, "GetWidth"), s.w)
+        and same(ask(Minimap, "GetHeight"), s.h) and ask(Minimap, "IsClampedToScreen") == s.clamp
+end
+
+local function visibilityHome(s)
+    if not (same(ask(Minimap, "GetAlpha"), s.alpha) and ask(Minimap, "IsMouseClickEnabled") == s.click
+        and ask(Minimap, "IsMouseWheelEnabled") == s.wheel) then
+        return false
+    end
+    for _, h in ipairs(s.held) do
+        if not same(ask(h.f, "GetAlpha"), h.alpha) then return false end
+        if h.mouse ~= nil and ask(h.f, "IsMouseEnabled") ~= h.mouse then return false end
+    end
+    return true
+end
+
+local function restore()
+    local s = saved
+    if not s then return true end
+    if s.scaled then
+        iconScale(lastScale or 1)
+        s.scaled = false
+    end
+    if not geometryHome(s) then
+        setOn(Minimap, "ClearAllPoints")
+        for _, p in ipairs(s.points) do setOn(Minimap, "SetPoint", p[1], p[2], p[3], p[4], p[5]) end
+        setOn(Minimap, "SetSize", s.w, s.h)
+        setOn(Minimap, "SetClampedToScreen", s.clamp)
+    end
+    if not geometryHome(s) then
+        pending = "geometry"
+        glassEnd()
+        halt("the minimap couldn't be put back yet; retried until it can")
+        return false
+    end
+    setOn(Minimap, "SetAlpha", s.alpha)
+    for _, h in ipairs(s.held) do
+        setOn(h.f, "SetAlpha", h.alpha)
+        if h.mouse ~= nil then setOn(h.f, "EnableMouse", h.mouse) end
+    end
+    setOn(Minimap, "EnableMouseWheel", s.wheel)
+    setOn(Minimap, "SetMouseClickEnabled", s.click)       -- last
+    glassEnd()
+    if not visibilityHome(s) then
+        pending = "visibility"
+        halt("the minimap's visibility or input couldn't be put back yet; retried until it can")
+        return false
+    end
+    pending, saved = nil, nil
+    return true
+end
+
+-- What's left of a restore that couldn't finish: tried again now. Never dropped.
+function MS.Retry()
+    if not saved then return true end
+    lastRetry = GetTime()
+    return restore()
+end
+
+function MS.Pending() return pending end
+
+--------------------------------------------------------------------------------
+-- Checks
+--------------------------------------------------------------------------------
+
+local function editMode()
+    local em = rg("EditModeManagerFrame")
+    return ask(em, "IsEditModeActive") == true
+end
+
+local function inCombat()
+    local ok, c = pcall(UnitAffectingCombat, "player")
+    return InCombatLockdown() or (ok and API.Yes(c))
+end
+
+local function menuOpen()
+    local menu = rg("Menu")
+    local get = type(menu) == "table" and rawget(menu, "GetManager")
+    if type(get) ~= "function" then return false end
+    local ok, mgr = pcall(get)
+    return ok and ask(mgr, "IsAnyMenuOpen") == true
+end
+
+local function buttonDown()
+    local ok, down = pcall(IsMouseButtonDown)
+    return ok and down == true
+end
+
+local function mouselooking()
+    local ok, on = pcall(IsMouselooking)
+    return ok and on == true
+end
+
+local function topFocus()
+    local ok, foci = pcall(GetMouseFoci)
+    if not ok or type(foci) ~= "table" then return nil end
+    return foci[1]
+end
+
+-- A frame drawn below the map (a UI suite's full-screen layer): the borrowed map is above it.
+local function below(f)
+    local theirs, mine = STRATA[ask(f, "GetFrameStrata")], STRATA[ask(Minimap, "GetFrameStrata")]
+    if not (theirs and mine) then return false end
+    if theirs ~= mine then return theirs < mine end
+    local a, b = API.Num(ask(f, "GetFrameLevel")), API.Num(ask(Minimap, "GetFrameLevel"))
+    return a ~= nil and b ~= nil and a < b
+end
+
+local function overWorld(f)
+    return f ~= nil and (f == rg("WorldFrame") or (f ~= Minimap and not inside(f) and below(f)))
+end
+
+local function tooltipShown()
+    local tt = rg("GameTooltip")
+    return ask(tt, "IsShown") == true
+end
+
+local function eyeShown()
+    local eye = rg("QueueStatusButton")
+    return type(eye) == "table" and ask(eye, "IsVisible") == true
+end
+
+local function instanced()
+    local ok, inside1 = pcall(IsInInstance)
+    return not ok or API.IsSecret(inside1) or inside1 == true
+end
+
+-- The scan's context: what a burst's read is about. Anything changing cancels it.
+local function context()
+    local okR, r = pcall(C_Minimap.GetViewRadius)
+    return { zoom = API.Num(ask(Minimap, "GetZoom")), radius = okR and API.Num(r) or nil,
+             es = API.Num(ask(Minimap, "GetEffectiveScale")) }
+end
+
+local function sameContext(a, b)
+    return a and b and a.zoom == b.zoom and a.radius == b.radius and same(a.es, b.es)
+end
+
+function MS.On()
+    local db = NR.db
+    return db ~= nil and db.enabled == true and db.moveScan == true and API.Blind() and not halted
+end
+
+-- Why no burst may start now, or nil.
+function MS.Refusal(now)
+    if not MS.On() then return "off" end
+    if saved or pending then return "a restore is pending" end
+    if inCombat() then return "in combat" end
+    if ask(Minimap, "IsProtected") == true then return "the minimap is protected" end
+    if API.Gamepad() then return "the gamepad UI" end
+    if editMode() then return "Edit Mode" end
+    if NR.Learn.loading then return "loading" end
+    if API.Dead() then return "dead" end
+    local okT, taxi = pcall(UnitOnTaxi, "player")
+    if okT and API.Yes(taxi) then return "on a taxi" end
+    if instanced() then return "in an instance" end
+    if ask(Minimap, "IsVisible") ~= true then return "the minimap is hidden" end
+    if ask(Minimap, "IsMouseMotionEnabled") == false then return "the minimap's mouse motion is off" end
+    if not NR.Learn.AnyOn() then return "no gathering tracking on" end
+    if mouselooking() then return "mouselook" end
+    if buttonDown() then return "a mouse button is down" end
+    if now - lastDown < MS.RELEASE then return "a mouse button was just released" end
+    if not overWorld(topFocus()) then return "the cursor is not over the world" end
+    if not (quietSince and now - quietSince >= MS.QUIET) then return "the cursor is moving" end
+    local x, y = cursor()
+    local es = API.Num(ask(Minimap, "GetEffectiveScale"))
+    local okR, l, b, w, h = pcall(Minimap.GetRect, Minimap)
+    if not (x and es and okR and API.Num(l) and API.Num(b) and API.Num(w) and API.Num(h)) then
+        return "the minimap's place is unreadable"
+    end
+    if x / es >= l and x / es <= l + w and y / es >= b and y / es <= b + h then return "the cursor is over the minimap" end
+    if tooltipShown() then return "a tooltip is shown" end
+    if menuOpen() then return "a menu is open" end
+    local f = follower(now)
+    if f then
+        say("follower", "the minimap scan waits: a frame anchored to the minimap would follow it to your mouse ("
+            .. tostring(ask(f, "GetDebugName") or "unnamed") .. ").")
+        return "a frame follows the minimap"
+    end
+    local glass = MS.Glass()
+    if glass == "old" then
+        say("glass", "the minimap scan needs a newer Glass MiniMap (its ring would follow the minimap to your mouse).")
+        return "Glass MiniMap needs updating"
+    end
+    return nil
+end
+
+-- Why the burst under way must end now, or nil. `phase`: "off" (off screen) or "placed".
+local function interrupted(b, now)
+    if not MS.On() then return "turned off" end
+    if inCombat() then return "combat" end
+    if editMode() then return "Edit Mode" end
+    if NR.Learn.loading then return "loading" end
+    if API.Gamepad() then return "the gamepad UI" end
+    if mouselooking() then return "mouselook" end
+    if buttonDown() then return "a mouse button" end
+    if now - b.t0 > MS.BUDGET then return "over budget" end
+    if not sameContext(b.context, context()) then return "the map changed" end
+    local x, y = cursor()
+    if not (x and y) or math.abs(x - b.x) > MS.STILL_PX or math.abs(y - b.y) > MS.STILL_PX then return "the cursor moved" end
+    if tooltipShown() then return "a tooltip" end
+    if menuOpen() then return "a menu" end
+    if not b.eye and eyeShown() then return "the LFG eye" end
+    local top = topFocus()
+    if b.phase == "placed" then
+        if top ~= Minimap and not (b.frame <= b.placedAt + 1) then return "covered" end
+    elseif not overWorld(top) then
+        return "covered"
+    end
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- A burst
+--------------------------------------------------------------------------------
+
+local function finish(b, reason)
+    if burst ~= b then return end
+    b.reason = reason
+    restore()
+    pcall(Minimap.UpdateBlips, Minimap)
+    b.phase = "settle"
+    lastBurst, nextAt = GetTime(), GetTime() + MS.Every()
+end
+
+-- Seconds between bursts: scanEvery moving, three times that standing still.
+function MS.Every()
+    local every = API.Num(NR.db and NR.db.scanEvery) or 2
+    if moving then return every end
+    return math.min(MS.MAX_EVERY, every * MS.STILL_FACTOR)
+end
+
+local function borrow(now)
+    local glass, g = MS.Glass()
+    if glass == "v1" then
+        local ok, acquired = pcall(rawget(g, "ScanBegin"), "NodeRadar")
+        glassOwed = true
+        if not (ok and acquired == true) then
+            glassEnd()
+            glassRefusals = glassRefusals + 1
+            if not ok then API.Fail("GlassMiniMap.ScanBegin", acquired) end
+            if glassRefusals >= MS.REFUSALS then halt("Glass MiniMap refused it " .. MS.REFUSALS .. " times") end
+            lastBurst, nextAt = now, now + MS.Every()
+            return nil
+        end
+        glassRefusals = 0
+    end
+    local s = home()
+    if not s then
+        glassEnd()
+        API.Fail("scan", "the minimap's home is unreadable")
+        lastBurst, nextAt = now, now + MS.Every()
+        return nil
+    end
+    local x, y = cursor()
+    gen = gen + 1
+    local b = { gen = gen, t0 = now, frame = 1, x = x, y = y, phase = "off", context = context(),
+                es = s.es, homeW = s.w, eye = eyeShown() }
+    saved, burst, suppress = s, b, true
+    MS.stats.bursts = MS.stats.bursts + 1
+    -- Invisible and inert before it moves.
+    setOn(Minimap, "SetAlpha", 0)
+    for _, h in ipairs(s.held) do
+        setOn(h.f, "SetAlpha", 0)
+        if h.mouse ~= nil then setOn(h.f, "EnableMouse", false) end
+    end
+    setOn(Minimap, "SetMouseClickEnabled", false)
+    setOn(Minimap, "EnableMouseWheel", false)
+    setOn(Minimap, "SetClampedToScreen", false)
+    s.scaled = iconScale(0.01)
+    setOn(Minimap, "ClearAllPoints")
+    setOn(Minimap, "SetPoint", "CENTER", UIParent, "BOTTOMLEFT", MS.OFF, MS.OFF)
+    b.units = MS.PRESENCE_PX / s.es
+    setOn(Minimap, "SetSize", b.units, b.units)
+    return b
+end
+
+local function place(b)
+    setOn(Minimap, "ClearAllPoints")
+    setOn(Minimap, "SetPoint", "CENTER", UIParent, "BOTTOMLEFT", b.x / b.es, b.y / b.es)
+    b.placedAt, b.phase = b.frame, "placed"
+    b.blipsOK = pcall(Minimap.UpdateBlips, Minimap)
+end
+
+-- The names a read lists, or nil and why (unread: nil, no lines, malformed or secret).
+-- A valid read always has lines (the player at the centre, measured).
+function MS.ReadNames()
+    local ok, data = pcall(C_TooltipInfo.GetMinimapMouseover)
+    if not ok then return nil, "the read failed" end
+    if data == nil then return nil, "nothing" end
+    if API.IsSecret(data) or type(data) ~= "table" then return nil, "secret" end
+    local lines = data.lines
+    if API.IsSecret(lines) or type(lines) ~= "table" then return nil, "secret" end
+    if #lines == 0 then return nil, "no lines" end
+    local names = {}
+    for _, line in ipairs(lines) do
+        local t = type(line) == "table" and line.leftText or nil
+        if API.IsSecret(t) then return nil, "secret" end
+        if type(t) == "string" then
+            for row in t:gmatch("[^\n]+") do
+                local name = NR.Scan.Plain(row)
+                if name ~= "" then names[#names + 1] = name end
+            end
+        end
+    end
+    return names
+end
+
+-- Why this frame's read can't count, or nil.
+local function invalid(b)
+    if b.frame < b.placedAt + 2 then return "unsettled" end
+    if topFocus() ~= Minimap then return "not the top focus" end
+    if not b.blipsOK then return "UpdateBlips failed" end
+    local cx, cy = Minimap:GetCenter()
+    local w = API.Num(ask(Minimap, "GetWidth"))
+    cx, cy = API.Num(cx), API.Num(cy)
+    if not (cx and cy and w and w > 0) then return "the placement is unreadable" end
+    local k = b.homeW / w
+    if math.abs((b.x / b.es - cx) * k) > MS.PLACE_TOL or math.abs((b.y / b.es - cy) * k) > MS.PLACE_TOL then
+        return "the map is not where it was put"
+    end
+    return nil
+end
+
+local function read(b, now)
+    local why = invalid(b)
+    local names
+    if not why then names, why = MS.ReadNames() end
+    if not names then
+        MS.stats.unread = MS.stats.unread + 1
+        MS.lastUnread = why
+        return
+    end
+    MS.stats.valid = MS.stats.valid + 1
+    local counts = {}
+    for _, name in ipairs(names) do
+        if NR.Learn.Kind(name) then counts[name] = (counts[name] or 0) + 1 end
+    end
+    b.observation = { counts = counts, at = now, gen = b.gen }
+end
+
+local function stepBurst(b, now)
+    b.frame = b.frame + 1
+    if b.phase == "settle" then
+        -- The frame after the restore: the suppression ends, everything is read back.
+        suppress, burst = false, nil
+        pcall(Minimap.UpdateBlips, Minimap)
+        if saved then restore() end
+        if b.observation and b.gen == gen and NR.Observe then NR.Observe("presence", b.observation, now) end
+        return
+    end
+    local why = interrupted(b, now)
+    if why then return finish(b, why) end
+    if b.phase == "off" then return place(b) end
+    if b.frame >= b.placedAt + 2 then
+        read(b, now)
+        return finish(b, "done")
+    end
+end
+
+-- Stop at once: whatever is borrowed goes home (the setting off, combat, a loading screen).
+function MS.Stop(reason)
+    local b = burst
+    if b and b.phase ~= "settle" then finish(b, reason or "stopped") end
+    if burst then
+        suppress, burst = false, nil
+        if saved then restore() end
+    end
+    gen = gen + 1
+end
+
+-- A cancel: a read under way is dropped (a tracking, zone or zoom change, a gather).
+function MS.Cancel() gen = gen + 1 end
+
+--------------------------------------------------------------------------------
+-- The driver: one frame, every frame while the scan is on or a restore is pending.
+--------------------------------------------------------------------------------
+
+function MS.Tick(now)
+    if pending and not burst and now - lastRetry >= MS.RETRY then MS.Retry() end
+    if not (MS.On() or burst) then return end
+    local x, y = cursor()
+    if x and y then
+        if not cursorX or math.abs(x - cursorX) > MS.STILL_PX or math.abs(y - cursorY) > MS.STILL_PX then
+            quietSince, cursorX, cursorY = now, x, y
+        end
+    end
+    if buttonDown() then lastDown = now end
+    -- The end of mouselook or a stop after moving asks for a burst sooner.
+    local look = mouselooking()
+    local speed = API.Speed()
+    local move = speed ~= nil and speed > 0
+    if (looking and not look) or (moving and not move) then
+        nextAt = math.min(nextAt, math.max(now, lastBurst + MS.SOONER))
+    end
+    looking, moving = look, move
+    if burst then return stepBurst(burst, now) end
+    nextAt = math.min(nextAt, lastBurst + MS.Every())   -- starting to move: the shorter wait
+    if now < nextAt then return end
+    local why = MS.Refusal(now)
+    MS.lastRefusal = why
+    if why then return end
+    borrow(now)
+end
+
+local driver = CreateFrame("Frame")
+driver:SetScript("OnUpdate", function() MS.Tick(GetTime()) end)
+
+local events = CreateFrame("Frame")
+API.RegisterEvents(events, { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_LEAVING_WORLD",
+    "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "GLOBAL_MOUSE_DOWN", "MINIMAP_UPDATE_ZOOM",
+    "MINIMAP_UPDATE_TRACKING", "ZONE_CHANGED_NEW_AREA", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "PLAYER_LOGIN" })
+events:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_LOGIN" then
+        MS.HookTooltip()
+    elseif event == "PLAYER_REGEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
+        if pending then MS.Retry() end
+    elseif event == "GLOBAL_MOUSE_DOWN" then
+        lastDown = GetTime()
+        if burst then MS.Stop("a mouse button") end
+    else
+        -- Combat, a loading screen, logout: home now (Minimap stays unprotected, so this is
+        -- allowed after the lockdown starts); the rest cancels what's under way.
+        MS.Stop(event)
+        if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then followers.at = -math.huge end
+    end
+end)
+do
+    local er = rg("EventRegistry")
+    if type(er) == "table" and type(er.RegisterCallback) == "function" then
+        pcall(er.RegisterCallback, er, "EditMode.Enter", function() MS.Stop("Edit Mode") end, MS)
+        pcall(er.RegisterCallback, er, "EditMode.Exit", function() if pending then MS.Retry() end end, MS)
+    end
+end
+
+-- The setting turned on or off (NR.Set): off goes home at once; on starts afresh.
+function MS.Apply()
+    if NR.db and NR.db.moveScan then
+        halted, glassRefusals = nil, 0
+        followers.at, nextAt = -math.huge, 0
+    end
+    if not MS.On() then MS.Stop("turned off") end
+end
+
+MS._test = {
+    reset = function()
+        gen, burst, saved, pending, suppress, halted, glassOwed, glassRefusals = 0, nil, nil, nil, false, nil, false, 0
+        said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
+        cursorX, cursorY, quietSince, looking, moving = nil, nil, nil, false, false
+        followers = { at = -math.huge }
+        MS.stats = { bursts = 0, valid = 0, unread = 0 }
+    end,
+    burst = function() return burst end,
+    saved = function() return saved end,
+    lastScale = function() return lastScale end,
+}
+
+--------------------------------------------------------------------------------
+-- The login prompt: once per account (NodeRadarDB.moveScanAsked), on 70862 or later, at the
+-- first quiet moment at least 10 s after entering the world (out of combat, not loading, no
+-- gamepad UI). Our own small window, not Blizzard's popups.
+--------------------------------------------------------------------------------
+
+MS.ASK_AFTER = 10
+local askAt, prompt
+
+local function button(parent, text, onClick)
+    local b = API.SafeFrame("Button", parent, "UIPanelButtonTemplate")
+    b:SetSize(190, 24)
+    b:SetText(text)
+    b:SetScript("OnClick", onClick)
+    return b
+end
+
+function MS.ShowPrompt()
+    if not prompt then
+        local f = CreateFrame("Frame", nil, UIParent)
+        f:SetSize(460, 150)
+        f:SetPoint("TOP", UIParent, "TOP", 0, -140)
+        f:SetFrameStrata("DIALOG")
+        local bg = f:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(f)
+        bg:SetColorTexture(0, 0, 0, 0.85)
+        local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        title:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -12)
+        title:SetText("NodeRadar")
+        local text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        text:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+        text:SetWidth(432)
+        text:SetJustifyH("LEFT")
+        text:SetText(NR.SCAN_TEXT .. " Try it?")
+        local function answer(on)
+            NR.db.moveScanAsked = true
+            f:Hide()
+            if on then
+                NR.Set("moveScan", true)
+                API.Say("the minimap scan is on (/nr scan, or Options, turns it off).")
+            end
+        end
+        local yes = button(f, "Try the minimap scan", function() answer(true) end)
+        yes:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 12)
+        local no = button(f, "Not now", function() answer(false) end)
+        no:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 12)
+        f.yes, f.no, f.text = yes, no, text
+        prompt = f
+    end
+    prompt:Show()
+    return prompt
+end
+
+function MS.AskSoon(now)
+    local db = NR.db
+    if db and not db.moveScanAsked and not db.moveScan and API.Blind() then askAt = now + MS.ASK_AFTER end
+end
+
+local asker = CreateFrame("Frame")
+asker:SetScript("OnUpdate", function()
+    if not askAt then return end
+    local now = GetTime()
+    local db = NR.db
+    if not db or db.moveScanAsked or db.moveScan then askAt = nil; return end
+    if now < askAt or inCombat() or NR.Learn.loading or API.Gamepad() then return end
+    askAt = nil
+    MS.ShowPrompt()
+end)
+
+MS._test.prompt = function() return prompt end
+MS._test.askAt = function() return askAt end

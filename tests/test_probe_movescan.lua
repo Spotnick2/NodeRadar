@@ -2,6 +2,10 @@
 -- must always put it back. Runs locally only (ForeverProbe is private; CI skips it).
 dofile("tests/wow_stubs.lua")
 dofile("tests/harness.lua")
+-- This round models the mouse focus itself, step by step (rawset below): the stubs' own
+-- GetMouseFoci and WorldFrame (the scan's world, #91) are left out until then.
+rawset(_G, "GetMouseFoci", nil)
+rawset(_G, "WorldFrame", nil)
 rawset(_G, "Screenshot", function() end)
 rawset(_G, "EnumerateFrames", function() return nil end)
 
