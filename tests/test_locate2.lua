@@ -571,11 +571,16 @@ E1.err, E2.err = 9.375 * NR.Locate.REACH, 9.375 * NR.Locate.REACH
 table.insert(NR.Locate.Records(), E1)
 table.insert(NR.Locate.Records(), E2)
 local sounds9 = #WoW.sounds
-for _ = 1, 4 do
+local cyclesOK = true
+for cycle = 1, 4 do
     for _, r in ipairs(NR.Locate.Records()) do r.due = true end
     WoW.now = WoW.now + NR.Locate.RECHECK
-    bursts(20, function() return settled() end)
+    local w0 = NR.MoveScan.stats.windows
+    -- An actual re-check this cycle (a window read), then settled.
+    local ran = bursts(20, function() return NR.MoveScan.stats.windows > w0 and settled() end)
+    if not (ran and has(NR.Locate.Records(), E1) and has(NR.Locate.Records(), E2)) then cyclesOK = false end
 end
+check(cyclesOK, "four re-check cycles each ran, the original records E1 and E2 kept through each")
 local n1 = #near(pn9 - 7, pw9, 13)
 local n2 = #near(pn9 + 21, pw9, 13)
 check(#NR.Locate.Records() == 2 and n1 == 1 and n2 == 1, "two live nodes with approximate records: both kept (" .. n1 .. ", " .. n2 .. ")")
