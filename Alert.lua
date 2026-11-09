@@ -22,7 +22,18 @@ local gathered = {}   -- [name] = when the player last gathered one
 
 -- The player gathered a node of that name: the drop that follows is that node
 -- gone, not one blinking at the edge, so the next of that name alerts.
-function Alert.Gathered(name, now) gathered[name] = now end
+--
+-- From 70862 (the minimap scan, #91) the gathered node is also counted out at once: the scan's
+-- reads are sparse, and mining a vein then reaching the next one read 1 then 1, never the 0 in
+-- between (the owner's run: no sound). The loot window keeps the scan from reading the gathered
+-- dot back in (the cursor isn't over the world). Before 70862 the sweep's own drop does it.
+function Alert.Gathered(name, now)
+    gathered[name] = now
+    if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
+        hist.counts[name] = hist.counts[name] - 1
+        API.Trace("alert: gathered " .. tostring(name) .. ", counted out")
+    end
+end
 
 -- The next successful sweep sets the counts without alerting.
 function Alert.Reset(why)

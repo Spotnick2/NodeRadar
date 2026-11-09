@@ -167,6 +167,20 @@ WoW.fire("MINIMAP_UPDATE_TRACKING")
 SlashCmdList.NODERADAR("scan log")
 check(chatHas("alert: reset %(tracking changed%)"), "a real tracking change resets the alert")
 
+-- Mining a node, then reaching the next of its name with no read between (1, then 1): the
+-- gathered one is counted out at once, so the next alerts (the owner's run).
+WoW.blips = { { "Silverleaf", 20, -15 } }
+WoW.now = WoW.now + 30
+untilBorrowed(400)
+runBurst()
+NR.Alert.Gathered("Silverleaf", WoW.now)
+sounds = #WoW.sounds
+WoW.blips = { { "Silverleaf", -50, 30 } }
+WoW.now = WoW.now + 30
+untilBorrowed(400)
+runBurst()
+check(#WoW.sounds == sounds + 1, "a node gathered, the next one of its name read 1 then 1: the sound")
+
 --------------------------------------------------------------------------------
 -- 3. Unread is never absence: no observation at all.
 --------------------------------------------------------------------------------
