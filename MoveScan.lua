@@ -340,6 +340,16 @@ local function restore(keep)
     if not s then return true end
     if s.scaled and iconScale(lastScale or 1) then s.scaled = false end   -- kept until the setter works
     if not geometryHome(s) then
+        -- Invisible and inert again first: a correction after the visibility came back (the
+        -- settle frame's readback) must never leave a shown, clickable map away from home
+        -- if it fails (Codex, PR #101).
+        setOn(Minimap, "SetAlpha", 0)
+        for _, h in ipairs(s.held) do
+            setOn(h.f, "SetAlpha", 0)
+            if h.mouse ~= nil then setOn(h.f, "EnableMouse", false) end
+        end
+        setOn(Minimap, "SetMouseClickEnabled", false)
+        setOn(Minimap, "EnableMouseWheel", false)
         setOn(Minimap, "ClearAllPoints")
         for _, p in ipairs(s.points) do setOn(Minimap, "SetPoint", p[1], p[2], p[3], p[4], p[5]) end
         setOn(Minimap, "SetSize", s.w, s.h)

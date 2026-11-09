@@ -286,6 +286,27 @@ Minimap:SetSize(120, 120)
 frames(1)
 check(NR.MoveScan._test.burst() == nil and atHome(), "a change before the settle frame is read back and undone")
 check(NR.MoveScan._test.saved() == nil, "...and the snapshot is released only then")
+-- The same, with the correction refused: the map goes invisible and click-off again while it
+-- waits, never shown and clickable away from home (Codex, PR #101).
+NR = fresh()
+untilBorrowed()
+for _ = 1, 10 do
+    frames(1)
+    local b = NR.MoveScan._test.burst()
+    if b and b.phase == "settle" then break end
+end
+check(Minimap:GetAlpha() == 1 and Minimap:IsMouseClickEnabled(), "(control) visible and clickable at frame 4")
+Minimap:SetSize(120, 120)
+local realSize2 = Minimap.SetSize
+Minimap.SetSize = function() end
+frames(1)
+check(NR.MoveScan.Pending() == "geometry", "a refused correction at the settle frame: pending")
+check(Minimap:GetAlpha() == 0 and Minimap:IsMouseClickEnabled() == false and Minimap:IsMouseWheelEnabled() == false,
+    "...the map invisible, clicks and wheel off while it waits")
+Minimap.SetSize = realSize2
+WoW.now = WoW.now + 3
+frames(1)
+check(NR.MoveScan.Pending() == nil and atHome(), "...retried: everything home")
 
 --------------------------------------------------------------------------------
 -- 8. Blizzard's tooltip: hidden after its producer during a burst and its settle frame only.
