@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.7.0, after v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.7.1, after v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -53,7 +53,15 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   `partybeacon`): the compass, stars and sonar; the beacon yields to a levelling guide's
   super-tracked quest (docs/FOREVER-PROBE.md), so a free-slot beacon on a party node is unseen.
 
-Next: the public API for minimap skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
+- v1.7.1: client build 70862 made `Minimap:UpdateMouseoverAtPoint` do nothing, on purpose
+  (Stanzilla/WoWUIBugs#894), so every sweep read nothing (measured, docs/FOREVER-PROBE.md). From
+  70862 NodeRadar stops sweeping and says why (#90, PR #92); what the toggle learned while blind is
+  dropped (#95, PR #96); the marker's login read waits out combat (#93, PR #94). Offline tested.
+
+Next: the minimap scan mode (#91: move `Minimap` under the resting cursor, opt-in; measured on
+70862 and planned, docs/PLAN.md "The minimap scan mode", Codex approved after four rounds; a last
+probe round before the code; Glass MiniMap's side is GlassMiniMap#56); the public API for minimap
+skins (#4); #78's round in game (`softmark`); #63's grey names in caves (unmeasured: no node in a cave yet). On hold: fishing pools (#25) and GatherMate2 (#30) for the
 live game, WoWInterface (#37).
 
 ## The UI contract (non-negotiable)

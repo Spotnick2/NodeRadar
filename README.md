@@ -10,6 +10,11 @@ on the map, green for herbs, gold for ore. Look up, go grab it, carry on.
 
 Made for **World of Warcraft: Forever**.
 
+> **Client build 70862 and later:** Blizzard no longer lets addons read the minimap's dots the way
+> NodeRadar did, on purpose. On these builds the radar can't find nodes: NodeRadar says so once in
+> chat, in `/nr` and in its Options, instead of silently doing nothing. Hovering a node still shows
+> the skill it needs. An opt-in minimap scan mode that works on these builds is on its way.
+
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
 ![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)
 
