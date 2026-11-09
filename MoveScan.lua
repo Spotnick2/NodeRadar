@@ -365,6 +365,7 @@ function MS.QuestAreas(on)
 end
 
 -- At login and after a loading screen: a scan cut short (a crash, a logout) put back.
+local lastQuestTry = -math.huge       -- declared before both its users (Codex, PR #102)
 function MS.QuestAreasBack()
     if burst or saved or not (NR.db and NR.db.questOff) then return end
     lastQuestTry = GetTime()
@@ -377,7 +378,6 @@ local function gatheringKey()
     return table.concat(parts, ",")
 end
 local lastGathering
-local lastQuestTry = -math.huge
 
 local function halt(why)
     if not halted then

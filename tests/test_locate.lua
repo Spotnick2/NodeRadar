@@ -350,8 +350,17 @@ NR = fresh({ moveScan = false, moveScanAsked = true, questOff = true })
 quest = { name = "Quest areas", filterID = 65536, active = false }
 table.insert(WoW.tracking, quest)
 WoW.refuseTrackingOn = true
+local tries, realSet = 0, C_Minimap.SetTracking
+C_Minimap.SetTracking = function(i, on) if on then tries = tries + 1 end return realSet(i, on) end
 WoW.fire("PLAYER_LOGIN")
 check(quest.active == false and NR.db.questOff == true, "(control) refused at login: still owed")
+local t1 = tries
+for _ = 1, 50 do frames(1) end                     -- 1 s, still refused
+check(tries == t1, "...not tried again before 2 s (" .. (tries - t1) .. " tries in 1 s)")
+WoW.now = WoW.now + 1.5
+frames(1)
+check(tries == t1 + 1, "...once after the interval")
+C_Minimap.SetTracking = realSet
 WoW.refuseTrackingOn = false
 WoW.now = WoW.now + 3
 frames(2)
