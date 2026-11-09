@@ -603,6 +603,24 @@ NR = fresh()
 check(NR.Locate._test.rebuild("Silverleaf", 100) and not NR.Locate._test.rebuild("Silverleaf", 110)
     and NR.Locate._test.rebuild("Silverleaf", 100 + NR.Locate.BACKOFF), "one rebuild a BACKOFF per name")
 
+-- A rise mid-search (in game, 2026-11-09): a node appearing beside the player after the
+-- windows there were read for a far one is searched for again, not left to the backoff.
+NR = fresh()
+NR.db.cooldown = 0
+WoW.blips = { { "Silverleaf", -60, -60 } }                -- far: its search starts
+bursts(1)
+check(NR.Locate.Busy(), "a rise mid-search: the far node's search under way")
+WoW.blips = { { "Silverleaf", -60, -60 }, { "Silverleaf", -8, -7 } } -- beside the player, where read empty
+local t11 = WoW.now
+local n11, w11 = spot(-8, -7)
+local close = bursts(40, function() return #near(n11, w11, 13) == 1 end)
+check(close and WoW.now - t11 < NR.Locate.BACKOFF, "...the one beside the player located before any backoff ("
+    .. ("%.0f s"):format(WoW.now - t11) .. ")")
+-- The old search's windows dropped, not kept beside the new ones: kept, they were read first
+-- (deepest first) and doubled the work (166 s here against 91, standing still).
+check(bursts(60, function() return #NR.Locate.Records() == 2 end) and WoW.now - t11 < 120,
+    "...and the far one too, the old windows not doubling the search (" .. ("%.0f s"):format(WoW.now - t11) .. ")")
+
 -- The search's states in the trace (#91: one-window bursts in game, the cause unlogged).
 local function traced(pat)
     for _, l in ipairs(NodeRadar.trace) do if l:find(pat) then return true end end

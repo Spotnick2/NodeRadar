@@ -204,6 +204,21 @@ function Locate.Presence(c, now)
         if n > m and not on and not (e and now - e.at < Locate.BACKOFF) then
             need[name], active[name] = true, true
             API.Trace(("locate: %s search starts (%d in range, %d recorded)"):format(name, n, m))
+        elseif n > m and on and n > (before[name] or 0) then
+            -- A rise mid-search: the new node can be where this search already read nothing
+            -- (in game a vein beside the player, after the windows there were read for a far
+            -- one: the search ran out 1 of 2 and backed off). Searched again from the top, its
+            -- old windows dropped (kept, they were read first, deepest first, and doubled it).
+            for i = #windows, 1, -1 do
+                local w = windows[i]
+                if not w.record and w.names[name] then
+                    local rest = {}
+                    for other in pairs(w.names) do if other ~= name then rest[other] = true end end
+                    if next(rest) then w.names = rest else table.remove(windows, i) end
+                end
+            end
+            need[name] = true
+            API.Trace(("locate: %s search starts again (%d in range, a rise)"):format(name, n))
         elseif n > m and not on then
             API.Trace(("locate: %s waits its backoff (%.0f s left)"):format(name, Locate.BACKOFF - (now - e.at)))
         end
