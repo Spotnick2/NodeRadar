@@ -88,6 +88,27 @@ function Learn.CleanNames()
     end
 end
 
+-- From 70862 the sweep read only under the real cursor (#90), so the toggle
+-- experiment compared garbage: a party member and a quest were learned as
+-- herbs (#95). What it learned from that build on is dropped, every locale,
+-- "not a node" too; a gathering's evidence and older entries stay. Returns
+-- how many went.
+function Learn.DropBlind()
+    local dropped = 0
+    for _, names in pairs(NR.db.learned) do
+        if type(names) == "table" then
+            local blind = {}
+            for name, e in pairs(names) do
+                local build = type(e) == "table" and e.source == "toggle" and tonumber(e.build)
+                if build and build >= NR.BLIND_FROM then blind[#blind + 1] = name end
+            end
+            for _, name in ipairs(blind) do names[name] = nil end
+            dropped = dropped + #blind
+        end
+    end
+    return dropped
+end
+
 function Learn.Forget(name)
     local m = mine()
     if m then m[name] = nil end

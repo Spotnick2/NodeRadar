@@ -12,6 +12,10 @@
   experimental marker checks its interact settings and may set one again. In a fight, the game
   blocked that and BugGrabber reported `ADDON_ACTION_BLOCKED`. The check now waits until the fight
   is over.
+- **Wrong nodes learned on 70862 are forgotten** (#95): before NodeRadar stopped looking, its
+  experiment that turns tracking off and on could learn a party member's name or a quest as a herb.
+  Everything that experiment learned from build 70862 on is dropped once at login. Nodes learned by
+  gathering stay.
 
 ## v1.7.0
 
