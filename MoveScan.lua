@@ -57,6 +57,7 @@ local lastDown = -math.huge
 local cursorX, cursorY, quietSince
 local looking, moving = false, false
 local followers = { at = -math.huge }
+local rapid = 0                       -- quick locate bursts in a row (LOCATE_RUN)
 local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
 local lookEnded                       -- when mouselook last ended (the trace)
 -- After mouselook or a click, the minimap's hover answers nothing until the mouse has moved
@@ -633,7 +634,11 @@ local function finish(b, reason)
     b.phase = "settle"
     -- A node still being located: the next burst soon (the plan's locate bursts, LOCATE_GAP
     -- apart), so its sonar and compass follow the sound by a second or two, not a few looks.
-    local soon = NR.Locate and NR.Locate.Busy() and MS.LOCATE_GAP or MS.Every()
+    -- At most LOCATE_RUN of them in a row (the owner: three new nodes blinked a long while);
+    -- then the usual cadence, still locating.
+    local busy = NR.Locate and NR.Locate.Busy()
+    rapid = busy and rapid + 1 or 0
+    local soon = (busy and rapid < MS.LOCATE_RUN) and MS.LOCATE_GAP or MS.Every()
     lastBurst, nextAt = GetTime(), GetTime() + soon
 end
 
@@ -842,6 +847,7 @@ end
 -- burst and while the budget allows another (a margin for its settle frame).
 MS.PLACEMENTS = 8
 MS.LOCATE_GAP = 0.3     -- seconds between bursts while Locate has windows open
+MS.LOCATE_RUN = 8       -- such quick bursts in a row at most (about 3 s of blinking)
 MS.MARGIN = 0.06
 local function nextPlacement(b, now)
     if b.placements >= MS.PLACEMENTS or now - b.t0 > MS.BUDGET - MS.MARGIN or not NR.Locate then return nil end
@@ -925,7 +931,7 @@ function MS.Tick(now)
     end
     looking, moving = look, move
     if burst then return stepBurst(burst, now) end
-    if not (NR.Locate and NR.Locate.Busy()) then
+    if not (NR.Locate and NR.Locate.Busy()) or rapid >= MS.LOCATE_RUN then
         nextAt = math.min(nextAt, lastBurst + MS.Every())   -- starting to move: the shorter wait
     end
     if now < nextAt then return end
@@ -1012,6 +1018,7 @@ MS._test = {
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
         cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
         prevX, prevY, settleUntil = nil, nil, -math.huge
+        rapid = 0
         followers = { at = -math.huge }
         MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
     end,

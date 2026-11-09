@@ -74,6 +74,26 @@ check(#NR.Locate.Records() == 1, "...one record for one node")
 local homeW = Minimap:GetWidth()
 check(homeW == 198 and Minimap:GetAlpha() == 1, "the map is home between bursts")
 
+-- Many new nodes: at most LOCATE_RUN quick bursts in a row, then the usual cadence (the owner:
+-- three new nodes blinked a long while).
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 }, { "Silverleaf", 50, 50 },
+              { "Silverleaf", -60, -40 }, { "Silverleaf", 70, -10 } }
+local starts, inBurst, t0 = {}, false, nil
+for _ = 1, 600 do
+    frames(1)
+    local b = NR.MoveScan._test.burst() ~= nil
+    if b and not inBurst then starts[#starts + 1] = WoW.now end
+    inBurst = b
+end
+local quick, maxRun = 0, 0
+for i = 2, #starts do
+    if starts[i] - starts[i - 1] < 1 then quick = quick + 1 else quick = 0 end
+    if quick > maxRun then maxRun = quick end
+end
+check(maxRun >= 3 and maxRun <= 8,
+    "quick locate bursts come in runs of at most LOCATE_RUN (" .. maxRun .. ")")
+
 --------------------------------------------------------------------------------
 -- 2. The consumers: the icons draw it, the compass points at it.
 --------------------------------------------------------------------------------
@@ -154,11 +174,12 @@ C_TooltipInfo.GetMinimapMouseover = function()            -- every window read e
     return realRead3()
 end
 WoW.blips = { { "Silverleaf", -40, 30 } }
-bursts(1)
+bursts(4)
 C_TooltipInfo.GetMinimapMouseover = realRead3
 local kept = false
 for _, r in ipairs(NR.Locate.Records()) do if r == stale then kept = true end end
-check(#NR.Locate.Records() == 1 and not kept, "the count falls to 1: the least recently confirmed record goes at once")
+check(#NR.Locate.Records() == 1 and not kept,
+    "the count falls to 1, the re-checks can't read: after 3 reads the least recently confirmed goes")
 
 --------------------------------------------------------------------------------
 -- 6. A name gone from range: its records go at the next presence read.
@@ -184,7 +205,7 @@ local gone1 = recordNear("Silverleaf", n1, w1, 12)
 local ghost = gone1 and gone1.frame
 check(ghost and ghost:IsShown(), "(control) both icons drawn")
 WoW.blips = { { "Silverleaf", -40, 30 } }            -- the first one gone, the second stays
-bursts(4, function() return #NR.Locate.Records() == 1 end)
+bursts(8, function() return #NR.Locate.Records() == 1 end)
 frames(2)
 check(#NR.Locate.Records() == 1 and not ghost:IsShown(), "the dropped record's icon is hidden, not left behind")
 

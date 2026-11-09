@@ -29,11 +29,13 @@ local Locate = {}
 NR.Locate = Locate
 
 Locate.GUARANTEE_PX = 9   -- the hit square 16 px less twice its 3.5 px offset
-Locate.FINE = 12          -- yards: a window this small is a node's place
+Locate.FINE = 16          -- yards: a window this small is a node's place (in game the leaves went
+                          -- to 7 yards: a level of reads for little; a vein took ~10 s to locate)
 Locate.MATCH = 20         -- yards: a located node this near a record of its name is that record
 Locate.RECHECK = 15       -- seconds between re-checks of a record at its spot
 Locate.GONE = 120         -- seconds a gathered node's spot is the same node
 Locate.TRIES = 2          -- unread windows are tried this many times
+Locate.OVERDUE = 3        -- presence reads with fewer in range before the surplus goes unchecked
 
 local records = {}        -- { name, kind, north, west, at, instance, misses = 0 }
 local windows = {}        -- { north, west, size, names = {[name] = true}, depth, tries, record }
@@ -136,20 +138,35 @@ function Locate.Presence(c, now)
         local m = ofName(name)
         if n > m and not searching(name) then need[name] = true end
         if n < m then
-            -- Fewer in range than recorded: the surplus goes now, least recently confirmed first
-            -- (the count is the most reliable read; a re-check that can't read kept a mined vein
-            -- as a ghost icon in game), the rest re-checked.
-            local mine = {}
-            for _, r in ipairs(records) do if r.name == name then mine[#mine + 1] = r end end
-            table.sort(mine, function(a, b) return a.at < b.at end)
-            for i = 1, m - n do drop(mine[i], "fewer in range than recorded") end
-            for i = m - n + 1, #mine do mine[i].due = true end
+            -- Fewer in range than recorded: each re-checked at its spot. Re-checks that can't
+            -- read kept a mined vein as a ghost icon in game, so after OVERDUE such presence
+            -- reads the count wins: the surplus goes, least recently confirmed first.
+            local mine, overdue = {}, false
+            for _, r in ipairs(records) do
+                if r.name == name then
+                    r.due, r.overdue = true, (r.overdue or 0) + 1
+                    mine[#mine + 1] = r
+                    if r.overdue >= Locate.OVERDUE then overdue = true end
+                end
+            end
+            if overdue then
+                table.sort(mine, function(a, b) return a.at < b.at end)
+                for i = 1, m - n do drop(mine[i], "fewer in range than recorded") end
+            end
         end
     end
     if next(need) then
         local okR, radius = pcall(C_Minimap.GetViewRadius)
         radius = okR and API.Num(radius)
-        if radius then split(pn, pw, 2 * radius, need, 1) end
+        -- Straight to the map's sixteenths: its quarters all answered in game (at that size a
+        -- node's hit square covers most of the tiny map), four reads for nothing a search.
+        if radius then
+            local before = #windows
+            split(pn, pw, 2 * radius, need, 1)
+            local quarters = {}
+            for i = before + 1, #windows do quarters[#quarters + 1] = table.remove(windows) end
+            for _, q in ipairs(quarters) do split(q.north, q.west, q.size, need, 2) end
+        end
     end
 end
 
@@ -178,8 +195,9 @@ function Locate.Next(pn, pw, radius, es)
                 w.record.checking = nil
                 if d2(w.record, pn, pw) > radius ^ 2 then drop(w.record, "out of range") end
             end
-        elseif not best or w.depth > best.depth then
-            best, bestI = w, i
+        elseif not best or w.depth > best.depth
+            or (w.depth == best.depth and d2(w, pn, pw) < d2(best, pn, pw)) then
+            best, bestI = w, i                             -- deepest, then nearest the player
         end
     end
     if not best then return nil end
@@ -196,7 +214,7 @@ end
 local function located(name, north, west, now)
     for _, r in ipairs(records) do
         if r.name == name and d2(r, north, west) <= Locate.MATCH ^ 2 then
-            r.at, r.due = now, nil
+            r.at, r.due, r.overdue = now, nil, nil
             return
         end
     end
@@ -232,7 +250,7 @@ function Locate.Read(p, c, pn, pw, now)
         local r = w.record
         r.checking = nil
         if c[r.name] then
-            r.at, r.due = now, nil
+            r.at, r.due, r.overdue = now, nil, nil
         else
             drop(r, "not at its spot")
         end
