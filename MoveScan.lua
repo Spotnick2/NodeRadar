@@ -58,6 +58,7 @@ local cursorX, cursorY, quietSince
 local looking, moving = false, false
 local followers = { at = -math.huge }
 local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
+local lookEnded                       -- when mouselook last ended (the trace)
 
 MS.stats = { bursts = 0, valid = 0, unread = 0 }
 
@@ -626,7 +627,10 @@ function MS.ReadNames()
     if API.IsSecret(data) or type(data) ~= "table" then return nil, "secret" end
     local lines = data.lines
     if API.IsSecret(lines) or type(lines) ~= "table" then return nil, "secret" end
-    if #lines == 0 then return nil, "no lines" end
+    if #lines == 0 then
+        MS.emptyType = data.type                         -- for the trace (#91: empty reads in game)
+        return nil, "no lines"
+    end
     local names = {}
     for _, line in ipairs(lines) do
         local t = type(line) == "table" and line.leftText or nil
@@ -674,7 +678,20 @@ local function read(b, now)
     if not names then
         MS.stats.unread = MS.stats.unread + 1
         MS.lastUnread = why
-        API.Trace("scan: unread (" .. tostring(why) .. ")")
+        if why == "no lines" then
+            -- What differs about an empty read (in game, 4 in a row standing still): the map's
+            -- size and place against the cursor, the hover, the frames since placement.
+            local x, y = cursor()
+            local cx, cy = Minimap:GetCenter()
+            cx, cy = API.Num(cx), API.Num(cy)
+            local w = API.Num(ask(Minimap, "GetWidth"))
+            API.Trace(("scan: unread (no lines): type %s, frame +%d, %d rereads, size %s/%s, cursor %s from the centre, mouse over %s, mouselook ended %s s ago"):format(
+                tostring(MS.emptyType), b.frame - b.placedAt, b.rereads or 0, w and ("%.2f"):format(w) or "?",
+                ("%.2f"):format(b.units), (x and cx) and ("%.2f,%.2f"):format(x / b.es - cx, y / b.es - cy) or "?",
+                tostring(ask(Minimap, "IsMouseOver")), lookEnded and ("%.1f"):format(now - lookEnded) or "never"))
+        else
+            API.Trace("scan: unread (" .. tostring(why) .. ")")
+        end
         return true
     end
     MS.stats.valid = MS.stats.valid + 1
@@ -742,6 +759,7 @@ function MS.Tick(now)
     local look = mouselooking()
     local speed = API.Speed()
     local move = speed ~= nil and speed > 0
+    if looking and not look then lookEnded = now end
     if (looking and not look) or (moving and not move) then
         nextAt = math.min(nextAt, math.max(now, lastBurst + MS.SOONER))
     end

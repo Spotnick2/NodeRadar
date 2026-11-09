@@ -150,6 +150,17 @@ untilBorrowed(400)
 runBurst()
 C_TooltipInfo.GetMinimapMouseover = realRead2
 check(NR.MoveScan.stats.valid == valid0 + 1 and atHome(), "an empty read, then a good one the next frame: valid")
+empties = 5
+C_TooltipInfo.GetMinimapMouseover = function()
+    if empties > 0 then empties = empties - 1; return { type = 21, lines = {} } end
+    return realRead2()
+end
+WoW.now = WoW.now + 10
+untilBorrowed(400)
+runBurst()
+C_TooltipInfo.GetMinimapMouseover = realRead2
+SlashCmdList.NODERADAR("scan log")
+check(chatHas("unread %(no lines%): type 21, frame %+4, 2 rereads, size"), "an empty read's details in /nr scan log")
 
 -- MINIMAP_UPDATE_TRACKING with nothing changed (sent while mining on 70862) keeps the counts:
 -- the next new node still alerts. A real change starts afresh.
@@ -194,13 +205,13 @@ check(#WoW.sounds == sounds + 1, "a node gathered, the next one of its name read
 -- 3. Unread is never absence: no observation at all.
 --------------------------------------------------------------------------------
 
-local n = #observed
+local n, unread0 = #observed, NR.MoveScan.stats.unread
 WoW.mouseoverThrows = true
 WoW.now = WoW.now + 10
 check(untilBorrowed(400), "a burst with a failing read")
 runBurst()
 WoW.mouseoverThrows = false
-check(#observed == n and NR.MoveScan.stats.unread == 1, "an unread burst observes nothing (not an empty count)")
+check(#observed == n and NR.MoveScan.stats.unread == unread0 + 1, "an unread burst observes nothing (not an empty count)")
 check(atHome(), "...and still goes home")
 
 --------------------------------------------------------------------------------
