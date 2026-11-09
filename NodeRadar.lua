@@ -415,25 +415,26 @@ local function known()
     for _, line in ipairs(list) do API.Say(line) end
 end
 
+-- "||" is the client's escape for a plain "|" in chat (#98: a single one starts an escape).
 local function help()
     API.Say("/nr: radar on or off. /nr options: the Options page")
-    API.Say("/nr sound | ring | chat | ping | learn: toggle the sound, the ring, a chat line, Blizzard's ping "
+    API.Say("/nr sound || ring || chat || ping || learn: toggle the sound, the ring, a chat line, Blizzard's ping "
         .. "(solo only), learning by turning tracking off and on")
-    API.Say("/nr sound ping | sonarping | radar | sonar | radarblip | deepsea | bell | notify | hud: which sound.")
+    API.Say("/nr sound ping || sonarping || radar || sonar || radarblip || deepsea || bell || notify || hud: which sound.")
     API.Say("/nr skill: alert only for nodes your skill can gather (on by default)")
     API.Say("/nr icons: the item's icon over each node's dot on the minimap, or Blizzard's dots (the default)")
     API.Say("/nr tooltip: the skill a node needs in the minimap's tooltip, coloured (on by default)")
-    API.Say("/nr iconstyle auto | plain | glass | bronze | yellow: the icon's frame (auto: glass with Glass MiniMap, "
-        .. "else bronze). /nr iconsize small | medium | large")
+    API.Say("/nr iconstyle auto || plain || glass || bronze || yellow: the icon's frame (auto: glass with Glass MiniMap, "
+        .. "else bronze). /nr iconsize small || medium || large")
     API.Say("/nr compass: experimental, a compass under your character pointing at the nearest node (off by default). "
-        .. "/nr compasssize small | medium | large. Hold Alt and drag it to move it; /nr compass lock | unlock | reset")
+        .. "/nr compasssize small || medium || large. Hold Alt and drag it to move it; /nr compass lock || unlock || reset")
     API.Say("/nr marker: experimental, a distant beacon with approximate height, and exact nearby stars (off by "
         .. "default; your map pin or tracked objective takes priority)")
     API.Say("/nr share: send the nodes you find to your group. /nr party: show your group's nodes on your "
         .. "minimap (both off by default; both need NodeRadar on the other character)")
-    API.Say("/nr ignore <node or item> | /nr track <node or item>: skip or follow a herb or ore (a name or an "
+    API.Say("/nr ignore <node or item> || /nr track <node or item>: skip or follow a herb or ore (a name or an "
         .. "item ID); /nr ignore alone lists the skipped. /nr smart: the list follows your skill")
-    API.Say("/nr snooze [15 | 30 | 60 | session]: put the compass's node aside for a while (the key binding's "
+    API.Say("/nr snooze [15 || 30 || 60 || session]: put the compass's node aside for a while (the key binding's "
         .. "length, set here too); /nr snooze clear. A reload clears them")
     API.Say("/nr scan: the minimap scan, client build 70862 and later (off by default): NodeRadar briefly moves "
         .. "your minimap, invisible, under your resting mouse to see the nodes. /nr scan <1-10>: seconds between "

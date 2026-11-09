@@ -170,6 +170,7 @@ SlashCmdList.NODERADAR("status")
 check(chatHas("only nodes you can gather"), "/nr status shows it")
 SlashCmdList.NODERADAR("help")
 check(chatHas("/nr skill"), "/nr help lists it")
+check(chatHas("/nr sound || ring || chat"), "/nr help's separators doubled, shown as a plain \"|\" (#98)")
 
 eq(next(NR.failures), nil, "no failure recorded: " .. tostring(next(NR.failures)))
 checkMethods({})

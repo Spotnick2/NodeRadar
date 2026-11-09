@@ -271,8 +271,8 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   (`/fp steps nr <name>`, e.g. `nodots`, `snooze`).
   Its lines go to the `/fp` console, never to chat. Its tests run locally only (CI skips them).
 - `tests/`: `wow_stubs.lua` (WowTestKit's core, then this addon's own client APIs and a minimap
-  whose mouseover reads blips), `harness.lua` (the loaders; `checkMethods`, `done` wrapping the
-  kit's), `test_*.lua` (`test_methods`: every widget method the addon calls exists on the pinned
+  whose mouseover reads blips), `harness.lua` (the loaders; `checkMethods`; the kit's `done`
+  unwrapped since #98), `test_*.lua` (`test_methods`: every widget method the addon calls exists on the pinned
   build), `kit.pin` and the kit's bootstrap copies, `run.ps1`.
 
 ## Forever basics (shared with the siblings)

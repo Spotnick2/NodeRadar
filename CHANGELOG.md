@@ -14,6 +14,9 @@
   later. Thanks to
   **ThPi** ([ThorbenP](https://github.com/ThorbenP) on GitHub), who suggested it in a comment on
   [NodeRadar's CurseForge page](https://www.curseforge.com/wow/addons/node-radar).
+- **`/nr` help shows its separators again** (#98): lines such as `/nr sound | ring | chat` printed a
+  bare `|`, which the game reads as the start of a formatting code, so it could swallow the character
+  after it.
 
 ## v1.7.1
 
