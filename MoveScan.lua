@@ -59,6 +59,9 @@ local looking, moving = false, false
 local followers = { at = -math.huge }
 local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
 local lookEnded                       -- when mouselook last ended (the trace)
+-- After mouselook or a click, the minimap's hover answers nothing until the mouse has moved
+-- (in game: empty reads 0.5 s after mouselook, and four in a row standing still after a click).
+local movedSince = true
 
 MS.stats = { bursts = 0, valid = 0, unread = 0 }
 
@@ -496,6 +499,7 @@ function MS.Refusal(now)
     if mouselooking() then return "mouselook" end
     if buttonDown() then return "a mouse button is down" end
     if now - lastDown < MS.RELEASE then return "a mouse button was just released" end
+    if not movedSince then return "the mouse hasn't moved since a click or mouselook" end
     if not overWorld(topFocus()) then return "the cursor is not over the world" end
     if not (quietSince and now - quietSince >= MS.QUIET) then return "the cursor is moving" end
     local x, y = cursor()
@@ -750,16 +754,18 @@ function MS.Tick(now)
     if not (MS.On() or burst) then return end
     local x, y = cursor()
     if x and y then
+        if cursorX and (x ~= cursorX or y ~= cursorY) then movedSince = true end
         if not cursorX or math.abs(x - cursorX) > MS.STILL_PX or math.abs(y - cursorY) > MS.STILL_PX then
             quietSince, cursorX, cursorY = now, x, y
         end
     end
-    if buttonDown() then lastDown = now end
+    if buttonDown() then lastDown, movedSince = now, false end
     -- The end of mouselook or a stop after moving asks for a burst sooner.
     local look = mouselooking()
     local speed = API.Speed()
     local move = speed ~= nil and speed > 0
     if looking and not look then lookEnded = now end
+    if look then movedSince = false end
     if (looking and not look) or (moving and not move) then
         nextAt = math.min(nextAt, math.max(now, lastBurst + MS.SOONER))
     end
@@ -800,7 +806,7 @@ events:SetScript("OnEvent", function(_, event)
     elseif event == "PLAYER_REGEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         if pending then MS.Retry() end
     elseif event == "GLOBAL_MOUSE_DOWN" then
-        lastDown = GetTime()
+        lastDown, movedSince = GetTime(), false
         if burst then MS.Stop("a mouse button") end
     else
         -- Combat, a loading screen, logout: home now (Minimap stays unprotected, so this is
@@ -830,7 +836,7 @@ MS._test = {
     reset = function()
         gen, burst, saved, pending, suppress, halted, glassOwed, glassRefusals = 0, nil, nil, nil, false, nil, false, 0
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
-        cursorX, cursorY, quietSince, looking, moving = nil, nil, nil, false, false
+        cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
         followers = { at = -math.huge }
         MS.stats = { bursts = 0, valid = 0, unread = 0 }
     end,

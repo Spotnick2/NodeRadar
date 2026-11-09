@@ -271,9 +271,22 @@ frames(5)
 WoW.buttonDown = true
 frames(5)
 WoW.buttonDown = false
+WoW.cursor = { 301, 300 }                       -- a pixel's nudge: the hover answers again
 frames(12)
 check(NR.MoveScan.stats.bursts == 0, "0.24 s after a mouse button came up: no burst yet")
 check(untilBorrowed(10), "...from 0.3 s, one comes")
+runBurst()
+-- After a click or mouselook the minimap's hover answers nothing until the mouse moves (in
+-- game: empty reads): no burst until it has.
+NR = fresh()
+frames(5)
+WoW.mouselook = true
+frames(10)
+WoW.mouselook = false
+frames(100)
+check(NR.MoveScan.stats.bursts == 0, "after mouselook, the mouse not moved: no burst (it would read nothing)")
+WoW.cursor = { 302, 300 }
+check(untilBorrowed(30), "...the mouse nudged and resting: one comes")
 runBurst()
 -- The cursor must rest: moving every frame, nothing.
 NR = fresh()
