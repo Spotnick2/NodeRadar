@@ -224,6 +224,44 @@ bursts(12, function() return #NR.Locate.Records() > 0 end)
 check(#NR.Locate.Records() == 1 and sonars == 0, "an unwanted node is located without a sonar")
 
 --------------------------------------------------------------------------------
+-- 9. The quest areas (the owner's screenshots: their outline across the screen at a locate
+-- window's size): their tracking off during each borrow, back on after, back at login if a
+-- scan was cut short; our own toggle doesn't stop the burst.
+--------------------------------------------------------------------------------
+
+NR = fresh()
+local quest = { name = "Quest areas", filterID = 65536, active = true }
+table.insert(WoW.tracking, quest)
+WoW.blips = { { "Silverleaf", 20, -15 } }
+local offDuring, stopped = false, false
+for _ = 1, 400 do
+    frames(1)
+    local b = NR.MoveScan._test.burst()
+    if b then
+        if not quest.active then offDuring = true end
+        if b.reason and b.reason ~= "done" then stopped = true end
+    end
+    if NR.MoveScan.stats.windows > 0 and not b then break end
+end
+check(offDuring, "the quest areas' tracking is off during a burst")
+check(quest.active == true and NR.db.questOff == nil, "...and back on after it, nothing owed")
+check(not stopped, "...our own toggle doesn't stop the burst")
+check(NR.MoveScan.stats.windows > 0, "...which went on to its locate windows")
+-- A scan cut short (the game closed mid-burst): back on at the next login.
+NR = fresh({ moveScan = true, moveScanAsked = true, questOff = true })
+quest = { name = "Quest areas", filterID = 65536, active = false }
+table.insert(WoW.tracking, quest)
+WoW.fire("PLAYER_LOGIN")
+check(quest.active == true and NR.db.questOff == nil, "a cut-short scan's quest areas are back on at login")
+-- Off before (by the player, or never on): left alone.
+NR = fresh()
+quest = { name = "Quest areas", filterID = 65536, active = false }
+table.insert(WoW.tracking, quest)
+WoW.blips = { { "Silverleaf", 20, -15 } }
+bursts(3)
+check(quest.active == false and NR.db.questOff == nil, "quest areas already off: left off, nothing owed")
+
+--------------------------------------------------------------------------------
 -- 7. The trace saved at logout (or a reload) while the scan is on, the session before kept.
 --------------------------------------------------------------------------------
 

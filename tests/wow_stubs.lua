@@ -861,6 +861,12 @@ C_Minimap = {
     -- WoW.viewRadius[zoom] when given (#27), else 150 yards.
     GetViewRadius = function() return WoW.viewRadius and WoW.viewRadius[Minimap._zoom or 0] or 150 end,
     IsRotateMinimapIgnored = function() return WoW.rotateIgnored == true end,
+    -- A tracking's filter (70862's dump; #91 turns the quest areas, QuestPOIs = 65536, off
+    -- during a scan): { filterID } from the entry's own filterID.
+    GetTrackingFilter = function(i)
+        local t = WoW.tracking[i]
+        if t then return { filterID = t.filterID, spellID = t.spellID } end
+    end,
     -- WoW.refuseTrackingOn / Off: turning a tracking on / off does nothing (a cast the
     -- client refuses). Either way MINIMAP_UPDATE_TRACKING fires.
     SetTracking = function(i, on)

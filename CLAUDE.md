@@ -70,8 +70,11 @@ live game, WoWInterface (#37).
   rescale, or call `Hide()` on `Minimap`.** The cluster is an Edit Mode system and a taint minefield
   (porting guide, "Edit Mode systems"). **The one exception is the minimap scan** (#91, `MoveScan.lua`,
   opt-in, from build 70862): it may temporarily change an unprotected `Minimap`'s anchors, width and
-  height, own alpha, icon scale, screen-clamp flag, mouse-click and mouse-wheel states, and give
-  Blizzard's player coordinates and LFG eye alpha 0 and mouse off; never its mouse motion, strata,
+  height, own alpha, icon scale, screen-clamp flag, mouse-click and mouse-wheel states, give
+  Blizzard's player coordinates and LFG eye alpha 0 and mouse off, and turn the minimap's quest-area
+  tracking (`QuestPOIs`, always on in Blizzard's menu) off for the borrow: the one tracking it touches,
+  owed back in `NodeRadarDB.questOff` until it reads on (the owner, 2026-11-09: the areas ignore the
+  map's alpha and flashed across the screen at a locate window's size); never its mouse motion, strata,
   level, parent or scripts, nor another addon's frames. Only out of combat, Edit Mode, loading and the
   gamepad UI, with the cursor resting over the world. Everything saved first and restored on every
   exit, geometry before visibility and input; a restore that fails stays pending (the map invisible

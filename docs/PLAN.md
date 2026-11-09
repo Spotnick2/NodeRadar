@@ -2260,7 +2260,11 @@ rounds 1 to 3 on 2026-11-08, each "approve with changes", all taken below; round
 > strata, level, parent, scripts, or another addon's frames. Two of Blizzard's own frames anchored
 > to `Minimap`, its player coordinates (`MinimapCluster.MinimapContainer.PlayerCoords`) and the LFG
 > eye (`QueueStatusButton`), get alpha 0 and mouse off for the borrow, saved and restored with the
-> minimap's own visibility and input (the owner, 2026-11-09).
+> minimap's own visibility and input (the owner, 2026-11-09). The minimap's quest-area tracking
+> (`Enum.MinimapTrackingFilter.QuestPOIs`, always on in Blizzard's menu) is turned off for the borrow
+> and back on after, the only tracking the scan touches: the areas ignore the map's alpha and mask
+> and flashed across the screen at a locate window's size (the owner, 2026-11-09). Owed back in
+> `NodeRadarDB.questOff`, put back at login and after a loading screen if a scan was cut short.
 >
 > A scan starts only outside combat, Edit Mode, loading screens and the gamepad UI, with the
 > cursor quiet over open world and every admission gate met. Each burst has a placement and a time

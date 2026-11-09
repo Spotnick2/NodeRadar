@@ -316,6 +316,66 @@ end
 -- The icon scale moves nothing: at once. Every call in its own pcall. Idempotent.
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
+-- The minimap's quest-area tracking (Enum.MinimapTrackingFilter.QuestPOIs): off during a borrow.
+--------------------------------------------------------------------------------
+
+local QUEST_POIS = 65536
+do
+    local enum = rg("Enum")
+    local f = type(enum) == "table" and rawget(enum, "MinimapTrackingFilter")
+    if type(f) == "table" and API.Num(rawget(f, "QuestPOIs")) then QUEST_POIS = f.QuestPOIs end
+end
+
+local function questIndex()
+    local get = C_Minimap.GetTrackingFilter
+    if type(get) ~= "function" then return nil end
+    local okN, n = pcall(C_Minimap.GetNumTrackingTypes)
+    n = okN and API.Num(n) or 0
+    for i = 1, n do
+        local ok, filter = pcall(get, i)
+        if ok and type(filter) == "table" and not API.IsSecret(filter) and filter.filterID == QUEST_POIS then return i end
+    end
+end
+
+local function questActive(i)
+    local ok, info = pcall(C_Minimap.GetTrackingInfo, i)
+    if not ok or type(info) ~= "table" or API.IsSecret(info) then return nil end
+    return API.Yes(info.active)
+end
+
+-- false: turn them off for a borrow, if on; returns whether we did (and owe them back).
+-- true: back on; returns whether they read on.
+function MS.QuestAreas(on)
+    local i = questIndex()
+    if not i then return on end
+    if not on then
+        if questActive(i) ~= true then return false end
+        if NR.db then NR.db.questOff = true end           -- before: a crash mid-scan still puts it back
+        pcall(C_Minimap.SetTracking, i, false)
+        return true
+    end
+    pcall(C_Minimap.SetTracking, i, true)
+    if questActive(i) == true then
+        if NR.db then NR.db.questOff = nil end
+        return true
+    end
+    return false
+end
+
+-- At login and after a loading screen: a scan cut short (a crash, a logout) put back.
+function MS.QuestAreasBack()
+    if burst or not (NR.db and NR.db.questOff) then return end
+    if MS.QuestAreas(true) then API.Trace("scan: the quest areas a cut-short scan turned off are back on") end
+end
+
+local function gatheringKey()
+    local parts = {}
+    for _, t in ipairs(NR.Learn.Trackings()) do parts[#parts + 1] = t.spellID .. (t.active and "+" or "-") end
+    return table.concat(parts, ",")
+end
+local lastGathering
+
 local function halt(why)
     if not halted then
         halted = why
@@ -347,6 +407,7 @@ local function restore(keep)
     local s = saved
     if not s then return true end
     if s.scaled and iconScale(lastScale or 1) then s.scaled = false end   -- kept until the setter works
+    if s.quest and MS.QuestAreas(true) then s.quest = nil end         -- likewise the quest areas
     if not geometryHome(s) then
         -- Invisible and inert again first: a correction after the visibility came back (the
         -- settle frame's readback) must never leave a shown, clickable map away from home
@@ -385,6 +446,11 @@ local function restore(keep)
     if s.scaled then
         pending = "icon scale"
         halt("the minimap's dots couldn't be put back to their size yet; retried until they can")
+        return false
+    end
+    if s.quest then
+        pending = "quest areas"
+        halt("the minimap's quest areas couldn't be turned back on yet; retried until they can")
         return false
     end
     pending = nil
@@ -617,6 +683,11 @@ local function borrow(now)
     setOn(Minimap, "EnableMouseWheel", false)
     setOn(Minimap, "SetClampedToScreen", false)
     s.scaled = iconScale(0.01)
+    -- The quest areas the minimap draws ignore its alpha and its mask: at a locate window's size
+    -- they flash across the screen (the owner's screenshots). Their tracking off for the borrow,
+    -- the only tracking the scan touches (the owner, 2026-11-09), saved first so a scan cut short
+    -- still puts it back (at login, after a loading screen).
+    s.quest = MS.QuestAreas(false)
     setOn(Minimap, "ClearAllPoints")
     setOn(Minimap, "SetPoint", "CENTER", UIParent, "BOTTOMLEFT", MS.OFF, MS.OFF)
     setOn(Minimap, "SetSize", b.cur.units, b.cur.units)
@@ -889,6 +960,8 @@ API.RegisterEvents(events, { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "P
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         MS.HookTooltip()
+        lastGathering = gatheringKey()
+        MS.QuestAreasBack()
     elseif event == "PLAYER_LOGOUT" then
         -- The session's trace, saved (a reload too) while the scan is on: the next look at it
         -- needs no paste. The session before it is kept as scanLogPrevious.
@@ -900,6 +973,12 @@ events:SetScript("OnEvent", function(_, event)
         end
     elseif event == "PLAYER_REGEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         if pending then MS.Retry() end
+        if event == "LOADING_SCREEN_DISABLED" then MS.QuestAreasBack() end
+    elseif event == "MINIMAP_UPDATE_TRACKING" then
+        -- Our own quest-area toggle isn't a reason to stop; a gathering tracking change is.
+        local key = gatheringKey()
+        if key ~= lastGathering then MS.Stop(event) end
+        lastGathering = key
     elseif event == "GLOBAL_MOUSE_DOWN" then
         lastDown, movedSince = GetTime(), false
         if burst then MS.Stop("a mouse button") end
