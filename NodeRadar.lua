@@ -189,10 +189,13 @@ end
 
 -- What a minimap scan saw (#91), on completion: presence, the counts of each node name in range.
 -- Positions come with the locate step (later); until then the alert is the sound and the chat line.
+-- No stale reset: the scan reads only while the mouse rests over the world, so long gaps are
+-- normal (the owner's run: 15 looks in 4 minutes) and a silent baseline after each one never
+-- alerted. A zone, tracking or zoom change and turning the scan on still start afresh.
 function NR.Observe(kind, obs, now)
     if kind ~= "presence" or not (NR.db and NR.db.enabled) then return end
     Track.Follow()
-    Alert.Counts(obs.counts, now, nil, nil, NR.MoveScan.Every())
+    Alert.Counts(obs.counts, now, nil, nil, math.huge)
 end
 
 function NR.VersionText()
@@ -348,9 +351,14 @@ local function status()
     if API.Blind() then                            -- #90, #91
         if db.moveScan then
             local why = NR.MoveScan.lastRefusal
+            local MS = NR.MoveScan
             API.Say(("the minimap scan is on: every %s s moving; %d looks, %d read%s"):format(tostring(db.scanEvery),
-                NR.MoveScan.stats.bursts, NR.MoveScan.stats.valid,
-                (why and why ~= "off") and ("; waiting: " .. why) or ""))
+                MS.stats.bursts, MS.stats.valid, (why and why ~= "off") and ("; waiting: " .. why) or ""))
+            local seen = {}
+            for name, n in pairs(MS.lastCounts or {}) do seen[#seen + 1] = n > 1 and (name .. " x" .. n) or name end
+            table.sort(seen)
+            API.Say(("last read: %s; last unread: %s"):format(MS.lastCounts and (#seen > 0 and table.concat(seen, ", ")
+                or "no node") or "none yet", tostring(MS.lastUnread or "none")))
         else
             API.Say(NR.BLIND_TEXT)
         end

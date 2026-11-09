@@ -109,6 +109,17 @@ runBurst()
 check(#WoW.sounds == sounds + 1, "a second Silverleaf in range: the sound")
 check(observed[#observed].counts.Silverleaf == 2, "...presence counts each node (multiplicity kept)")
 
+-- A long gap between reads (the mouse busy for a minute) keeps the counts: a node that
+-- arrived meanwhile still alerts (the owner's run: every read was a silent baseline).
+sounds = #WoW.sounds
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -30, 25 }, { "Silverleaf", 40, 40 } }
+WoW.now = WoW.now + 60
+check(untilBorrowed(400), "a burst a minute later")
+runBurst()
+check(#WoW.sounds == sounds + 1, "...a third Silverleaf in range: the sound, the gap notwithstanding")
+SlashCmdList.NODERADAR("status")
+check(chatHas("last read: Silverleaf x3"), "/nr status shows the last read's counts")
+
 --------------------------------------------------------------------------------
 -- 3. Unread is never absence: no observation at all.
 --------------------------------------------------------------------------------

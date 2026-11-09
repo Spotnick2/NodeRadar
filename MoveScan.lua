@@ -664,6 +664,7 @@ local function read(b, now)
         if NR.Learn.Kind(name) then counts[name] = (counts[name] or 0) + 1 end
     end
     b.observation = { counts = counts, at = now, gen = b.gen }
+    MS.lastCounts = counts                               -- /nr status
 end
 
 local function stepBurst(b, now)
