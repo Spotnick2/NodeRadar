@@ -6938,6 +6938,1448 @@ Probe:Steps("partybeacon", {
 guardRound(BEACONKEY, bpending, brestore)
 
 --------------------------------------------------------------------------------
+-- health (/fp steps nr health): which gate stops the radar. One read of every gate
+-- NR.Step checks, the skill, the failures, a fresh sweep naming every blip, then NR.Step
+-- itself. Saved lines: NodeRadarProbeDB.health.lines, each prefixed "health:".
+--------------------------------------------------------------------------------
+do
+local function hlog(text)
+    if type(NodeRadarProbeDB) ~= "table" then say("health: " .. text); return end
+    local d = NodeRadarProbeDB.health
+    if type(d) ~= "table" then d = {}; NodeRadarProbeDB.health = d end
+    d.lines = d.lines or {}
+    d.lines[#d.lines + 1] = ("%.2f health: %s"):format(GetTime(), text)
+    while #d.lines > 400 do table.remove(d.lines, 1) end
+    say("health: " .. text)
+end
+-- One read, never throwing: "name = value", or "name = READ FAILED err".
+local function rd(label, f, ...)
+    local ok, a, b = pcall(f, ...)
+    if not ok then return ("%s = READ FAILED %s"):format(label, tostring(a)) end
+    if b ~= nil then return ("%s = %s, %s"):format(label, str(a), str(b)) end
+    return ("%s = %s"):format(label, str(a))
+end
+local function section(title, f)
+    local ok, err = pcall(f)
+    if not ok then hlog(title .. ": SECTION FAILED " .. tostring(err)) end
+end
+local function raw(s)
+    if type(s) ~= "string" then return str(s) end
+    if secret(s) then return "<secret>" end
+    return (s:gsub("|", "||"))
+end
+
+local function healthRun()
+    local n = nr()
+    if not n then hlog("NodeRadar isn't loaded"); return "NodeRadar isn't loaded" end
+    local db, Learn, API, Alert, Scan = n.db, n.Learn, n.API, n.Alert, n.Scan
+    section("build", function()
+        local v, b, d, toc = GetBuildInfo()
+        hlog(("build %s (%s) %s, interface %s; NodeRadar %s"):format(str(v), str(b), str(d), str(toc),
+            str(n.VersionText and select(2, pcall(n.VersionText)))))
+    end)
+    section("gates", function()
+        hlog(rd("db.enabled", function() return db.enabled end))
+        hlog(rd("Learn.Busy()", Learn.Busy))
+        hlog(rd("Learn.loading", function() return Learn.loading end))
+        hlog(rd("API.Gamepad()", API.Gamepad))
+        hlog(rd("Minimap:IsVisible()", Minimap.IsVisible, Minimap))
+        hlog(rd("Learn.AnyOn()", Learn.AnyOn))
+        local ok, list = pcall(Learn.Trackings)
+        if not ok then hlog("Learn.Trackings READ FAILED " .. tostring(list))
+        else
+            hlog("Learn.Trackings count " .. #list)
+            for _, t in ipairs(list) do
+                hlog(("  tracking spell %s kind %s active %s index %s"):format(str(t.spellID), str(t.kind), str(t.active), str(t.index)))
+            end
+        end
+    end)
+    section("options", function()
+        hlog(rd("Alert.Quiet()", Alert.Quiet))
+        hlog(rd("API.OnTaxi()", API.OnTaxi))
+        hlog(rd("API.InCombat()", API.InCombat))
+        for _, k in ipairs({ "flightMute", "skillOnly", "sound", "soundKind", "icons", "compass", "cooldown", "radar", "chat", "interval" }) do
+            hlog("db." .. k .. " = " .. str(db[k]))
+        end
+    end)
+    section("skill", function()
+        local line = Alert.SKILL_LINES and Alert.SKILL_LINES.herbs
+        hlog("herbalism line " .. str(line))
+        hlog(rd("API.Skill(herbs) effective", API.Skill, line))
+        hlog(rd("API.Skill(herbs) base", API.Skill, line, true))
+    end)
+    section("failures", function()
+        local c = 0
+        for key, f in pairs(n.failures or {}) do
+            c = c + 1
+            hlog(("failure %s: %s (x%s)"):format(str(key), str(f.err), str(f.count)))
+        end
+        hlog("failures: " .. c)
+    end)
+    section("sweep", function()
+        local ok, result, why = pcall(Scan.Sweep, function() return true end)
+        if not ok then hlog("sweep THREW " .. tostring(result)); return end
+        if not result then hlog("sweep returned nil: " .. str(why)); return end
+        hlog(("sweep: %d blips, %d names"):format(#result.blips, (function() local c = 0 for _ in pairs(result.byName) do c = c + 1 end return c end)()))
+        for name, list in pairs(result.byName) do
+            local nm = raw(name)
+            local len = type(name) == "string" and not secret(name) and #name or "?"
+            local kind = select(2, pcall(Learn.Kind, name))
+            local gath = select(2, pcall(Alert.Gatherable, name))
+            local want = select(2, pcall(Alert.Wanted, name))
+            local ign = select(2, pcall(Alert.Ignored, name))
+            for _, b in ipairs(list) do
+                hlog(("  blip [%s] bytes %s kind %s gatherable %s wanted %s ignored %s at %s,%s"):format(nm, str(len), str(kind),
+                    str(gath), str(want), str(ign), str(b.x), str(b.y)))
+            end
+        end
+    end)
+    section("records", function()
+        local recs = n.Icons and n.Icons.Records and n.Icons.Records()
+        hlog("icons records: " .. (type(recs) == "table" and #recs or str(recs)))
+        local c = n.Compass and n.Compass.Chosen and n.Compass.Chosen()
+        hlog("Compass.Chosen: " .. (type(c) == "table" and str(c.name) or str(c)))
+    end)
+    local summary = "NR.Step not run"
+    section("step", function()
+        local ok, res = xpcall(function() return n.Step(GetTime()) end, function(e) return tostring(e) .. "\n" .. tostring(debugstack()) end)
+        if ok then
+            summary = res and ("NR.Step returned a result (%d blips)"):format(type(res) == "table" and res.blips and #res.blips or 0)
+                or "NR.Step returned nothing (a gate stopped it or the sweep failed)"
+        else
+            summary = "NR.Step ERROR " .. res
+        end
+        hlog(summary)
+    end)
+    return summary
+end
+
+
+-- Steps A and B: does the soft cursor read at a point while the real cursor is elsewhere?
+-- A step that waits 3 s itself (the mouse must stay where the owner put it), then measures.
+local HOLD = 3
+local hold = {}
+local function holdFor(key, measure, ready, notReady)
+    return function()
+        local now = GetTime()
+        if hold.key ~= key then hold = { key = key, t0 = now } end
+        local left = HOLD - (now - hold.t0)
+        if left > 0 then return false, ("checking in %d s: keep the mouse still"):format(math.ceil(left)) end
+        if not hold.done and ready and not ready() then
+            if not hold.warned then hold.warned = true; hlog(key .. ": waiting: " .. notReady) end
+            return false, notReady
+        end
+        if not hold.done then
+            hold.done = true
+            local ok, a = pcall(measure)
+            if not ok then hlog(key .. ": MEASURE FAILED " .. tostring(a)); hold.result = "failed: " .. tostring(a)
+            else hold.result = a end
+        end
+        if hold.pending then return false, "finishing" end
+        local r = hold.result
+        hold = {}
+        return true, r
+    end
+end
+local softOff = function() setSoft(false) end
+-- Soft cursor ON, a point, a read; the soft cursor is off again before this returns.
+local function softRead(label, px, py, soft, pre)
+    local line = {}
+    if soft then
+        local ok, err = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
+        line[#line + 1] = "SetUsingSoftCursor(true) " .. (ok and "ok" or ("ERROR " .. tostring(err)))
+    else
+        line[#line + 1] = "no soft cursor"
+    end
+    if pre then
+        local okp, ep = pcall(pre)
+        line[#line + 1] = "pre " .. (okp and "ok" or ("ERROR " .. tostring(ep)))
+    end
+    local ok, a, b = pcall(Minimap.UpdateMouseoverAtPoint, Minimap, px, py)
+    line[#line + 1] = ("UpdateMouseoverAtPoint(%.1f, %.1f) %s"):format(px, py, ok and ("ok " .. str(a) .. " " .. str(b)) or ("ERROR " .. tostring(a)))
+    local names, why = mouseover()
+    line[#line + 1] = "read: " .. (names and join(names) or ("nothing (" .. str(why) .. ")"))
+    softOff()
+    hlog(label .. " " .. table.concat(line, "; "))
+    return names
+end
+
+local dot                                                   -- A3's remembered offset in the minimap's units
+local function stepC()
+    local g = geometry()
+    local px, py = cursor()
+    hlog(("C0 cursor %s, %s; over the minimap %s"):format(str(px), str(py), str(overMap())))
+    if not (g and dot) then hlog("C skipped: no geometry or no dot from step A"); return "no dot" end
+    local es, dx, dy = g.es, dot.dx, dot.dy
+    local lx, ly = g.w / 2 + dx, g.h / 2 + dy                -- minimap-local from the bottom-left, its units
+    local sx, sy = (g.cx + dx) * es, (g.cy + dy) * es          -- GetCursorPosition's space
+    local list = {
+        { "C1 screen", sx, sy }, { "C2 ui", g.cx + dx, g.cy + dy }, { "C3 local", lx, ly },
+        { "C4 local*es", lx * es, ly * es }, { "C5 unit", lx / g.w, ly / g.h }, { "C6 centre", dx, dy },
+    }
+    for _, c in ipairs(list) do
+        local ok, err = pcall(softRead, ("%s (%.2f, %.2f): "):format(c[1], c[2], c[3]), c[2], c[3], true)
+        if not ok then softOff(); hlog(c[1] .. " FAILED " .. tostring(err)) end
+    end
+    local ok7, e7 = pcall(softRead, ("C7 screen after UpdateBlips (%.2f, %.2f): "):format(sx, sy), sx, sy, true,
+        function() Minimap:UpdateBlips() end)
+    if not ok7 then softOff(); hlog("C7 FAILED " .. tostring(e7)) end
+    -- C8: the point now, the read on the next frame.
+    hold.pending = true
+    local okOn, errOn = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
+    local okU, aU = pcall(Minimap.UpdateMouseoverAtPoint, Minimap, sx, sy)
+    hlog(("C8 screen (%.2f, %.2f): soft on %s, update %s; read next frame"):format(sx, sy, okOn and "ok" or tostring(errOn),
+        okU and "ok" or tostring(aU)))
+    C_Timer.After(0, function()
+        local okr, names, why = pcall(mouseover)
+        hlog("C8 screen next frame: read " .. (okr and (names and join(names) or ("nil (" .. str(why) .. ")")) or ("ERROR " .. tostring(names))))
+        softOff()
+        hold.pending = nil
+    end)
+    -- C9: a full sweep (it handles the soft cursor itself; off again after).
+    local okS, result, why = pcall(nr().Scan.Sweep, function() return true end)
+    softOff()
+    if not okS then hlog("C9 sweep THREW " .. tostring(result))
+    elseif not result then hlog("C9 sweep nil: " .. str(why))
+    else hlog("C9 sweep: " .. #result.blips .. " blips") end
+    return "C done"
+end
+
+local function stepA()
+    section("A1", function()
+        hlog(("A1 methods: UpdateMouseoverAtPoint %s, SetUsingSoftCursor %s, PingLocation %s, GetMinimapMouseover %s"):format(
+            type(Minimap.UpdateMouseoverAtPoint), type(Minimap.SetUsingSoftCursor), type(Minimap.PingLocation),
+            type(C_TooltipInfo and C_TooltipInfo.GetMinimapMouseover)))
+    end)
+    local px, py, g
+    section("A2", function()
+        local names, why, data = mouseover()
+        hlog("A2 real cursor read: " .. (names and join(names) or ("nothing (" .. str(why) .. ")"))
+            .. "; data: " .. Probe.Describe(data, 3))
+    end)
+    section("A3", function()
+        px, py = cursor()
+        g = geometry()
+        hlog(("A3 cursor %s, %s; over the minimap %s; geometry %s"):format(str(px), str(py), str(overMap()),
+            g and ("%.1fx%.1f at %.1f,%.1f es %.3f"):format(g.w, g.h, g.l, g.b, g.es) or "unreadable"))
+        if px and py and g then
+            dot = { dx = px / g.es - g.cx, dy = py / g.es - g.cy }
+            hlog(("A3 dot offset from the minimap centre: %.1f, %.1f units"):format(dot.dx, dot.dy))
+        else dot = nil end
+    end)
+    section("A4", function()
+        if px and py then softRead("A4 soft on, at the cursor:", px, py, true) else hlog("A4 skipped: no cursor") end
+    end)
+    section("A5", function()
+        if not (px and py and g) then hlog("A5 skipped"); return end
+        local sx = (dot.dx > 0 and -30 or 30)
+        softRead("A5 soft on, 30 units from the dot:", px + sx * g.es, py, true)
+    end)
+    section("A6", function()
+        softOff()
+        local names, why = mouseover()
+        hlog("A6 soft off, read now: " .. (names and join(names) or ("nothing (" .. str(why) .. ")")))
+    end)
+    return "A done; dot offset " .. (dot and ("%.1f, %.1f"):format(dot.dx, dot.dy) or "unknown")
+end
+
+local function stepB()
+    local g = geometry()
+    local px, py = cursor()
+    hlog(("B1 cursor %s, %s; over the minimap %s"):format(str(px), str(py), str(overMap())))
+    if not (g and dot) then hlog("B skipped: no geometry or no dot from step A"); return "no dot" end
+    local tx, ty = (g.cx + dot.dx) * g.es, (g.cy + dot.dy) * g.es
+    softRead("B2 soft on, at the remembered dot:", tx, ty, true)
+    softRead("B3a no soft cursor, at the dot:", tx, ty, false)
+    -- B3b: the soft cursor on a frame before the point.
+    hold.pending = true
+    local ok, err = pcall(Minimap.SetUsingSoftCursor, Minimap, true)
+    hlog("B3b soft cursor on, point next frame: " .. (ok and "ok" or ("ERROR " .. tostring(err))))
+    C_Timer.After(0, function()
+        local g2 = geometry() or g
+        local ok2, e2 = pcall(function() softRead("B3b a frame later:", (g2.cx + dot.dx) * g2.es, (g2.cy + dot.dy) * g2.es, false) end)
+        if not ok2 then hlog("B3b FAILED " .. tostring(e2)) end
+        softOff()                                           -- the soft cursor off on every path
+        hlog("B4 soft cursor off")
+        hold.pending = nil
+    end)
+    return "B done"
+end
+Probe:Steps("health", {
+    rev = 3,
+    title = "Why the radar does nothing",
+    { text = "Stand still where a herb you can gather (Peacebloom, Silverleaf, Earthroot, Mageroyal, Briarthorn, Stranglekelp) shows as a dot on the minimap, then press Check now.",
+      button = "Check now", run = healthRun },
+    { text = "Hold your mouse still over a HERB dot (not a quest marker) on the minimap. The check runs by itself after 3 s.",
+      wait = holdFor("A", stepA), timeout = 60 },
+    { text = "Now move your mouse well away from the minimap (the middle of the screen) and hold it still. The check runs by itself after 3 s.",
+      wait = holdFor("B", stepB), timeout = 60 },
+    { text = "Keep the mouse OFF the minimap, in the middle of the screen, and hold it still. The check runs by itself once it is off the map.",
+      wait = holdFor("C", stepC, function() return not overMap() end, "move the mouse off the minimap"), timeout = 90 },
+    { text = "Did you hear the alert sound or see an icon in the last minute?", ask = true },
+})
+end
+
+--------------------------------------------------------------------------------
+-- movescan (/fp steps nr movescan, #91): can the minimap's dots be read by MOVING
+-- Minimap under the resting cursor? On 70862 UpdateMouseoverAtPoint does nothing and
+-- C_TooltipInfo.GetMinimapMouseover() reads only what lies under the real cursor,
+-- resolved once per frame wherever the map was drawn. So a point is read by placing
+-- the map so it sits under the cursor, then reading on the NEXT frame. This round
+-- measures: protection, move/resize/restore, one dot, the hit square, two dots of
+-- one name, a read while steering, and what a skin leaves visible.
+--
+-- The probe borrows ONLY Minimap (never MinimapCluster or its container; no
+-- reparenting, no Hide, no replaced methods). Every change goes through one
+-- save/restore: begin() saves, restore() puts back, reads back and logs, on every
+-- path (a step's error, PLAYER_REGEN_DISABLED, PLAYER_LEAVING_WORLD, EditMode.Enter,
+-- the step ending, the round stopping). Saved lines: NodeRadarProbeDB.movescan.lines,
+-- each "<time> movescan: <step> f<frame> ...".
+--------------------------------------------------------------------------------
+do
+local KEY = Probe.name .. "/movescan"
+local THRESH = 2               -- px the cursor may move between placement and read
+local OFF = -10000             -- off screen, in UIParent units
+local frameN = 0
+local S                        -- the saved Minimap state while borrowed
+local job                      -- the running step body
+local placed                   -- the cursor where the map was placed
+local iconTouched = false      -- SetIconScale was called (its original is unknown)
+local diag                     -- the dry run logs the mouse focus on every read
+local ubOn, nofocusOn            -- the dry run's flags: UpdateBlips after each placement; read without a mouse focus
+local hidden                   -- the dry run's hidden variant is on (alpha 0, icon scale 0.01)
+local wake                     -- starts the per-frame driver (it stops itself when idle)
+local strayTries, strayNext = 0, 0
+local STRAY_EVERY = 2         -- seconds between the retries of a restore that did not read back
+local dryRun                   -- a movetest, which the round's stop guard must leave alone
+local frameHook                -- called on every frame a placement waits (the steering round logs there)
+local forceCombat              -- movescan2/3 only: borrow even in combat, to measure what the client allows (#91)
+local abortHook                -- movescan3: told of an abort (reason, whether a borrow was open) before it restores
+
+local quiet                    -- movescan2/3: only the lines that say something went wrong (one burst's own record says the rest)
+local function mlog(step, text)
+    if quiet and not (text:find("ERROR", 1, true) or text:find("DIFFERS", 1, true) or text:find("REFUSED", 1, true)
+        or text:find("GAVE UP", 1, true) or text:find("FAILED", 1, true) or text:find("ABORT", 1, true)
+        or text:find("DID NOT READ BACK", 1, true) or text:find("NOT CLEAN", 1, true)) then return end
+    local line = ("%.2f movescan: %s f%d %s"):format(GetTime(), step, frameN, text)
+    if type(NodeRadarProbeDB) == "table" then
+        local d = NodeRadarProbeDB.movescan
+        if type(d) ~= "table" then d = {}; NodeRadarProbeDB.movescan = d end
+        d.lines = d.lines or {}
+        d.lines[#d.lines + 1] = line
+        while #d.lines > 1500 do table.remove(d.lines, 1) end
+    end
+    say("movescan: " .. step .. " " .. text)
+end
+
+-- A method call that never throws: nil when missing, thrown or secret.
+local calls, maxCalls = 0, 0   -- widget calls since the last frame, and the most in any frame
+local function call(obj, m, ...)
+    calls = calls + 1
+    local f = obj and obj[m]
+    if type(f) ~= "function" then return nil end
+    local ok, a, b, c, d, e = pcall(f, obj, ...)
+    if not ok or secret(a) then return nil end
+    return a, b, c, d, e
+end
+local function gfn(name) local f = rawget(_G, name); return type(f) == "function" and f or nil end
+local function sameNum(a, b)
+    if a == nil or b == nil then return a == b end
+    return math.abs(a - b) < 0.01
+end
+local function okdiff(v) return v and "OK" or "DIFF" end
+local function rawText(s)
+    if type(s) ~= "string" then return str(s) end
+    if secret(s) then return "<secret>" end
+    return (s:gsub("|", "||"))
+end
+local function relName(rel)
+    if rel == nil then return "parent" end
+    return tostring(call(rel, "GetName") or call(rel, "GetDebugName") or "?")
+end
+
+-- A node is a name in the SHIPPED library for this locale. NodeRadar.Learn.Kind is not
+-- trusted: a learned table can hold a player's name (polluted on 70862).
+local function libraryKind(name)
+    if type(name) ~= "string" or secret(name) then return nil end
+    local n = rawget(_G, "NodeRadar")
+    local lib = type(n) == "table" and n.LIBRARY
+    local gl = gfn("GetLocale")
+    local loc = gl and select(2, pcall(gl)) or "enUS"
+    local t = type(lib) == "table" and lib[loc]
+    return type(t) == "table" and t[name] or nil
+end
+-- A name that is one of ours: the player, the party or the raid.
+local function isPlayerName(name)
+    local un = gfn("UnitName")
+    if not un or type(name) ~= "string" then return false end
+    local units = { "player" }
+    for i = 1, 4 do units[#units + 1] = "party" .. i end
+    for i = 1, 40 do units[#units + 1] = "raid" .. i end
+    for _, u in ipairs(units) do
+        local ok, nm = pcall(un, u)
+        if ok and not secret(nm) and nm == name then return true end
+    end
+    return false
+end
+-- The cursor is over the world, not a window of ours (GetMouseFoci's first entry).
+local function overWorld()
+    local gf, wf = gfn("GetMouseFoci"), rawget(_G, "WorldFrame")
+    if not gf or not wf then return true end                  -- cannot tell: do not block
+    local ok, foci = pcall(gf)
+    return ok and type(foci) == "table" and foci[1] == wf
+end
+
+local function snapshot()
+    local s = { points = {} }
+    local n = num(call(Minimap, "GetNumPoints"))
+    for i = 1, n or 10 do
+        local p, rel, rp, x, y = call(Minimap, "GetPoint", i)
+        if p == nil then break end
+        s.points[#s.points + 1] = { p, rel, rp, num(x), num(y) }
+    end
+    s.w, s.h = num(call(Minimap, "GetWidth")), num(call(Minimap, "GetHeight"))
+    s.scale, s.eff = num(call(Minimap, "GetScale")), num(call(Minimap, "GetEffectiveScale"))
+    s.alpha = num(call(Minimap, "GetAlpha"))
+    s.clamp = call(Minimap, "IsClampedToScreen")
+    s.click, s.motion, s.wheel = call(Minimap, "IsMouseClickEnabled"), call(Minimap, "IsMouseMotionEnabled"), call(Minimap, "IsMouseWheelEnabled")
+    s.strata, s.level = call(Minimap, "GetFrameStrata"), num(call(Minimap, "GetFrameLevel"))
+    s.kids = {}
+    local okk, kids = pcall(function() return { Minimap:GetChildren() } end)
+    for _, k in ipairs(okk and kids or {}) do
+        local _, c = pcall(k.IsMouseClickEnabled, k)
+        local _, m = pcall(k.IsMouseMotionEnabled, k)
+        s.kids[#s.kids + 1] = { f = k, click = c, motion = m }
+    end
+    return s
+end
+
+local function describe(s)
+    local pts = {}
+    for _, p in ipairs(s.points) do
+        pts[#pts + 1] = ("%s:%s/%s %s,%s"):format(str(p[1]), relName(p[2]), str(p[3]), str(p[4]), str(p[5]))
+    end
+    return ("points [%s], size %sx%s, scale %s (effective %s), alpha %s, clamp %s, mouse click %s motion %s wheel %s, strata %s level %s")
+        :format(table.concat(pts, "; "), str(s.w), str(s.h), str(s.scale), str(s.eff), str(s.alpha), str(s.clamp),
+            str(s.click), str(s.motion), str(s.wheel), str(s.strata), str(s.level))
+end
+
+local function compare(a, b)
+    local r = { points = #a.points == #b.points }
+    if r.points then
+        for i, p in ipairs(a.points) do
+            local q = b.points[i]
+            if not (p[1] == q[1] and p[2] == q[2] and p[3] == q[3] and sameNum(p[4], q[4]) and sameNum(p[5], q[5])) then r.points = false end
+        end
+    end
+    r.size = sameNum(a.w, b.w) and sameNum(a.h, b.h)
+    r.alpha = sameNum(a.alpha, b.alpha)
+    r.clamp = a.clamp == b.clamp
+    r.mouse = a.click == b.click and a.motion == b.motion and a.wheel == b.wheel
+    r.strata = a.strata == b.strata and sameNum(a.level, b.level)
+    r.kids = true
+    local nowBy = {}
+    for _, k in ipairs(b.kids) do nowBy[k.f] = k end
+    for _, k in ipairs(a.kids) do
+        local q = nowBy[k.f]
+        if q and (q.click ~= k.click or q.motion ~= k.motion) then r.kids = false end
+    end
+    r.all = r.points and r.size and r.alpha and r.clamp and r.mouse and r.strata and r.kids
+    return r
+end
+
+-- Idempotent. Puts everything back, reads it back, logs the readback. The save is
+-- kept until the readback matches, so a later call tries again.
+local function restore(reason)
+    if not S then return true end
+    local s = S
+    local function try(label, f)
+        local ok, err = pcall(f)
+        if not ok then mlog("restore", label .. " ERROR " .. tostring(err)) end
+    end
+    if #s.points > 0 then
+        try("points", function()
+            Minimap:ClearAllPoints()
+            for _, p in ipairs(s.points) do
+                Minimap:SetPoint(p[1], p[2] or Minimap:GetParent() or UIParent, p[3], p[4], p[5])
+            end
+        end)
+    end
+    if s.w and s.h then try("size", function() Minimap:SetSize(s.w, s.h) end) end
+    if s.clamp ~= nil then try("clamp", function() Minimap:SetClampedToScreen(s.clamp == true) end) end
+    -- The plan's order (#91): geometry first; the icon scale (it moves nothing) at once; then
+    -- visibility and input, only once the geometry reads back right (else they stay pending).
+    if iconTouched then
+        try("icon scale", function() Minimap:SetIconScale(1) end)
+        iconTouched = false
+        mlog("restore", "icon scale set back to 1; the original is unknown (no getter in the dump)")
+    end
+    local g = compare(s, snapshot())
+    if g.points and g.size and g.clamp then
+        if s.alpha then try("alpha", function() Minimap:SetAlpha(s.alpha) end) end
+        if s.click ~= nil then try("click", function() Minimap:SetMouseClickEnabled(s.click == true) end) end
+        if s.motion ~= nil then try("motion", function() Minimap:SetMouseMotionEnabled(s.motion == true) end) end
+        if s.wheel ~= nil then try("wheel", function() Minimap:EnableMouseWheel(s.wheel == true) end) end
+    else
+        mlog("restore", "GEOMETRY DID NOT READ BACK: alpha and clicks stay pending (invisible, click-off)")
+    end
+    if s.strata then try("strata", function() Minimap:SetFrameStrata(s.strata) end) end
+    if s.level then try("level", function() Minimap:SetFrameLevel(s.level) end) end
+    for _, k in ipairs(s.kids or {}) do
+        try("child mouse", function()
+            if k.click ~= nil then k.f:SetMouseClickEnabled(k.click == true) end
+            if k.motion ~= nil then k.f:SetMouseMotionEnabled(k.motion == true) end
+        end)
+    end
+    placed = nil
+    local now = snapshot()
+    local r = compare(s, now)
+    mlog("restore", ("restore readback (%s): points %s (%d saved, %d now), size %s (%sx%s saved, %sx%s now), alpha %s (%s -> %s), clamp %s (%s -> %s), mouse %s (click %s/%s motion %s/%s wheel %s/%s), strata %s (%s level %s -> %s level %s), children mouse %s (%d children)")
+        :format(tostring(reason), okdiff(r.points), #s.points, #now.points, okdiff(r.size), str(s.w), str(s.h), str(now.w), str(now.h),
+            okdiff(r.alpha), str(s.alpha), str(now.alpha), okdiff(r.clamp), str(s.clamp), str(now.clamp),
+            okdiff(r.mouse), str(s.click), str(now.click), str(s.motion), str(now.motion), str(s.wheel), str(now.wheel),
+            okdiff(r.strata), str(s.strata), str(s.level), str(now.strata), str(now.level), okdiff(r.kids), #s.kids))
+    if r.all then S = nil else mlog("restore", "READBACK DIFFERS: the save is kept and tried again") end
+    return r.all
+end
+
+-- Why we must not borrow the map now, or nil.
+local function refusal()
+    if S then return "already borrowed" end
+    if InCombatLockdown() and not forceCombat then return "in combat" end
+    if call(Minimap, "IsProtected") == true then return "Minimap is protected" end
+    local n = nr()
+    if n and n.API and n.API.Gamepad and n.API.Gamepad() then return "the gamepad UI is on" end
+    local em = rawget(_G, "EditModeManagerFrame")
+    if type(em) == "table" then
+        local active = call(em, "IsEditModeActive")
+        if active == true or (active == nil and call(em, "IsShown") == true) then return "Edit Mode is active" end
+    end
+    return nil
+end
+
+local function begin(step)
+    local why = refusal()
+    if why then mlog(step, "REFUSED: " .. why); return false, why end
+    S = snapshot()
+    strayTries = 0
+    if wake then wake() end
+    mlog(step, "saved: " .. describe(S))
+    pcall(Minimap.SetClampedToScreen, Minimap, false)        -- or the screen would pull an off-screen map back
+    return true
+end
+
+local function abort(reason)
+    if abortHook then pcall(abortHook, reason, S ~= nil, job ~= nil) end
+    if job then mlog(job.step, "ABORT: " .. tostring(reason)); job = nil; dryRun = false; hidden = false; ubOn, nofocusOn = false, false end
+    if S then restore(reason) end
+end
+
+local function cursor2()
+    local x, y = GetCursorPosition()
+    return num(x), num(y)
+end
+
+-- Moves the map so the map point (dx, dy), in the map's CURRENT size's units from its
+-- centre, sits `extra` / `extraY` screen pixels right of / above the cursor. Records the
+-- offset it intends, in units of the saved (normal size) map, for the read to check.
+local PLACE_TOL = 1            -- map units of placement error that are flagged
+local function place(dx, dy, extra, extraY)
+    local px, py = cursor2()
+    if not px then error("the cursor is unreadable") end
+    local es = num(Minimap:GetEffectiveScale()) or 1
+    local w = num(Minimap:GetWidth()) or 1
+    Minimap:ClearAllPoints()
+    Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", (px + (extra or 0)) / es - dx, (py + (extraY or 0)) / es - dy)
+    local base = (S and S.w) or w
+    placed = { px = px, py = py, frame = frameN, base = base, es = es,
+        ix = (dx - (extra or 0) / es) * base / w, iy = (dy - (extraY or 0) / es) * base / w }
+    if ubOn then
+        local okb, errb = pcall(Minimap.UpdateBlips, Minimap)
+        mlog("ub", "Minimap:UpdateBlips() after the placement " .. (okb and "ok" or ("ERROR " .. tostring(errb))))
+    end
+end
+local function offscreen()
+    Minimap:ClearAllPoints()
+    Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", OFF, OFF)
+    placed = nil
+end
+local function frames(n)
+    for _ = 1, n or 1 do
+        if calls > maxCalls then maxCalls = calls end
+        calls = 0
+        if frameHook then frameHook() end
+        coroutine.yield()
+    end
+end
+
+local function tally(names)
+    local c, order = {}, {}
+    for _, nm in ipairs(names) do
+        if not c[nm] then order[#order + 1] = nm end
+        c[nm] = (c[nm] or 0) + 1
+    end
+    local out = {}
+    for _, nm in ipairs(order) do out[#out + 1] = ("%s x%d"):format(nm, c[nm]) end
+    return #out > 0 and table.concat(out, ", ") or "nothing"
+end
+
+-- What the client thinks is under the cursor: GetMouseFoci (the dump has no other
+-- hit-test call), Minimap:IsMouseOver, and whether the cursor is inside Minimap's rect.
+local function diagText()
+    local out = {}
+    local gf = gfn("GetMouseFoci")
+    if gf then
+        local ok, list = pcall(gf)
+        if ok and type(list) == "table" then
+            for i, f in ipairs(list) do
+                if i > 6 then break end
+                out[#out + 1] = ("%s[%s/%s]"):format(relName(f), str(call(f, "GetFrameStrata")), str(call(f, "GetFrameLevel")))
+            end
+        end
+    end
+    local px, py = cursor2()
+    local l, b, w, h = call(Minimap, "GetRect")
+    local es = num(call(Minimap, "GetEffectiveScale")) or 1
+    local inside = "?"
+    if px and num(l) and num(b) and num(w) and num(h) then
+        inside = (px / es >= l and px / es <= l + w and py / es >= b and py / es <= b + h) and "yes" or "no"
+    end
+    local steer = ""
+    if nofocusOn then
+        local ml, md = gfn("IsMouselooking"), gfn("IsMouseButtonDown")
+        steer = ("; mouselooking %s right %s left %s"):format(ml and str((select(2, pcall(ml)))) or "n/a",
+            md and str((select(2, pcall(md, "RightButton")))) or "n/a", md and str((select(2, pcall(md, "LeftButton")))) or "n/a")
+    end
+    return ("foci [%s]; Minimap:IsMouseOver %s; cursor within Minimap's rect %s; Minimap strata %s%s"):format(
+        #out > 0 and table.concat(out, ", ") or "none", str(call(Minimap, "IsMouseOver")), inside, str(call(Minimap, "GetFrameStrata")), steer)
+end
+
+-- Where the cursor lies on the map now, in units of the normal size map, against what
+-- the last placement intended. Returns the text and the error in map units.
+local function placementCheck()
+    if not (placed and placed.ix) then return nil end
+    local px, py = cursor2()
+    local es = num(call(Minimap, "GetEffectiveScale")) or placed.es
+    local cx, cy = call(Minimap, "GetCenter")
+    cx, cy = num(cx), num(cy)
+    local w = num(call(Minimap, "GetWidth"))
+    if not (px and cx and cy and w and w > 0) then return "placement unreadable", nil end
+    local ox, oy = (px / es - cx) * placed.base / w, (py / es - cy) * placed.base / w
+    local err = math.sqrt((ox - placed.ix) ^ 2 + (oy - placed.iy) ^ 2)
+    return ("cursor %.1f,%.1f; centre*es %.1f,%.1f; width*es %.1f; cursor at %.1f,%.1f map units vs intended %.1f,%.1f; error %.1f%s"):format(
+        px, py, cx * es, cy * es, w * es, ox, oy, placed.ix, placed.iy, err, err > PLACE_TOL and " PLACEMENT ERROR" or ""), err
+end
+
+-- The read. Discarded (nil) when the cursor moved over 2 px since placement; otherwise
+-- the names (empty for nothing). Every read logs where the cursor lies on the map.
+local function read(step, label)
+    local px, py = cursor2()
+    if placed and px then
+        local moved = math.sqrt((px - placed.px) ^ 2 + (py - placed.py) ^ 2)
+        if moved > THRESH then
+            mlog(step, ("%s: DISCARDED, the cursor moved %.1f px since placement (frame %d)"):format(label, moved, placed.frame))
+            return nil
+        end
+    end
+    -- The client resolves the mouseover for the top mouse focus: a read counts only when
+    -- that is Minimap (a window of ours under the cursor blocks it, and is no miss).
+    local gf = gfn("GetMouseFoci")
+    local unfocused = false
+    if gf then
+        local okf, list = pcall(gf)
+        if okf and type(list) == "table" and list[1] == nil and nofocusOn then
+            unfocused = true
+        elseif okf and type(list) == "table" and list[1] ~= Minimap then
+            local top = list[1]
+            mlog(step, ("%s: BLOCKED by %s[%s/%s], not counted (placed f%s)"):format(label, top and relName(top) or "nothing",
+                str(call(top, "GetFrameStrata")), str(call(top, "GetFrameLevel")), str(placed and placed.frame)))
+            return nil
+        end
+    end
+    local names, why, data = mouseover()
+    local raw = {}
+    if type(data) == "table" and type(data.lines) == "table" and not secret(data.lines) then
+        for _, ln in ipairs(data.lines) do raw[#raw + 1] = rawText(type(ln) == "table" and ln.leftText or ln) end
+    end
+    local nodes = {}
+    for _, nm in ipairs(names or {}) do
+        if libraryKind(nm) then nodes[#nodes + 1] = nm end
+    end
+    local check = placementCheck()
+    mlog(step, ("%s: %s%s ; nodes: %s (placed f%s, ms %.0f)%s"):format(label, names and tally(names) or ("nothing (" .. str(why) .. ")"),
+        #raw > 0 and (" ; lines [" .. table.concat(raw, " | ") .. "]") or "", tally(nodes), str(placed and placed.frame), debugprofilestop(),
+        (check and (" ; place: " .. check) or "") .. (diag and (" ; " .. diagText()) or "") .. (unfocused and " ; UNFOCUSED (no mouse focus, read anyway)" or "") .. (hidden and " ; HIDDEN (alpha 0, icon scale 0.01)" or "")))
+    return names or {}
+end
+
+local function multOf(names, name)
+    local c = 0
+    for _, nm in ipairs(names or {}) do if nm == name then c = c + 1 end end
+    return c
+end
+
+-- A size change takes a frame to apply: do it off screen first (the "prepare" frame).
+local function resize(sz)
+    local cur = num(call(Minimap, "GetWidth"))
+    if cur and math.abs(cur - sz) < 0.01 then return end
+    offscreen()
+    Minimap:SetSize(sz, sz)
+    frames(1)
+end
+local KS = { 1, 2, 3, 4 }
+-- Reads the frames r+k after a placement, each logged on its own. The multiplicity of
+-- `name` per read ("x" for a discarded one), as a list.
+local function reads(step, label, ks, name)
+    local res, maxk, want = {}, 0, {}
+    for _, k in ipairs(ks) do want[k] = true; if k > maxk then maxk = k end end
+    for r = 1, maxk do
+        frames(1)
+        if want[r] then
+            local names = read(step, ("%s r+%d"):format(label, r))
+            if r >= 2 then res[#res + 1] = names and multOf(names, name) or "x" end   -- r+1 is logged as evidence only
+        end
+    end
+    return res
+end
+-- One placement of the base-map point (dx, dy) at a map of `size` px, then the reads.
+local function at(step, label, dx, dy, size, ks, name)
+    local base = (S and S.w) or size
+    local k = size / base
+    place(dx * k, dy * k)
+    return reads(step, label, ks or KS, name)
+end
+local function anyHit(list)
+    for _, m in ipairs(list) do if type(m) == "number" and m > 0 then return true end end
+    return false
+end
+
+-- Lattice points inside the circle of `radius`, nearest the centre first.
+local function lattice(radius, spacing, phase)
+    local pts, n = {}, math.floor(radius / spacing) + 1
+    for i = -n, n do
+        for j = -n, n do
+            local dx, dy = i * spacing + phase, j * spacing + phase
+            if dx * dx + dy * dy <= radius * radius then pts[#pts + 1] = { dx = dx, dy = dy, d = dx * dx + dy * dy } end
+        end
+    end
+    table.sort(pts, function(a, b) return a.d < b.d end)
+    return pts
+end
+-- Reads the lattice, nearest the centre first, 120 reads at most. The spacing is 22
+-- units, or less so that it is at most 15 screen px (the hit square is claimed to be
+-- 16 px): at a larger scale 22 units would leave gaps a dot could hide in.
+local function scan(step, B, stopAtFirst)
+    local es = num(call(Minimap, "GetEffectiveScale")) or 1
+    local sp = math.max(4, math.min(22, math.floor(15 / es)))
+    local pts = lattice(B / 2, sp, 0)
+    mlog(step, ("lattice spacing %d units (effective scale %s), %d points, 120 reads at most"):format(sp, str(es), #pts))
+    local hits = {}
+    for i = 1, math.min(#pts, 120) do
+        local p = pts[i]
+        place(p.dx, p.dy); frames(1)
+        local names = read(step, ("lattice %d (%d,%d)"):format(i, p.dx, p.dy))
+        if names and #names > 0 then
+            hits[#hits + 1] = { dx = p.dx, dy = p.dy, names = names }
+            if stopAtFirst then break end
+        end
+    end
+    return hits
+end
+
+local function setIconScale(step, v)
+    iconTouched = true
+    local ok, err = pcall(Minimap.SetIconScale, Minimap, v)
+    mlog(step, ("SetIconScale(%s) %s"):format(str(v), ok and "ok" or ("ERROR " .. tostring(err))))
+end
+
+--------------------------------------------------------------------------------
+-- The driver and the exits
+--------------------------------------------------------------------------------
+
+local function finish(summary)
+    local j = job
+    job = nil
+    diag = false
+    hidden = false
+    dryRun = false
+    local ok = restore("end of " .. (j and j.step or "?"))
+    if ubOn then
+        local okb, errb = pcall(Minimap.UpdateBlips, Minimap)
+        mlog("ub", "Minimap:UpdateBlips() after coming home " .. (okb and "ok" or ("ERROR " .. tostring(errb))))
+    end
+    ubOn, nofocusOn = false, false
+    if abortHook then pcall(abortHook, "job end: " .. (j and j.step or "?"), false, false) end
+    if j then
+        mlog(j.step, "done: " .. tostring(summary) .. (ok and "" or " (RESTORE NOT CLEAN)"))
+        if j.done then j.done(summary) end
+    end
+end
+
+local driver = CreateFrame("Frame")
+local function onUpdate()
+    frameN = frameN + 1
+    local j = job
+    if not j then
+        if not S then driver:SetScript("OnUpdate", nil); return end   -- idle: nothing runs per frame
+        local now = GetTime()
+        if now >= strayNext then                                       -- a failed readback: the save is kept (alpha and clicks may be
+            strayNext = now + STRAY_EVERY                              -- pending on it), tried again every 2 s and on the recovery events
+            strayTries = strayTries + 1
+            restore("stray save")
+        end
+        return
+    end
+    local ok, res = coroutine.resume(j.co)
+    if not ok then
+        mlog(j.step, "STEP FAILED " .. tostring(res))
+        finish("failed: " .. tostring(res))
+    elseif coroutine.status(j.co) == "dead" then
+        finish(res or "done")
+    end
+end
+wake = function() driver:SetScript("OnUpdate", onUpdate) end
+
+local function start(step, body, done, dry)
+    dryRun = dry == true
+    local ok, why = begin(step)
+    if not ok then done("refused: " .. tostring(why)); return end
+    dryRun = dry == true
+    job = { step = step, done = done, co = coroutine.create(body) }
+    wake()
+end
+
+local guard = CreateFrame("Frame")
+guard:SetScript("OnEvent", function(_, event) abort(event) end)
+Probe:RegisterEvents(guard, { "PLAYER_REGEN_DISABLED", "PLAYER_LEAVING_WORLD" })
+do
+    local er = rawget(_G, "EventRegistry")
+    if type(er) == "table" and type(er.RegisterCallback) == "function" then
+        pcall(er.RegisterCallback, er, "EditMode.Enter", function() abort("EditMode.Enter") end, guard)
+    end
+end
+-- A restore that did not read back is tried again when what blocked it may have cleared.
+local recover = CreateFrame("Frame")
+recover:SetScript("OnEvent", function(_, event)
+    if S and not job then strayNext = 0; restore(event) end
+end)
+Probe:RegisterEvents(recover, { "PLAYER_REGEN_ENABLED", "LOADING_SCREEN_DISABLED" })
+do
+    local er = rawget(_G, "EventRegistry")
+    if type(er) == "table" and type(er.RegisterCallback) == "function" then
+        pcall(er.RegisterCallback, er, "EditMode.Exit", function() if S and not job then strayNext = 0; restore("EditMode.Exit") end end, recover)
+    end
+end
+guardRound({ KEY, Probe.name .. "/movescan2", Probe.name .. "/movescan3" }, function() return (S ~= nil or job ~= nil) and not dryRun end, function() abort("the round stopped") end)
+
+-- A wait step: holds `hold` seconds while `ready` (if any) says so (and, with `still`,
+-- while the mouse is off the minimap and has not moved), then runs the body. ready may
+-- return "skip", message to complete the step without measuring.
+local function waitStep(step, hold, keepMsg, body, ready, still)
+    local st = {}
+    return function()
+        if st.result ~= nil then local r = st.result; st = {}; return true, r end
+        if st.started then return false, "measuring" end
+        if ready then
+            local okr, why = ready(st)
+            if okr == "skip" then mlog(step, why); return true, why end
+            if not okr then st.t0 = nil; return false, why end
+        end
+        if still then
+            if overMap() or not overWorld() then
+                st.t0, st.lx = nil, nil
+                return false, "move the mouse onto the world, away from this window and the minimap"
+            end
+            local px, py = cursor2()
+            if st.lx and px and math.sqrt((px - st.lx) ^ 2 + (py - st.ly) ^ 2) > THRESH then
+                st.t0, st.lx, st.ly = nil, px, py
+                return false, "keep the mouse still"
+            end
+            st.lx, st.ly = px, py
+        end
+        st.t0 = st.t0 or GetTime()
+        local left = hold - (GetTime() - st.t0)
+        if left > 0 then return false, ("hold still: %d (%s)"):format(math.ceil(left), keepMsg) end
+        st.started = true
+        start(step, body, function(summary) st.result = summary or "done" end)
+        return false, "measuring"
+    end
+end
+
+--------------------------------------------------------------------------------
+-- The steps
+--------------------------------------------------------------------------------
+
+local function protectRun()
+    local v, b, d, toc = GetBuildInfo()
+    mlog("protect", ("build %s (%s) %s, interface %s"):format(str(v), str(b), str(d), str(toc)))
+    local p, e = call(Minimap, "IsProtected")
+    mlog("protect", ("Minimap:IsProtected() = %s, explicitly %s"):format(str(p), str(e)))
+    local mc = rawget(_G, "MinimapCluster")
+    mlog("protect", "MinimapCluster:IsProtected() = " .. (mc and str((call(mc, "IsProtected"))) or "no such frame"))
+    local mct = rawget(_G, "MinimapContainer")
+    mlog("protect", "MinimapContainer:IsProtected() = " .. (mct and str((call(mct, "IsProtected"))) or "no such frame"))
+    local par, depth = call(Minimap, "GetParent"), 0
+    while par and depth < 8 do
+        mlog("protect", ("parent %s: protected %s"):format(relName(par), str((call(par, "IsProtected")))))
+        par, depth = call(par, "GetParent"), depth + 1
+    end
+    mlog("protect", "state: " .. describe(snapshot()))
+    mlog("protect", "refusal now: " .. tostring(refusal()))
+    return "Minimap protected " .. str(p)
+end
+
+local function homeBody()
+    local function cycle(label, resize)
+        mlog("restore", label .. " before: " .. describe(snapshot()))
+        offscreen()
+        if resize then Minimap:SetSize(21, 21) end
+        frames(1)
+        mlog("restore", label .. " during (1 frame): " .. describe(snapshot()) .. "; shown " .. str(call(Minimap, "IsShown")) .. ", visible " .. str(call(Minimap, "IsVisible")))
+        frames(4)
+        mlog("restore", label .. " during (5 frames): " .. describe(snapshot()))
+        local ok = restore(label)
+        mlog("restore", label .. " after: " .. describe(snapshot()))
+        local okb, errb = pcall(Minimap.UpdateBlips, Minimap)
+        mlog("restore", label .. " Minimap:UpdateBlips " .. (okb and "ok" or ("ERROR " .. tostring(errb))))
+        return ok
+    end
+    local a = cycle("off screen", false)
+    local okb, whyb = begin("restore")
+    if not okb then return "second cycle refused: " .. tostring(whyb) end
+    local b = cycle("off screen and 21 px", true)
+    return ("off screen %s, 21 px %s"):format(okdiff(a), okdiff(b))
+end
+
+local seeds = {}               -- seeds.single, pairA, pairB: { name, dx, dy, B, kind }
+
+local function pause(sec)
+    local t = GetTime()
+    repeat frames(1) until GetTime() - t >= sec
+end
+
+local SIZES_B = { 198, 64, 48, 32, 28, 24, 22, 20 }
+-- hidden: alpha 0 and the icon scale at 0.01, set while the map is off screen for its
+-- prepare frame so both are in effect before the first placement.
+local function applyHidden(step)
+    hidden = true
+    pcall(Minimap.SetAlpha, Minimap, 0)
+    offscreen()
+    setIconScale(step or "movetest", 0.01)
+    frames(2)
+end
+-- Per size: the map centred, and the seed's offset (scaled with the size) under the cursor,
+-- each read at r+1..r+4: "128:c[0,0,0,0]s[1,1,1,1]".
+local function ladder(step, tag, sizes, sd, cur)
+    local out = {}
+    for _, sz in ipairs(sizes) do
+        resize(sz)
+        local c = at(step, ("%s %d px centred"):format(tag, sz), 0, 0, sz, KS, sd.name)
+        local sc = at(step, ("%s %d px seed offset"):format(tag, sz), sd.dx, sd.dy, sz, KS, sd.name)
+        out[#out + 1] = ("%d:c[%s]s[%s]"):format(sz, table.concat(c, ","), table.concat(sc, ","))
+    end
+    resize(cur)
+    return table.concat(out, " ")
+end
+-- Where the node drops out, from a ladder summary: centred, and at the seed's offset.
+local function ladderEdge(summary)
+    local cH, cM, sH, sM = {}, {}, {}, {}
+    local function any(list) for v in list:gmatch("%d+") do if tonumber(v) > 0 then return true end end return false end
+    for size, c, sc in summary:gmatch("(%d+):c%[([%dx,]*)%]s%[([%dx,]*)%]") do
+        local t = any(c) and cH or cM
+        t[#t + 1] = size
+        t = any(sc) and sH or sM
+        t[#t + 1] = size
+    end
+    return ("centred: read at [%s] px, missed at [%s] px; at the seed's offset: read at [%s] px, missed at [%s] px"):format(
+        table.concat(cH, " "), table.concat(cM, " "), table.concat(sH, " "), table.concat(sM, " "))
+end
+
+-- At 24 px: plain, alpha 0 only (no icon scale), and hidden (alpha 0 + icon scale 0.01),
+-- each named in the log; the map centred and at the seed's scaled offset.
+local function alphaVariants(step, sd, cur)
+    local out = {}
+    local a0 = (S and S.alpha) or 1
+    local function both(tag)
+        local c = at(step, ("24 px %s centred"):format(tag), 0, 0, 24, KS, sd.name)
+        local sc = at(step, ("24 px %s seed offset"):format(tag), sd.dx, sd.dy, 24, KS, sd.name)
+        out[#out + 1] = ("%s:c[%s]s[%s]"):format(tag, table.concat(c, ","), table.concat(sc, ","))
+    end
+    resize(24)
+    both("plain")
+    pcall(Minimap.SetAlpha, Minimap, 0); frames(2)
+    both("alpha 0 only")
+    applyHidden(step)
+    both("hidden (alpha 0 + icon scale 0.01)")
+    setIconScale(step, 1)
+    hidden = false
+    pcall(Minimap.SetAlpha, Minimap, a0)
+    frames(2)
+    resize(cur)
+    return table.concat(out, " ")
+end
+
+local function singleBody()
+    local sd = seeds.single
+    if not sd then mlog("single", "no hover seed: run the hover step first"); return "no seed" end
+    local cur = num(call(Minimap, "GetWidth")) or sd.B
+    mlog("single", ("seed %s (%s) at offset (%.1f,%.1f) of a %s px map; the map is %s px now"):format(sd.name, str(sd.kind), sd.dx, sd.dy, str(sd.B), str(cur)))
+    local sb = ladder("single", "ladder", SIZES_B, sd, cur)
+    mlog("single", "ladder summary: " .. sb)
+    mlog("single", "ladder: the node " .. ladderEdge(sb))
+    pause(0.3)
+    local sv = alphaVariants("single", sd, cur)
+    mlog("single", "24 px variants: " .. sv)
+    return ("ladder %s; 24 px %s"):format(ladderEdge(sb), sv)
+end
+
+-- One 24 px placement with the map at alpha 0 only, five times with 0.5 s gaps (the map
+-- off screen between), for the owner to watch whether anything shows under the mouse.
+local function watchBody()
+    local sd = seeds.single
+    local cur = num(call(Minimap, "GetWidth")) or 198
+    local a0 = (S and S.alpha) or 1
+    pcall(Minimap.SetAlpha, Minimap, 0)
+    resize(24)
+    local hits = 0
+    for i = 1, 5 do
+        local r = at("watch", ("24 px alpha 0 only, placement %d of 5"):format(i), 0, 0, 24, KS, sd and sd.name or "")
+        if anyHit(r) then hits = hits + 1 end
+        offscreen()
+        pause(0.5)
+    end
+    pcall(Minimap.SetAlpha, Minimap, a0)
+    resize(cur)
+    mlog("watch", "five 24 px alpha-0-only placements done")
+    return ("5 placements, the seed name read in %d"):format(hits)
+end
+
+local function pairBody()
+    local A, Bs = seeds.pairA, seeds.pairB
+    if not (A and Bs) then mlog("pair", "need both hover seeds"); return "no seeds" end
+    local cur = num(call(Minimap, "GetWidth")) or A.B
+    mlog("pair", ("seed A %s at (%.1f,%.1f); seed B %s at (%.1f,%.1f); %.1f units apart; the map is %s px"):format(A.name, A.dx, A.dy, Bs.name, Bs.dx, Bs.dy,
+        math.sqrt((A.dx - Bs.dx) ^ 2 + (A.dy - Bs.dy) ^ 2), str(cur)))
+    if A.name ~= Bs.name then mlog("pair", "WARNING: the two seeds have different names") end
+    local out = {}
+    for _, key in ipairs({ "pairA", "pairB" }) do
+        local sd = seeds[key]
+        resize(cur)
+        local r = at("pair", key .. " normal size over the dot", sd.dx, sd.dy, cur, KS, sd.name)
+        out[#out + 1] = ("%s normal:s[%s]"):format(key, table.concat(r, ","))
+        pause(0.3)
+    end
+    resize(24)
+    local c = at("pair", "24 px centred", 0, 0, 24, KS, A.name)
+    out[#out + 1] = ("24 centred:[%s]"):format(table.concat(c, ","))
+    mlog("pair", ("24 px centred: multiplicity of %s per read [%s] (r+2..r+4)"):format(A.name, table.concat(c, ",")))
+    resize(cur)
+    return table.concat(out, " ")
+end
+
+-- 5 s while a button is held: the state every frame (capped), and every 0.5 s two
+-- placements read at r+1..r+4: the seeded node's offset under GetCursorPosition at
+-- normal size, and a 16 px map centred there.
+local function lookBody(label)
+    return function()
+        local sd = seeds.single
+        if not sd then mlog("mouselook", "no hover seed: skipped"); return "no seed" end
+        local ml, md = gfn("IsMouselooking"), gfn("IsMouseButtonDown")
+        local cur = num(call(Minimap, "GetWidth")) or sd.B
+        local t0, nextRead, logged, nA, hitA, nB, hitB = GetTime(), GetTime(), 0, 0, 0, 0, 0
+        frameHook = function()
+            if logged < 300 then
+                logged = logged + 1
+                local x, y = GetCursorPosition()
+                mlog("mouselook", ("%s cursor %s,%s mouselooking %s right %s left %s"):format(label, str(x), str(y),
+                    ml and str((select(2, pcall(ml)))) or "n/a", md and str((select(2, pcall(md, "RightButton")))) or "n/a",
+                    md and str((select(2, pcall(md, "LeftButton")))) or "n/a"))
+            end
+        end
+        while GetTime() - t0 < 5 do
+            if GetTime() >= nextRead then
+                nextRead = nextRead + 0.5
+                resize(cur)
+                local a = at("mouselook", label .. " normal size, the node's offset", sd.dx, sd.dy, cur, KS, sd.name)
+                for _, v in ipairs(a) do if v ~= "x" then nA = nA + 1; if v > 0 then hitA = hitA + 1 end end end
+                resize(24)
+                local b = at("mouselook", label .. " 24 px centred", 0, 0, 24, KS, sd.name)
+                for _, v in ipairs(b) do if v ~= "x" then nB = nB + 1; if v > 0 then hitB = hitB + 1 end end end
+            else
+                frames(1)
+            end
+        end
+        frameHook = nil
+        resize(cur)
+        return ("%s: normal %d/%d read the node, 24 px %d/%d"):format(label, hitA, nA, hitB, nB)
+    end
+end
+local function held(button)
+    local md = gfn("IsMouseButtonDown")
+    return md ~= nil and select(2, pcall(md, button)) == true
+end
+
+local function pointsStr(f)
+    local out = {}
+    for i = 1, 6 do
+        local p, rel, rp, x, y = call(f, "GetPoint", i)
+        if p == nil then break end
+        out[#out + 1] = ("%s>%s %s %s,%s%s"):format(tostring(p), relName(rel), tostring(rp), str(num(x)), str(num(y)), rel == Minimap and " [anchored to Minimap]" or "")
+    end
+    return #out > 0 and table.concat(out, "; ") or "no points"
+end
+local function describeFrame(f)
+    local l, b, w, h = call(f, "GetRect")
+    local _, _, sw, sh = call(UIParent, "GetRect")
+    local rect = "rect n/a"
+    if num(l) and num(b) and num(w) and num(h) then
+        local on = "?"
+        if num(sw) and num(sh) then on = (l + w > 0 and l < sw and b + h > 0 and b < sh) and "yes" or "no" end
+        rect = ("rect %.0f,%.0f %.0fx%.0f onscreen %s"):format(l, b, w, h, on)
+    end
+    return ("%s shown %s visible %s alpha %s %s; points %s"):format(relName(f), str(call(f, "IsShown")), str(call(f, "IsVisible")),
+        str(num(call(f, "GetEffectiveAlpha"))), rect, pointsStr(f))
+end
+
+local CALL_CAP = 150           -- widget calls per frame, with room under 200 for one more item
+
+-- No frame walk (it made the game lag): only Minimap's children and regions, the
+-- container's children (one level) and our own button, a few calls per frame.
+local function skinBody()
+    maxCalls, calls = 0, 0
+    local par, depth, chain = call(Minimap, "GetParent"), 0, {}
+    while par and depth < 8 do chain[#chain + 1] = relName(par); par, depth = call(par, "GetParent"), depth + 1 end
+    mlog("skin", "Minimap's parent chain: " .. (#chain > 0 and table.concat(chain, " > ") or "none"))
+    local items = {}
+    local cluster = rawget(_G, "MinimapCluster")
+    local container = type(cluster) == "table" and cluster.MinimapContainer or rawget(_G, "MinimapContainer")
+    if type(container) == "table" then
+        for _, c in ipairs({ container:GetChildren() }) do items[#items + 1] = { "child of the container", c } end
+    else
+        mlog("skin", "no MinimapCluster.MinimapContainer")
+    end
+    local btn = rawget(_G, "LibDBIcon10_NodeRadar")
+    if btn then items[#items + 1] = { "our minimap button", btn } end
+    -- Minimap's own children and regions: only those shown or with a rect on screen.
+    local function shownOrOnScreen(f)
+        if call(f, "IsShown") == true then return true end
+        local l, b, w, h = call(f, "GetRect")
+        local _, _, sw, sh = call(UIParent, "GetRect")
+        return num(l) and num(b) and num(w) and num(h) and num(sw) and num(sh)
+            and l + w > 0 and l < sw and b + h > 0 and b < sh or false
+    end
+    local skipped = 0
+    for _, c in ipairs({ Minimap:GetChildren() }) do
+        if shownOrOnScreen(c) then items[#items + 1] = { "child of Minimap", c } else skipped = skipped + 1 end
+        if calls >= CALL_CAP then frames(1) end
+    end
+    for _, r in ipairs({ Minimap:GetRegions() }) do
+        if shownOrOnScreen(r) then items[#items + 1] = { "region of Minimap", r } else skipped = skipped + 1 end
+        if calls >= CALL_CAP then frames(1) end
+    end
+    mlog("skin", ("%d of Minimap's children and regions are neither shown nor on screen: not listed"):format(skipped))
+    mlog("skin", ("%d frames to report"):format(#items))
+    local function report(tag)
+        for i, e in ipairs(items) do
+            if i <= 120 then mlog("skin", ("%s %s %s"):format(tag, e[1], describeFrame(e[2]))) end
+            if calls >= CALL_CAP then frames(1) end
+        end
+    end
+    report("before:")
+    local t0 = GetTime()
+    offscreen()
+    frames(5)
+    mlog("skin", "Minimap is off screen")
+    local shot
+    local okS, errS = pcall(Probe.Screenshot, Probe, "movescan: Minimap off screen", function(file, why) shot = file or ("failed: " .. tostring(why)) end)
+    if not okS then shot = "failed: " .. tostring(errS) end
+    frames(5)
+    report("away:")
+    while (shot == nil and GetTime() - t0 < 4) or GetTime() - t0 < 2 do frames(1) end
+    mlog("skin", "screenshot with the map away: " .. tostring(shot) .. "; away for " .. ("%.1f"):format(GetTime() - t0) .. " s; most widget calls in a frame " .. math.max(maxCalls, calls))
+    return "reported " .. #items
+end
+
+-- The hover seed: the owner holds the mouse on a node's dot; two polls in a row on the
+-- same node name, cursor within 2 px, seed it. Nothing is moved.
+local function seedWait(slot, what)
+    local st = {}
+    return function()
+        if not overMap() then st.last = nil; return false, "hover " .. what .. " on the minimap and keep it there" end
+        local names, why = mouseover()
+        if not names then st.last = nil; return false, "nothing under the mouse (" .. str(why) .. "): hover a dot" end
+        local node, skipped = nil, {}
+        for _, nm in ipairs(names) do
+            if isPlayerName(nm) then skipped[#skipped + 1] = nm .. " (a player, not a node)"
+            elseif libraryKind(nm) then node = node or nm
+            else skipped[#skipped + 1] = nm .. " (not in the node library)" end
+        end
+        if not node then
+            st.last = nil
+            return false, "hovering: " .. (#skipped > 0 and table.concat(skipped, ", ") or "nothing readable")
+        end
+        local px, py = cursor2()
+        local g = geometry()
+        if not (px and g) then return false, "the map's geometry is unreadable" end
+        local dx, dy = px / g.es - g.cx, py / g.es - g.cy
+        local other = slot == "pairB" and seeds.pairA
+        if other and math.sqrt((dx - other.dx) ^ 2 + (dy - other.dy) ^ 2) <= 4 then
+            st.last = nil
+            return false, "that's the same dot: hover the OTHER one"
+        end
+        if st.last and st.last.name == node and math.sqrt((px - st.last.px) ^ 2 + (py - st.last.py) ^ 2) <= THRESH then
+            seeds[slot] = { name = node, dx = dx, dy = dy, B = num(call(Minimap, "GetWidth")) or g.w, kind = libraryKind(node) }
+            mlog(slot, ("seeded %s (%s) at offset (%.1f,%.1f) of a %s px map"):format(node, str(seeds[slot].kind), dx, dy, str(seeds[slot].B)))
+            st.last = nil
+            return true, ("seeded %s"):format(node)
+        end
+        st.last = { name = node, px = px, py = py }
+        return false, node .. ": hold it there"
+    end
+end
+
+-- Each measuring step is a "Ready" button, then the wait step that counts 3 s of a still
+-- mouse and only then measures.
+local function readyStep(text)
+    return { text = text, button = "Ready", run = function() return "ready" end }
+end
+local MOUSE_NOTE = " Close or move the /fp console and this window away from the middle of the screen, and rest the mouse on open world."
+local function measure(steps, readyText, waitText, step, keep, body, timeout, ready, still, extra)
+    steps[#steps + 1] = readyStep(step == "skin" and readyText or (readyText .. MOUSE_NOTE))
+    local s = { text = waitText, wait = waitStep(step, 3, keep, body, ready, still), timeout = timeout or 120 }
+    for k, v in pairs(extra or {}) do s[k] = v end
+    steps[#steps + 1] = s
+end
+local function needSeed()
+    if not seeds.single then return "skip", "skipped: no valid hover seed (the seed step failed or was skipped)" end
+    return true
+end
+
+local def = { rev = 8, title = "Reading the minimap by moving it (#91)" }
+def[#def + 1] = { text = "Readback only: protection, build, the minimap's size, points, alpha, strata, clamp and mouse states.", auto = true, run = protectRun }
+measure(def, "Next: the minimap leaves twice and must come back. Press Ready, then put the mouse in the middle of the screen, over the world.",
+    "Keep the mouse in the middle of the screen, over the world, still.", "restore", "mouse in the middle, still", homeBody, 90, nil, true,
+    { screenshot = "movescan: restored" })
+def[#def + 1] = { text = "Hover a HERB or ORE dot on the minimap with the mouse and keep it there (stand still, the dot in reach). It seeds by itself once the same node name has been under the cursor for two seconds.",
+    wait = seedWait("single", "a herb or ore dot"), timeout = 180,
+    check = function() return seeds.single ~= nil, "the seed" end }
+measure(def, "The minimap will blink for about half a minute (a size ladder, then 24 px three ways). Press Ready, then move the mouse to the middle of the screen, over the world, and keep it still.",
+    "Keep the mouse in the middle of the screen, over the world, still.", "single", "mouse in the middle, still", singleBody, 240, nil, true)
+measure(def, "WATCH the middle of the screen: the minimap will flash five times, half a second apart, invisible (alpha 0). Press Ready, then rest the mouse on open world.",
+    "Keep the mouse still, and watch under it.", "watch", "mouse in the middle, still", watchBody, 120, nil, true)
+def[#def + 1] = { text = "Did you see dots or the arrow flash under the mouse during the last blink?", ask = true }
+def[#def + 1] = { text = "Pair, first dot: hover ONE of two dots of the SAME herb or ore and keep it there.", wait = seedWait("pairA", "the first dot"), timeout = 180,
+    check = function() return seeds.pairA ~= nil, "the seed" end }
+def[#def + 1] = { text = "Pair, second dot: now hover the OTHER dot of the same name and keep it there.", wait = seedWait("pairB", "the second dot"), timeout = 180,
+    check = function() return seeds.pairB ~= nil, "the seed" end }
+measure(def, "Press Ready, then move the mouse to the middle of the screen, over the world, and keep it still.",
+    "Keep the mouse in the middle of the screen, over the world, still.", "pair", "mouse in the middle, still", pairBody, 240, nil, true)
+measure(def, "Press Ready, then hold the RIGHT mouse button (steering), without turning, for 5 s.",
+    "Hold the RIGHT mouse button, don't turn. The 5 s check runs while you hold it.", "mouselook", "keep holding the right button", lookBody("right, still"), 90,
+    function(st) local a, b = needSeed(); if a ~= true then return a, b end; if held("RightButton") then return true end return false, "hold the RIGHT mouse button" end)
+measure(def, "Press Ready, then hold the RIGHT mouse button and turn the character left and right steadily.",
+    "Keep the RIGHT button held and keep turning. The 5 s check runs meanwhile.", "mouselook", "keep turning with the right button held", lookBody("right, turning"), 90,
+    function(st)
+        local a, b = needSeed(); if a ~= true then return a, b end
+        if not held("RightButton") then return false, "hold the RIGHT mouse button" end
+        local pf = gfn("GetPlayerFacing")
+        local fc = pf and select(2, pcall(pf))
+        if type(fc) == "number" and not secret(fc) then
+            st.f0 = st.f0 or fc
+            local d = math.abs(fc - st.f0)
+            if math.min(d, 2 * math.pi - d) > 0.2 then st.turned = true end
+        end
+        if st.turned then return true end
+        return false, "turn with the right button held"
+    end)
+measure(def, "Press Ready, then hold the LEFT mouse button over the world for 5 s.",
+    "Hold the LEFT mouse button. The 5 s check runs while you hold it.", "mouselook", "keep holding the left button", lookBody("left"), 90,
+    function(st) local a, b = needSeed(); if a ~= true then return a, b end; if held("LeftButton") then return true end return false, "hold the LEFT mouse button" end)
+measure(def, "With Glass MiniMap on and the NodeRadar minimap button shown. Press Ready: the minimap goes away for 2 s while a screenshot is taken.",
+    "The minimap is about to leave. Mouse anywhere.", "skin", "the minimap will leave", skinBody, 120)
+def[#def + 1] = { text = "Did the minimap ever stay away, or come back wrong (size, place, dots missing)? Say what in the note.", ask = true }
+def[#def + 1] = { text = "Type /reload (or press Reload now) in this window to save the results.", reload = true }
+Probe:Steps("movescan", def)
+
+-- /fp nr movetest <size> <dx> <dy>: one placement of the base-map point (dx, dy) at a map
+-- of <size> px, then reads r+1..r+4, everything logged. The mouse must rest over the world.
+-- The variants: what the map is given while it is borrowed, in case the client resolves
+-- the mouseover only for the topmost mouse-enabled frame. All of it is in the save.
+local VARIANTS = { "plain", "tooltip", "motion", "ref" }
+local function applyVariant(v)
+    if v == "hidden" then applyHidden("movetest") end
+    if v == "tooltip" or v == "ref" then pcall(Minimap.SetFrameStrata, Minimap, "TOOLTIP") end
+    if v == "motion" or v == "ref" then
+        pcall(Minimap.SetMouseMotionEnabled, Minimap, true)
+        pcall(Minimap.SetMouseClickEnabled, Minimap, false)
+    end
+    if v == "ref" then
+        pcall(Minimap.EnableMouseWheel, Minimap, false)
+        local okk, kids = pcall(function() return { Minimap:GetChildren() } end)
+        for _, k in ipairs(okk and kids or {}) do
+            pcall(k.SetMouseClickEnabled, k, false)
+            pcall(k.SetMouseMotionEnabled, k, false)
+        end
+    end
+    mlog("movetest", ("variant %s applied: %s"):format(v, describe(snapshot())))
+end
+
+-- /fp nr movetest <size> <dx> <dy> [plain|tooltip|motion|ref|hidden|all]: one placement of the
+-- base-map point (dx, dy) at a map of <size> px, then reads r+1..r+4, everything logged
+-- with what the client says is under the cursor. The mouse must rest over the world.
+-- /fp nr movetest ladder <dx> <dy> [reads]: the base (198 unit) map's point (dx, dy), scaled
+-- by size/198, under the cursor at each size; reads r+1..r+<reads> (4), the library node
+-- names counted from r+2, and once more offset +8 and -8 px on screen along x.
+local LADDER_SIZES = { 198, 176, 160, 144, 128, 112, 96, 80, 64, 48, 32, 24 }
+local function nodeReads(step, label, ks)
+    local res, maxk, want, seen, order = {}, 0, {}, {}, {}
+    for _, k in ipairs(ks) do want[k] = true; if k > maxk then maxk = k end end
+    for r = 1, maxk do
+        frames(1)
+        if want[r] then
+            local names = read(step, ("%s r+%d"):format(label, r))
+            if r >= 2 then
+                local n = 0
+                for _, nm in ipairs(names or {}) do
+                    if libraryKind(nm) then
+                        n = n + 1
+                        if not seen[nm] then seen[nm] = true; order[#order + 1] = nm end
+                    end
+                end
+                res[#res + 1] = names and n or "x"
+            end
+        end
+    end
+    return res, table.concat(order, ", ")
+end
+local function ladderCmd(args)
+    local w = {}
+    for tok in tostring(args or ""):gmatch("%S+") do if tonumber(tok) then w[#w + 1] = tonumber(tok) end end
+    local wantHidden = tostring(args or ""):find("hidden", 1, true) ~= nil
+    local fl = tostring(args or "")
+    local wantUb, wantNofocus = fl:find("ub", 1, true) ~= nil, fl:find("nofocus", 1, true) ~= nil
+    local dx, dy, nreads = w[1] or 0, w[2] or 0, math.max(2, math.min(8, w[3] or 4))
+    local ks = {}
+    for i = 1, nreads do ks[i] = i end
+    start("movetest", function()
+        diag = true
+        local cur = num(call(Minimap, "GetWidth")) or 198
+        ubOn, nofocusOn = wantUb, wantNofocus
+        if wantHidden then applyHidden("movetest") end
+        local parts, hitSizes, lostSizes = {}, {}, {}
+        for _, sz in ipairs(LADDER_SIZES) do
+            resize(sz)
+            local k = sz / 198
+            place(dx * k, dy * k)
+            local res = nodeReads("movetest", ("ladder %d px at (%.1f,%.1f)"):format(sz, dx * k, dy * k), ks)
+            parts[#parts + 1] = ("%d:[%s]"):format(sz, table.concat(res, ","))
+            if anyHit(res) then hitSizes[#hitSizes + 1] = sz else lostSizes[#lostSizes + 1] = sz end
+            for _, off in ipairs({ 8, -8 }) do
+                place(dx * k, dy * k, off)
+                nodeReads("movetest", ("ladder %d px %s%d px"):format(sz, off > 0 and "+" or "", off), { 2 })
+            end
+        end
+        mlog("movetest", ("ladder (%s,%s): %s"):format(str(dx), str(dy), table.concat(parts, " ")))
+        local smallest
+        for _, sz in ipairs(hitSizes) do if not smallest or sz < smallest then smallest = sz end end
+        local msg = ("ladder: nodes read down to %s px; lost at %s"):format(smallest and tostring(smallest) or "none",
+            #lostSizes > 0 and table.concat(lostSizes, " ") or "none")
+        mlog("movetest", msg)
+        resize(cur)
+        return msg
+    end, function(summary) say("movetest: " .. tostring(summary)) end, true)
+end
+
+-- Flags after dx dy, in any order: ub (UpdateBlips after each placement), xN (N placements,
+-- 0.5 s apart, the map off screen between), nofocus (read when the focus list is empty).
+local function parseFlags(tokens)
+    local f = { nums = {}, variant = "plain" }
+    for _, tok in ipairs(tokens) do
+        if tonumber(tok) then f.nums[#f.nums + 1] = tonumber(tok)
+        elseif tok == "ub" then f.ub = true
+        elseif tok == "nofocus" then f.nofocus = true
+        elseif tok:match("^x%d+$") then f.n = math.max(1, math.min(20, tonumber(tok:sub(2))))
+        elseif tok ~= "ladder" then f.variant = tok end
+    end
+    return f
+end
+local function tokens(args)
+    local t = {}
+    for tok in tostring(args or ""):gmatch("%S+") do t[#t + 1] = tok end
+    return t
+end
+
+Probe:Command("movetest", function(args)
+    if tostring(args or ""):match("^%s*ladder") then return ladderCmd((tostring(args):gsub("^%s*ladder", ""))) end
+    local f = parseFlags(tokens(args))
+    local variant = f.variant
+    local size, dx, dy = f.nums[1], f.nums[2] or 0, f.nums[3] or 0
+    local known = variant == "all" or variant == "hidden"
+    for _, v in ipairs(VARIANTS) do if v == variant then known = true end end
+    if not size or not known then say("movetest: /fp nr movetest <size> <dx> <dy> [plain|tooltip|motion|ref|hidden|all] [ub] [x<N>] [nofocus]"); return end
+    start("movetest", function()
+        diag = true
+        ubOn, nofocusOn = f.ub == true, f.nofocus == true
+        local cur = num(call(Minimap, "GetWidth")) or size
+        local list = variant == "all" and VARIANTS or { variant }
+        for i, v in ipairs(list) do
+            applyVariant(v)
+            resize(size)
+            local label = ("%s: %s px at (%s,%s)"):format(v, str(size), str(dx), str(dy))
+            if f.n then
+                local base = (S and S.w) or size
+                local k = size / base
+                for n = 1, f.n do
+                    place(dx * k, dy * k)
+                    local res, names = nodeReads("movetest", ("%s #%d"):format(label, n), KS)
+                    mlog("movetest", ("placement %d of %d: library nodes at r+2..r+4 [%s]: %s"):format(n, f.n, table.concat(res, ","),
+                        names ~= "" and names or "none"))
+                    if n < f.n then offscreen(); pause(0.5) end
+                end
+            else
+                at("movetest", label, dx, dy, size, KS, nil)
+            end
+            resize(cur)
+            if variant == "all" then
+                restore("movetest " .. v)
+                if i < #list then
+                    pause(0.3)
+                    local okb, whyb = begin("movetest")
+                    if not okb then return "refused: " .. tostring(whyb) end
+                end
+            end
+        end
+        return "done"
+    end, function(summary) say("movetest: " .. tostring(summary)) end, true)
+end, "<size> <dx> <dy> [plain|tooltip|motion|ref|hidden|all] [ub] [x<N>] [nofocus]: put the map point (dx, dy) of a <size> px map under the cursor, read r+1..r+4")
+
+NS._movescan = {
+    begin = begin, restore = restore, refusal = refusal, snapshot = snapshot, abort = abort,
+    place = place, read = read, start = start, state = function() return S, job end,
+    protectRun = protectRun, homeBody = homeBody, singleBody = singleBody, pairBody = pairBody,
+    lookBody = lookBody, skinBody = skinBody, seeds = seeds, seedWait = seedWait,
+    watchBody = watchBody, frame = function() return frameN end,
+    at = at, resize = resize, maxCalls = function() return math.max(maxCalls, calls) end,
+}
+-- What MoveScan2.lua (movescan2 and movescan3, the last round before #91's code) reuses.
+NS._ms = {
+    mlog = mlog, call = call, gfn = gfn, frames = frames, pause = pause, offscreen = offscreen, place = place,
+    snapshot = snapshot, compare = compare, describe = describe, restore = restore, begin = begin, refusal = refusal,
+    state = function() return S, job end, start = start, abort = abort, seeds = seeds, seedWait = seedWait,
+    waitStep = waitStep, libraryKind = libraryKind, isPlayerName = isPlayerName, overWorld = overWorld,
+    overMap = overMap, cursor2 = cursor2, setIconScale = setIconScale, rawText = rawText, relName = relName,
+    describeFrame = describeFrame, placementCheck = placementCheck, geometry = geometry, tally = tally,
+    placed = function() return placed end, frame = function() return frameN end, guardRound = guardRound,
+    setFrameHook = function(f) frameHook = f end, setAbortHook = function(f) abortHook = f end,
+    setForceCombat = function(v) forceCombat = v == true end, mouseover = mouseover,
+    setQuiet = function(v) quiet = v == true end,
+    readyStep = readyStep, measure = measure, held = held, str = str, num = num, secret = secret,
+    THRESH = THRESH, KS = KS, say = say, Probe = Probe, nr = nr,
+}
+end
+
+
+--------------------------------------------------------------------------------
 -- The listener, always on
 --------------------------------------------------------------------------------
 

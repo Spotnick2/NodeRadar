@@ -2220,6 +2220,381 @@ mutation-tested.
 Then a look round with the code (`/fp steps nr partylook`): the shared icons on the main's
 minimap while the herbalist follows, the pip, a gather removing the icon, the group left.
 
+## The minimap scan mode (#91), opt-in
+
+From client build 70862, `Minimap:UpdateMouseoverAtPoint` does nothing: the minimap's mouseover is
+resolved only under the real cursor (docs/FOREVER-PROBE.md, "70862: the mouseover can't be
+pointed"). Blizzard calls that intentional and says the API will go (Stanzilla/WoWUIBugs#894).
+#90 made NodeRadar stop and say so. This is the way back: **move `Minimap` itself under the
+resting cursor for a few frames**, invisible, read what lies there, put it back. Measured on 70862
+before any code (docs/FOREVER-PROBE.md, "Reading by moving the minimap"). Two other addons already
+work this way; their measures were weighed, not copied. Reviewed by Codex (gpt-6-astra, high):
+rounds 1 to 3 on 2026-11-08, each "approve with changes", all taken below; round 4: APPROVE.
+
+### What it rests on (measured, 70862)
+
+- `Minimap` is unprotected (only `MinimapCluster` is, and only the cluster is an Edit Mode
+  system): an addon can move and resize it out of combat, and the probe always put it back.
+- A read counts only when `Minimap` is the top mouse focus (`GetMouseFoci()[1]`). Any frame above
+  it at the cursor (our own console was one) leaves it unread.
+- Shrunk to **24 frame units** (15.4 screen px), one read centred on the player lists every node in
+  range, once per node (two Mageroyals read `x2`), with players, rares and quest objects. At 20 frame
+  units (12.8 screen px) and below, gathering nodes are no longer listed. Alpha 0 and `SetIconScale(0.01)` still read; without the icon scale the
+  dots flash under the cursor.
+- `Minimap:UpdateBlips()` after each placement: without it the first reads of a burst can be stale.
+- After a resize the first frame reads nothing; the next reads.
+- With a mouse button held to steer (mouselook) nothing reads at all.
+- Blizzard's own tooltip: entering the minimap installs `Minimap_OnUpdate`, which every frame calls
+  `GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")` then `GameTooltip:SetMinimapMouseover()`
+  (`Blizzard_Minimap/Mainline/Minimap.lua:253, 279`): the names show at the cursor during a burst
+  (seen in game). `OnEnter` also shows the zoom buttons.
+
+### The contract, amended (CLAUDE.md, "The UI contract")
+
+> Never move, resize, reparent, rescale or hide `MinimapCluster` or its container. Never reparent,
+> rescale, or call `Hide()` on `Minimap`.
+>
+> Only the explicitly enabled minimap scan (#91), from build 70862, may temporarily change an
+> unprotected `Minimap`'s anchors, width and height, own alpha, icon scale, screen-clamp flag,
+> mouse-click state and mouse-wheel state. It leaves mouse motion enabled and never changes frame
+> strata, level, parent, scripts, or another addon's frames.
+>
+> A scan starts only outside combat, Edit Mode, loading screens and the gamepad UI, with the
+> cursor quiet over open world and every admission gate met. Each burst has a placement and a time
+> budget. Its continuation and read-validity checks depend on the phase. An invalid or interrupted
+> read is never evidence that nothing is there.
+>
+> Readable state is saved before the first change. Every exit restores, idempotently, whether or
+> not the scan is still on: geometry before visibility and input, then the blips refreshed and
+> every readable property read back. The icon scale has no getter: it goes back to the last value
+> another addon was seen setting, else 1, and is never called verified.
+>
+> Cleanup may run after combat starts while the operations stay allowed. Blocked or failed cleanup
+> stays pending, turns the scan off, says so, and is retried when allowed; running out of retries
+> never discards what's left to restore.
+>
+> Only the scan's own minimap tooltip is suppressed, through a secure post-hook, through the
+> restore's settling too. Never replace Blizzard's globals, methods or scripts, bypass another
+> addon's hooks through the frame's metatable, change tracking to scan, or touch the camera, the
+> cursor or mouselook. The pre-70862 sweep and the learner keep their own guarantees.
+
+Not taken from the others: the frame type's own methods to skip skins' hooks (that removes
+cooperation, it makes nothing safer), raising the strata (a covered cursor is refused instead),
+turning quest tracking off to hide its areas, a fake stand-in minimap, hiding every tooltip.
+
+### The scanner (`MoveScan.lua`, new)
+
+A state machine on its own `OnUpdate`, present from borrow until the restore's settling and
+read-back are done, then removed. Every burst carries a generation number; a delayed callback of
+an older burst does nothing.
+
+**borrow → (prepare → place → read)… → restore → settle → idle**
+
+- **Borrow + prepare** (frame 1): admission (below) must hold, and Glass MiniMap's acquisition
+  must succeed (below), else no borrow at all. Saves every anchor tuple, the size, own alpha,
+  clamp, click and wheel states (and reads strata, level and motion, never changed). Then: alpha 0,
+  clicks and wheel off, clamp off, `SetIconScale(0.01)`, off screen, and the size for the read.
+  Refused if mouse motion is already off (another addon's choice).
+- **Place** (frame 2): `SetPoint` so the wanted map point lies under the cursor, then
+  `UpdateBlips()`.
+- **Read**: counted from the placement frame. After a resize, +1 is the settle frame (measured: it
+  reads nothing) and the read is at +2 (frame 4 of a presence burst); without a resize, at +1.
+  Further placements of the same burst repeat place and read.
+- **Restore**, always, on every exit, each operation in its own `pcall`, in two dependent groups:
+  1. **geometry**: anchors, size and clamp (the clamp can move the frame, so it belongs here), with
+     the map still invisible and click-off; then read back;
+  2. **visibility and input**, only once the geometry reads back right: alpha, then clicks and
+     wheel last. If the geometry failed, these stay pending: the map stays invisible and
+     click-off where it is, never shown or clickable away from home.
+
+  The icon scale is independent of both (it doesn't move anything) and is restored at once. Then
+  `ScanEnd`, `UpdateBlips()` now and next frame.
+- **Settle** (the next frame): the tooltip suppression and the driver stay one more frame; then
+  each readable property is read back. What differs stays pending: the scan turns itself off, one
+  chat line, a failure (`/nr failures`). The pending part is retried at `PLAYER_REGEN_ENABLED`, at
+  `EditMode.Exit` (`EventRegistry`), after a loading screen, and every 2 s otherwise, never dropped.
+  Turning the scan off never stops those retries.
+
+**Checks, by phase**
+
+- **Admission** (borrow): the setting on; not `InCombatLockdown()`, not
+  `UnitAffectingCombat("player")`; `Minimap:IsProtected()` false; no gamepad UI (`API.Gamepad`); not
+  in Edit Mode (`EditModeManagerFrame:IsEditModeActive()`, guarded); not loading; not dead, not on a
+  taxi, not in an instance; `Minimap` shown and visible; not mouselooking and no mouse button down
+  (`IsMouseButtonDown`); `GetMouseFoci()[1] == WorldFrame`, or a frame drawn below `Minimap`
+  (a lower strata, or the same strata at a lower level: a UI suite's full-screen layer, which the
+  borrowed map will be above); no **follower** (below); the cursor still (under 2 px) for 0.2 s,
+  not over the minimap's home rect; `GameTooltip` hidden; no open menu; the LFG eye
+  (`QueueStatusButton`, anchored to `Minimap`) not shown; a minimum time since the
+  last button release (0.3 s).
+- **Continuation** (every frame of the burst): the setting on, the environment as at admission
+  (combat, Edit Mode, loading, gamepad, mouselook, buttons), the scan context unchanged (zone,
+  instance, zoom, view radius, the minimap's home geometry and effective scale, tracking), the
+  cursor within 2 px. The top focus is expected to be `Minimap` while placed and `WorldFrame` while
+  off screen; anything else (an overlay, a skin's button arriving) ends the burst. A tooltip shown
+  by anything but the suppressed producer, or a menu opening, ends it too. `GLOBAL_MOUSE_DOWN` ends
+  it at once.
+- **Read validity**: `Minimap` the top focus; the settle frame passed; the placement check (the
+  cursor's offset from the map's centre, in base-map units) within 1 unit; `UpdateBlips()` ran
+  without error; the data readable and not secret. An invalid read ends the burst as unread.
+
+A failing admission just waits. A failing continuation or read restores at once. Restoration never
+depends on any check: turning the setting off, combat, a lost focus or a hidden minimap stop the
+reading, never the cleanup.
+
+**Combat.** No scan starts or continues in combat. `PLAYER_REGEN_DISABLED` can arrive after the
+lockdown has started: the restore then runs at once anyway, since `Minimap` stays unprotected (the
+porting guide: unprotected children stay movable in combat). If something made it protected, the
+blocked parts stay pending until `PLAYER_REGEN_ENABLED`. Measured before release: a fight starting
+mid-burst.
+
+**The icon scale** has no getter. A `hooksecurefunc(Minimap, "SetIconScale")`, installed when
+NodeRadar's files load, remembers the last value another addon set after that (our own calls
+flagged and ignored); restore sets that, else 1. A skin that set a scale before NodeRadar loaded
+can't be seen: it falls back to 1, a stated limit (Glass MiniMap never calls it, its session
+checked). A setter that throws leaves that part pending.
+
+**Glass MiniMap** (GlassMiniMap#56, `PUBLIC_API_VERSION == 1`, `rawget` + `pcall`), fail-closed:
+- `ScanBegin("NodeRadar")` must return `true` (acquired) before our first change. `false`, a throw
+  or anything else: **no borrow**, the scan waits for its next turn, and three refusals in a row
+  turn the scan off with a chat line.
+- Three cases, by what is loaded (Glass MiniMap's session, 2026-11-08):
+  - **not loaded** (`C_AddOns.IsAddOnLoaded("GlassMiniMap")` false): no cooperation needed;
+  - **loaded, `PUBLIC_API_VERSION == 1` and `ScanBegin` a function**: the handshake above;
+  - **loaded with anything else** (no version: every release before #56, today's v1.0.1 included,
+    whose ring travels with `Minimap` and ignores its alpha, measured; or a version we don't know):
+    **no borrow**, and one chat line per session that Glass MiniMap needs updating for the scan.
+- Glass MiniMap's side: `ScanBegin` returns `false` only for a bad owner; it returns `true` too when
+  it has nothing to protect; a second `ScanBegin` from an active owner restarts its 1 s; version 1
+  means nothing of theirs anchors to `Minimap`, shipped with the anchor fix in one release.
+- After any `ScanBegin` call, acquired or thrown, one `ScanEnd("NodeRadar")` is owed; Glass MiniMap
+  makes it idempotent (a second or an unowed one is a no-op) and ends an owner's scan itself after
+  1 s without one. A throwing `ScanEnd` is recorded and never blocks our restore.
+- Agreed with Glass MiniMap's session (recorded on GlassMiniMap#56): the boolean return, the
+  idempotent `ScanEnd`, the 1 s self-release per owner.
+
+**Followers.** A frame outside `Minimap`'s tree but anchored into it (through its `GetPoint`
+chain) travels with the borrowed map without taking its alpha: Glass MiniMap's before #56, a
+skin's border, a clock moved onto the map, the LFG eye. Never hidden or changed by us (the
+contract); found instead, and the scan refuses while one is shown and visible (effective alpha
+above 0), with one chat line per session naming it (`GetDebugName`). The search walks `UIParent`
+and `MinimapCluster` three levels deep, each frame answered once, **when the scan is turned on, at
+login, and every 10 s while on**, never per frame; the LFG eye is checked every frame of a burst
+(shown mid-burst: the burst ends). Glass MiniMap v1 anchors nothing to `Minimap` (#56, measured
+before release with the probe's handshake).
+
+**Blizzard's tooltip.** `hooksecurefunc(GameTooltip, "SetMinimapMouseover", ...)` at load: while
+suppression is on, it hides `GameTooltip` after the producer showed it. Producer-level, so
+`Minimap_OnUpdate`'s timing doesn't matter. Suppression runs from the borrow to the end of the
+settle frame, bounded: it ends then even if some cleanup is still pending, so a real hover over the
+home minimap shows as usual. `Tooltip.lua` adds no lines while it's on. Mouse motion stays on: the
+read needs the hover.
+
+**Clicks.** Clicks and the wheel stay off for the whole borrow (motion only consumes nothing, as the
+compass's disc), restored last. `GLOBAL_MOUSE_DOWN` ends a burst; a new quiet period follows the
+release. A click landing between admission and the next frame can still meet the borrowed map:
+measured before release (left and right, down and up, mouselook starting, in each phase).
+
+### What a scan reports (a new contract, not the old sweep's shape)
+
+`NR.Step` stops being synchronous on these builds. `MoveScan` reports to `NR.Observe(kind, obs)`
+on completion. Every observation carries its **context**, captured together at the read: the
+burst's generation, the instance, the home geometry, `Scan.Where()` **and** the player's world
+position (`UnitPosition`: north, west), never the borrowed map's. A consumer that projects uses
+that pair, or reads a fresh pair together at delivery, never one old and one live. An observation
+of an older generation or another instance is dropped.
+
+- **presence**: `{ counts = { [name] = n }, at, context }` for accepted names (below).
+  Multiplicity kept, never deduplicated. Only presence goes to `Alert.Counts`.
+- **located**: `{ name, north, west, uncertainty, at, context }`: a node in world yards. Never a
+  count snapshot.
+- **unread**: changes nothing, anywhere.
+- **known empty**: a valid read listing no accepted name (`counts` empty) is presence with zero
+  counts, distinct from unread. Which client answers mean "valid and empty" (a table with no lines)
+  and which mean "unread" (nil, malformed, unsettled) is measured: a valid read always has lines
+  (the player, a quest object), an unsettled one has none, nil never came from a valid read. So
+  known empty is a valid read with at least one line and no accepted name; no lines or nil is
+  unread.
+
+What each consumer changes (Codex, round 1):
+
+- **`NR.Step`** (NodeRadar.lua:115): on these builds it schedules bursts; the downstream order
+  (`Track.Follow` → icons → share → compass → beacon → alert) runs on each observation. The geometry
+  reset (`sameGeometry`) reads the home snapshot, never the borrowed map.
+- **`Alert`** (Alert.lua:49, 246): a counts entry point (`Alert.Counts(counts, now)`, the same rise
+  and blink rules). The sound and the chat line (name only, no coordinates) fire on the rise; the
+  sonar and the solo ping become a **pending token** for that name, fulfilled once by a located
+  observation within 5 s, never replaying the sound or spending the cooldown. `Scan.MapPosition`
+  is never called without coordinates.
+- **`Icons`** (Icons.lua:667, 764, 802): records come from located observations only. The
+  cell-based measurement (`Scan.Centre`, `Scan.Unexplained`) isn't used on these builds. The record
+  lifecycle:
+  - each record has its own confirmation time; it is **due** a re-check after `RECHECK` (15 s)
+    while within the minimap's radius, and **expires** unconfirmed after `RECORD_TTL` (45 s);
+  - **renewal**: a valid read at the record's predicted spot, at a size whose window holds no other
+    record of that name, listing the name once renews it; a window holding two or more records of
+    the name renews none of them (ambiguous: the next re-check uses a larger map); a valid read
+    without the name drops the record; an unread spot changes nothing;
+  - a presence count that falls below the records of a name makes all of them due at once;
+  - **`gone`** (a gathered spot): kept until a valid read at its spot lacks the name, or 120 s,
+    whichever first, and a located observation within it is dropped meanwhile, so a late result
+    never resurrects a gathered node.
+- **`Compass`** (Compass.lua:449): chooses again on every located observation and record expiry,
+  keeping the incumbent by identity; freshness from the records' own times, not `db.interval`.
+- **`FarMarker`** (FarMarker.lua:312): an explicit update after a local record arrives, with the
+  observation's paired context (its `where` and the player's position at the read), or a fresh pair
+  read together at delivery; never today's position against an old map.
+- **`Share`** (Share.lua:328): sends located records only; a record arriving, expiring **or being
+  gathered** (`Share.Gathered`) marks the snapshot dirty, sent at the next allowed moment (the 1 s
+  throttle kept), so a withdrawal is never lost to the throttle. `Share.Gathered`'s freshness uses
+  the record's confirmation age, not `db.interval + 2`. Presence never adds placeholders.
+- **`Learn`**: the toggle experiment never runs from 70862. `Learn.Resume` and the pending tracking
+  restore keep working (a restore owed from before still finishes).
+- **Freshness**: `Icons.lua:539`, `Compass.lua:183` and `FarMarker.fresh` use `db.interval + 2` today
+  (4 s). On these builds they use the record's confirmation age, and `Alert`'s stale rule follows
+  the scan cadence, so a 6 s idle scan doesn't blank them or reset the alert's baseline.
+
+**Accepted names**: the current locale's library plus learned entries with gathering evidence
+(after the cleanup below), under today's precedence rules; the same normalisation (`Scan.Plain`);
+localised names as keys, no English matching.
+
+### Locate
+
+Presence says how many of each name. Locate finds where, only while something needs positions
+(icons, the compass, the marker, sharing, a pending sonar or ping), for two independent reasons:
+- **unresolved demand**: a name whose count exceeds its located, fresh records. That covers a rise,
+  the first baseline, an interrupted or failed search, a consumer just turned on;
+- **due re-checks**: records past `RECHECK` (Icons, above), whatever the counts. That covers an
+  unchanged count whose node was replaced.
+
+- **Geometry** (measured first, below): a node's hit square is H screen pixels. With the minimap
+  M screen pixels wide over a view radius of R yards, one read covers a window 2·R·H / M yards
+  wide. For a wanted window W, M = 2·R·H / W, then `SetSize(M / effectiveScale, M / effectiveScale)`.
+  Measured (docs/FOREVER-PROBE.md, "The scan's last round"): **H = 16 screen px** on a map of
+  61 px or more, its centre up to 3.5 px off the node's spot, so a window's positive read bounds
+  the node within 16 + 2 × 3.5 px; a locate map is never smaller than 61 px (96 units at 0.64).
+- **Order**: first the known records due a re-check, at their predicted world spot; then a
+  coarse-to-fine search: windows covering the whole map with overlap, the likeliest first (the
+  motion's leading edge, the side the count rose on), each positive window split until the
+  uncertainty meets what the consumer needs (the compass and the marker: a few yards). One read
+  serves every unresolved name it lists. Positions already accounted for are excluded, so a second
+  same-name node is found rather than the first again; an ambiguous overlap stays unresolved.
+- **Precision**: a single positive read only bounds a node by the hit square. Finer comes from a
+  larger map (a smaller window) or from its edges, as `Scan.Centre` did on the old sweep.
+- **Moving**: every search window is held in world yards and reprojected against the player's
+  current position at each placement. Each read is paired with its own context, and a positive read
+  is subdivided from the **world window it actually covered at the read** (the player may have
+  moved since the placement), never from the requested bounds. A rotating minimap is refused, as the
+  old sweep refuses it (`Scan.Where` nil).
+- **Budgets**: at most 8 placements and 250 ms per burst, then restore; the search resumes at the
+  next burst. Its target is under 20 placements for a new node, a performance target, not a bound.
+
+### Cadence
+
+- **Frame schedule** of a presence burst (the scanner's, above): borrow + prepare (frame 1), place
+  (frame 2), the settle frame (frame 3), read and restore (frame 4), settle and read-back (frame 5).
+  The home minimap is absent from frame 1 to frame 4: three frame intervals, 50 ms at 60 fps,
+  100 ms at 30. Measured before release, including at a low frame rate.
+- **Sizes**: the presence size is measured in screen pixels: 24 frame units at the owner's
+  effective scale 0.64 is **15.4 screen px** (read every node), 20 frame units 12.8 screen px (none).
+  The scanner
+  sets `SetSize(px / es, px / es)` for 15.4 px: the last round read every node at 12.8 to 18 px,
+  at the rim and at effective scale 0.85 too (Copper Veins; the first round's 12.8 px miss was
+  herbs), so 15.4 px keeps a margin both ways.
+- A presence burst every `scanEvery` seconds: 2 moving, 6 standing still (1 to 10, the player's
+  choice); the end of mouselook or a stop after moving asks for one sooner, coalesced, never closer
+  than 1 s. Locate bursts follow, spaced at least 0.3 s, one in flight, within their budget.
+- That is 10 to 30 presence blinks a minute, plus locates when nodes appear. A burst has an elapsed
+  time limit (250 ms), checked every frame.
+- Glass MiniMap decides its own frost (GlassMiniMap#56).
+
+### The learned names cleanup (#90's follow-up, before this)
+
+At load, from every locale in `NodeRadarDB.learned`: entries with `source == "toggle"` and a build
+(converted to a number, validated) of 70862 or later are dropped, `kind = false` ones too. Gathering
+evidence and older entries stay. Runs before any learned entry can shadow the library. Its own PR,
+in v1.7.1 with #90.
+
+### Opt-in and the login prompt
+
+`moveScan`, off by default, for everyone. Once per account (`NodeRadarDB.moveScanAsked`), at the
+first quiet moment after login on 70862 or later (out of combat, not loading, no gamepad UI, 10 s
+after entering the world), NodeRadar's own small window asks:
+
+> Since build 70862, NodeRadar can only see nodes by briefly moving your minimap under your mouse.
+> While you move it looks every couple of seconds (every few seconds standing still), and your
+> minimap disappears for a split second each time. It can't look while you steer with a mouse
+> button held, or in combat. Try it?
+> [Try the minimap scan] [Not now]
+
+Our own frame, not Blizzard's popups. Options keeps the switch, `scanEvery`, and the same text;
+`/nr scan` toggles it.
+
+### Cancelled and kept apart
+
+Stale work is cancelled (the generation number) on a tracking change, a zone or instance change, a
+zoom or view-radius change, a display or effective-scale change, the setting off, and a gather.
+Consumers read a **home geometry snapshot** taken before each borrow, never `Minimap`'s live size
+while it's borrowed.
+
+### Not in this
+
+Reading while steering (impossible, measured). Reading in combat (impossible too: the top focus
+is none in combat, measured). Raising `Minimap`'s strata. Moving Blizzard's LFG eye or any other
+addon's frame. What travels with `Minimap`: Glass MiniMap stops it on its side (#56); others are
+measured below and, if they show or catch input, scanning refuses in that configuration rather
+than widening the contract. Measured: `QueueStatusButton` (the LFG eye) is anchored to `Minimap`,
+so **no burst while it is shown** (an admission check) until its look in a queue is measured.
+
+### Probe before the code (`/fp steps nr movescan`, one more round)
+
+Done on 70862 (`movescan2`, `movescan3`; docs/FOREVER-PROBE.md, "The scan's last round") except:
+the LFG eye shown in a queue (6) and movement between placement and read (9, too short a burst
+to tell), measured before release, not before the code. Item 7's annoyance was Glass MiniMap's
+frames: with #56's dev build and the handshake the owner no longer noticed the blinks (on foot;
+mounted before release). The low frame rate (5): about 200 ms a burst at ~25 fps, within the
+budget. Alpha 0 doesn't blank the home minimap's ground (another addon hides by mask, saying it
+does): alpha stays.
+
+1. The hit square H: width and height in screen pixels, at icon scale 0.01, at three minimap sizes,
+   two effective scales and two zooms; its edges; two same-name nodes overlapping and apart.
+2. A read at the intended presence size (about 15.4 screen px) with a node at the minimap's rim.
+3. The tooltip suppression through the producer hook, including the settling frame.
+4. Input: a left and a right press (down, up) and mouselook starting, in each phase of a burst.
+5. A fight starting mid-burst; Edit Mode entered mid-burst; a low frame rate (capped at 20 fps).
+6. Attached frames: the LFG eye queued; a skin that re-anchors `Minimap` on `SetPoint` (the
+   placement check must turn it into unread and a backoff, never a flicker).
+7. A full riding cadence with keyboard steering: the blinks per minute the owner sees.
+8. A known-empty read: what the client answers for a valid read with nothing there (a table with no
+   lines, or nil), in a presence read and a locate window, against unsettled and malformed ones.
+9. Movement between placement and read during a locate refinement, keyboard steering.
+10. The presence size at a second effective scale (the UI scale changed), in screen pixels.
+
+### Tests
+
+The stubs gain a minimap whose mouseover follows where it's drawn (a hit square per blip, a size
+below which gathering blips aren't listed, a stale read without `UpdateBlips`, a top-focus model).
+Covered, mutation-tested:
+- each check by phase, refusing and mid-burst; `GLOBAL_MOUSE_DOWN`;
+- restore on every exit, per-property `pcall`s, geometry before input, the pending state kept after
+  three failures and retried on recovery, never dropped; the generation number;
+- a failed or silently refused geometry restore leaves alpha 0 and clicks off (pending), never a
+  visible or clickable map away from home;
+- Glass MiniMap's acquisition refused or throwing: no borrow; `ScanEnd` owed after any `ScanBegin`;
+  Glass MiniMap loaded without version 1 (no version, or an unknown one): no borrow, the one-line
+  notice once a session; not loaded: no handshake;
+- a skin that set the icon scale before NodeRadar loaded: restored to 1 (the stated limit);
+- the record lifecycle (renewal, ambiguity, expiry, `gone`), a gather's withdrawal through `Share`'s
+  throttle, the paired context dropped across generations and instances;
+- an unread never counted as absence;
+- presence with multiplicity; the pending sonar token; an unchanged-count replacement; the first
+  baseline; a late located result after a gather dropped;
+- record expiry and re-checks; the compass's reselection; `Share`'s dirty send through the throttle;
+- the tooltip hook hiding only during suppression;
+- `ScanBegin`/`ScanEnd` in pairs, and safe when Glass MiniMap is missing or throws;
+- the cleanup of learned names across locales;
+- the prompt asked once, never in combat; nothing created when off or before 70862.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock

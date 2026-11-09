@@ -1011,3 +1011,97 @@ reads, cursor and point compared:
 So from 70862 `UpdateMouseoverAtPoint` does nothing: the minimap's mouseover is resolved only
 under the real cursor. NodeRadar stops sweeping from that build (`API.Blind`, `NR.BLIND_FROM`).
 The way back is to move the minimap under the cursor (#91), measured in its own round.
+
+### Reading by moving the minimap: `/fp steps nr movescan` and `/fp nr movetest`, 1.60.1.70862 (the owner, 2026-11-08, the Barrens, Herbalism 98 to 114) (#91)
+
+Eight revisions of the round and its one-shot command (`/fp nr movetest <size> <dx> <dy> [variant]
+[ub] [x<N>] [nofocus]`, and `ladder`). The probe borrows `Minimap` only (never the cluster or its
+container), saves and restores its anchors, size, alpha, clamp, mouse states, strata and children's
+mouse states, and reads every one back.
+
+- **Protection:** `Minimap:IsProtected()` false, `MinimapCluster` true,
+  `MinimapCluster.MinimapContainer` false (the parent chain container, cluster, `UIParent`). Its
+  points: `CENTER` on the container's `CENTER`, 198 units, effective scale 0.64, `LOW` level 3.
+- **Restore:** every readback in every run OK (dozens: off screen, resized, after each step, the
+  children compared by frame identity). Nothing runs once a test is over.
+- **The read follows where the map is drawn:** the map moved so a point of it rests under the
+  still cursor, `C_TooltipInfo.GetMinimapMouseover()` lists what lies at that point, but **only when
+  `Minimap` is the top mouse focus** (`GetMouseFoci()[1]`): over our own console (`TOOLTIP`) every
+  read was nil, even with the minimap raised to `TOOLTIP`. At normal size the first frame after a
+  move reads; after a resize, the first frame reads nothing ("no text") and the next ones read.
+- **A small map lists every node once per node:** shrunk to **24 px** (15 px on screen), one read
+  centred on the player listed every herb in range (Briarthorn, Mageroyal, Wild Steelbloom) and a
+  second Mageroyal as `x2`, with the players, rares (Echeyakee) and quest objects. 32 px read too;
+  **20 px and smaller listed players and rares but never a gathering node.**
+- **Hidden:** alpha 0 with `SetIconScale(0.01)` set while off screen still reads at 24 px. Without
+  the icon scale, the owner saw dots and the arrow flash under the cursor.
+- **Stale reads:** without `Minimap:UpdateBlips()` after a placement, the first placements of a
+  burst could miss the nodes (2 of 5) and the next read them; with it, 5 of 5 read every node.
+- **Mouselook:** with a mouse button held to steer, `GetMouseFoci()` is empty, the cursor is frozen
+  and every read is nil. Nothing can be read while the player steers with the mouse.
+- **Side effects seen:** Blizzard's minimap tooltip (`GameTooltip`, the node names) shows at the
+  cursor during a scan; Glass MiniMap's ring and pills travel with `Minimap` (anchored to it) and
+  don't follow its alpha (GlassMiniMap#56); NodeRadar's LibDBIcon button travels too.
+- Not measured: the exact size of a node's hit square on screen, and whether a 24 px read covers
+  the minimap's rim (a node at the edge).
+
+### The scan's last round: `/fp steps nr movescan2` and `movescan3`, 1.60.1.70862 (the owner, 2026-11-08, Tirisfal Glades, Mining 1) (#91)
+
+The plan's probe list (docs/PLAN.md, "Probe before the code"), measured with the plan's burst:
+borrow and prepare, place, settle, read and restore, read back. Copper Veins, effective scale 0.64
+unless said. `movescan2` ran three times: the first two measured a looted node (no seed check
+then), the third verified every seed before measuring it. Every restore and readback in all
+three runs was OK; no blocked action, no Lua error.
+
+- **A node's hit square: 16 × 16 screen px** on a map of 61 px or more (96 and 198 units), at
+  both zooms (view radius 233 and 200 yd), icon scale 0.01. Its centre sits up to 3.5 px off the
+  node's projected spot (x -1.5 to -3.5, y -0.5 to -1.5), so a window is not symmetric around it.
+  On maps of 31 and 41 px (48 and 64 units) the run is 24 to 27 px in x and 18 to 19 in y, the x
+  cut by the map's own edge (a lower bound); the node lay well inside the circle (7%), so it's not
+  the rim. Read at +1 and +2 after a placement agreed every time (0 differences in ~600).
+- **The presence read** (the map 12.8 to 18 px on screen, centred or at the seed's place) listed
+  the seeded node at every size tried, at the rim (67 to 85% of the radius), and at a second
+  effective scale (0.85). The smallest tried, 12.8 px, lists Copper Veins: the first round's "20
+  units lists no gathering node" (herbs, the Barrens) does not hold here. 15.4 px reads in both.
+  Two veins in range read `x2` at the presence size and once each at a 96-unit verification.
+- **Known empty vs unread:** a valid read with no node still has lines (the player, a quest
+  object: 1 or 2 non-node lines); a read one frame after a resize (unsettled) has no lines at all.
+  Nil never came from a valid read.
+- **Tooltip:** `hooksecurefunc(GameTooltip, "SetMinimapMouseover", ...)` installs (the method
+  exists at login). Hiding there while a flag is on: shown 0 of ~1000 frames over held and short
+  bursts, the settle frame included; with the flag off, shown 98% of the frames (the screenshots:
+  the node names, the quest line and "Requires Mining (1)" at the cursor).
+- **Clicks and mouselook mid-burst** (8 left, 8 right, 8 mouselook starts): every press during a
+  borrow ended the burst, the restore OK; `MINIMAP_PING` never fired. The control (clicks left on,
+  one click) didn't ping either, so a click reaching the borrowed map is not excluded, only unseen.
+- **Combat:** two of three fights started inside a borrow; the map was home 0.3 s later each time.
+  `Minimap` moves in combat without a block (a forced burst in each fight), but **nothing reads in
+  combat**: the top focus is none.
+- **Edit Mode** entered inside a borrow: home at once, OK.
+- **Low frame rate:** not measured. `maxFPS` alone left 127 fps: it applies only with `useMaxFPS`
+  on (the probe now sets both and puts both back).
+- **What moves with `Minimap`** (rects before and during a borrow): Glass MiniMap's frames under
+  `MinimapContainer` (the ring, the zone-name bar, `PlayerCoords`, the zoom buttons, bars),
+  `MinimapBackdrop`, `Minimap.ZoomHitArea`, NodeRadar's LibDBIcon button, and
+  **`QueueStatusButton` (the LFG eye), anchored to `Minimap`**: hidden here (no queue on that
+  character), unmeasured while shown. `GameTimeFrame` stays home.
+- **A skin pulling `Minimap` home on `SetPoint`:** every read unread (the top focus `WorldFrame`),
+  no restore failure. When it also sets the alpha to 1, the map shows for 2 frames per burst: the
+  owner saw "the full minimap flashing".
+- **On foot, a burst every 2 s for 60 s:** 18 bursts, all valid, 35 to 48 ms each (5 frames).
+  The owner found the blinks noticeable and annoying: Glass MiniMap's ring and coordinates flashing
+  at the mouse (GlassMiniMap#56), not the home minimap going blank.
+- **With Glass MiniMap #56's dev build and the handshake** (`movescan3` again, run #133):
+  `ScanBegin` acquired in 57 of 57 bursts, no `ScanEnd` threw. What still moves with `Minimap`:
+  `QueueStatusButton` (hidden), `MinimapContainer.PlayerCoords` (Blizzard's, alpha 0 under Glass
+  MiniMap), and two children of `Minimap` that take its alpha. Glass MiniMap's frames and
+  NodeRadar's button stay home (the button is anchored to Glass MiniMap's bar there). On foot, 28
+  bursts at speed 7, all valid: the owner **did not notice the blinks**, not annoying.
+- **The ground after the blinks:** drawn, not blank or patchy (the owner, and the screenshot of
+  the home minimap after the riding step). Alpha 0 doesn't blank it here.
+- **Low frame rate**, `maxFPS` 20 with `useMaxFPS`: a burst took 197 to 203 ms over its 5 frames
+  (about 25 fps), none over the 250 ms budget, all valid; the home minimap is away about 150 ms.
+- **Moving between placement and read:** a burst is too short to tell. Walking at speed 7, the
+  player moved 0.1 yd in a 5-frame burst (2.8 yd in a held one); the reads matched the static hit
+  square. Weakly in favour of the world at the read; unresolved.
+
