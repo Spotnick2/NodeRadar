@@ -7,8 +7,8 @@
   you move and every 6 s standing still (`/nr scan`, Options, or the question it asks once at
   login). It alerts with the sound and the chat line; the icons, the compass and the marker follow.
   It waits in combat, while you steer with a mouse button held, over a window, and while another
-  addon's frame anchored to the minimap would follow it; with Glass MiniMap it needs a version that
-  knows the scan. Thanks to
+  addon's frame anchored to the minimap would follow it; with Glass MiniMap it needs version 1.1.0 or
+  later. Thanks to
   **ThPi** ([ThorbenP](https://github.com/ThorbenP) on GitHub), who suggested it in a comment on
   [NodeRadar's CurseForge page](https://www.curseforge.com/wow/addons/node-radar).
 

@@ -500,7 +500,7 @@ NR = fresh()
 rawset(_G, "GlassMiniMap", {})
 WoW.loadedAddons = { GlassMiniMap = true }
 frames(60)
-check(NR.MoveScan.stats.bursts == 0 and chatHas("needs a newer Glass MiniMap"),
+check(NR.MoveScan.stats.bursts == 0 and chatHas("needs Glass MiniMap 1.1.0 or later"),
     "Glass MiniMap without version 1: no scan, said once")
 rawset(_G, "GlassMiniMap", nil)
 WoW.loadedAddons = nil

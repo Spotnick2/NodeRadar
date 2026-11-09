@@ -519,7 +519,7 @@ function MS.Refusal(now)
     end
     local glass = MS.Glass()
     if glass == "old" then
-        say("glass", "the minimap scan needs a newer Glass MiniMap (its ring would follow the minimap to your mouse).")
+        say("glass", "the minimap scan needs Glass MiniMap 1.1.0 or later (an older one's ring would follow the minimap to your mouse).")
         return "Glass MiniMap needs updating"
     end
     return nil
