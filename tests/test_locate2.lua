@@ -419,14 +419,17 @@ undo = override(function(w)
     return "model"
 end)
 bursts(12, function() return #NR.Locate.Records() > 0 end)
-bursts(20, function() return not NR.Locate.Busy() end)              -- ran out at 3, one located
+local exhausted = bursts(20, function() return not NR.Locate.Busy() end)   -- ran out at 3, one located
+local t0 = WoW.now
 bursts(1)                                                            -- the end noticed: BACKOFF
+check(exhausted and #NR.Locate.Records() == 1 and not NR.Locate.Busy(), "(control) unresolved at 3, one located, in BACKOFF")
 phantom = 1
 bursts(1)                                                            -- 2
+check(not NR.Locate.Busy(), "(control) the fall to 2 starts nothing")
 phantom = 2
 bursts(1)                                                            -- 3 again: a rise
 undo()
-check(NR.Locate.Busy(), "3, 2, 3 within BACKOFF: the rise searched at once")
+check(WoW.now - t0 < NR.Locate.BACKOFF and NR.Locate.Busy(), "3, 2, 3 within BACKOFF: the rise searched at once")
 
 -- Retirement takes live tokens, not expired ones: a fall at 165 with tokens from 101 (expired)
 -- and 151 empties the debt; a replacement located at 170 alerts. Likewise a gather.
@@ -442,5 +445,31 @@ for _, how in ipairs({ "fall", "gather" }) do
     A.Located({ name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 30, west = WoW.pos[2] }, 170)
     check(#WoW.sounds == sounds + 1, "a " .. how .. " after the oldest token expired retires the live one: located, it alerts")
 end
+
+--------------------------------------------------------------------------------
+-- Round 4: a stale record beside a live node, a distant node beyond the count: the stale one
+-- gives its place (their re-checks would stay inconclusive forever).
+--------------------------------------------------------------------------------
+
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 } }   -- presence: two in range
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local A0 = { name = "Silverleaf", north = 3000, west = 4000, at = WoW.now - 5, misses = 0 }   -- stale
+local B0 = { name = "Silverleaf", north = 3014, west = 4000, at = WoW.now - 5, misses = 0 }   -- live, near it
+table.insert(NR.Locate.Records(), A0)
+table.insert(NR.Locate.Records(), B0)
+local L = 12.5
+local function hitAt(n, w)
+    NR.Locate.Read({ window = { north = n, west = w, size = L, names = { Silverleaf = true }, depth = 6, tries = 0 } },
+        { Silverleaf = 1 }, nil, nil, WoW.now)
+end
+hitAt(3018.75, 4000)                                                   -- B's leaf
+hitAt(3081.25, 4000)                                                   -- C, distant
+NR.Locate.Take()
+local hasC = false
+for _, r in ipairs(NR.Locate.Records()) do if math.abs(r.north - 3081.25) < 1 then hasC = true end end
+check(hasC and not has(NR.Locate.Records(), A0) and #NR.Locate.Records() == 2,
+    "the distant node gets a record; the stale one no group pointed at gives its place")
 
 done("test_locate2")

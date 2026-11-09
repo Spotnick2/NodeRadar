@@ -326,21 +326,39 @@ local function settleHits(now)
     end
     -- Never more new nodes than the presence count leaves unaccounted for: an extra group is an
     -- ambiguous partition, left unresolved (the search carries on), not a published identity.
+    -- Each group's centre, and the records some group of this burst points at.
+    local pointed = {}
+    for _, g in ipairs(groups) do
+        local n, w = 0, 0
+        for _, m in ipairs(g) do n, w = n + m.north, w + m.west end
+        g.n, g.w, g.reach = n / #g, w / #g, g[1].size * Locate.REACH
+        for _, r in ipairs(records) do
+            if r.name == g[1].name and math.abs(r.north - g.n) <= g.reach and math.abs(r.west - g.w) <= g.reach then
+                g.match, pointed[r] = r, true
+            end
+        end
+    end
     local room = {}
     for _, g in ipairs(groups) do
         local name = g[1].name
         if room[name] == nil then room[name] = math.max(0, (counts[name] or 0) - ofName(name)) end
-        local n, w = 0, 0
-        for _, m in ipairs(g) do n, w = n + m.north, w + m.west end
-        n, w = n / #g, w / #g
-        local matches = false
-        local reach = g[1].size * Locate.REACH
-        for _, r in ipairs(records) do
-            if r.name == name and math.abs(r.north - n) <= reach and math.abs(r.west - w) <= reach then matches = true end
+        if not g.match and room[name] == 0 then
+            -- Beyond the count: a record of the name no group of this burst points at, and older
+            -- than this burst, gives its place to this fresher evidence (Codex, PR #102: a stale
+            -- record beside a live one, their re-checks inconclusive forever, starved a distant
+            -- node once the count was met).
+            local stale
+            for _, r in ipairs(records) do
+                if r.name == name and not pointed[r] and r.at < now and (not stale or r.at < stale.at) then stale = r end
+            end
+            if stale then
+                drop(stale, "replaced by fresher evidence")
+                room[name] = 1
+            end
         end
-        if matches or room[name] > 0 then
-            if not matches then room[name] = room[name] - 1 end
-            located(name, n, w, now, g[1].size)
+        if g.match or room[name] > 0 then
+            if not g.match then room[name] = room[name] - 1 end
+            located(name, g.n, g.w, now, g[1].size)
         else
             API.Trace("locate: " .. name .. " an extra group beyond the count, left unresolved")
         end
