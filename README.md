@@ -47,8 +47,7 @@ Options page, or the question it asks once at login.
   - in combat;
   - while a mouse button is held, so not while you steer with the mouse;
   - while a tooltip or menu is open, or the cursor is over a window rather than the world.
-
-  After steering with the mouse, it waits until you move the mouse again. Autorun, or moving and
+- **After steering with the mouse, it waits until you move the mouse again.** Autorun, or moving and
   turning with the keyboard, works best.
 - **In the background it's slower.** The game runs a window without focus at its background frame
   rate (30 by default, `maxFPSBk`), and a look then fits less work, so locating takes much longer.
