@@ -15,9 +15,9 @@ Made for **World of Warcraft: Forever**.
 > on (`/nr scan`, Options, or the question NodeRadar asks once at login): while your mouse rests over
 > the world, NodeRadar briefly moves your minimap, invisible, under it and reads what lies there.
 > Your minimap disappears from its corner for a split second each time; it can't look while you
-> steer with a mouse button held, or in combat. For now the scan alerts with the sound and a chat
-> line; the icons, the compass and the marker come next. With Glass MiniMap, it needs version
-> 1.1.0 or later.
+> steer with a mouse button held, or in combat. It alerts with the sound and the chat line, then
+> finds where the node is for the icons, the sonar, the compass and the beacon. With Glass MiniMap,
+> it needs version 1.1.0 or later.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
 ![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)

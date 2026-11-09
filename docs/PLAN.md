@@ -2260,7 +2260,11 @@ rounds 1 to 3 on 2026-11-08, each "approve with changes", all taken below; round
 > strata, level, parent, scripts, or another addon's frames. Two of Blizzard's own frames anchored
 > to `Minimap`, its player coordinates (`MinimapCluster.MinimapContainer.PlayerCoords`) and the LFG
 > eye (`QueueStatusButton`), get alpha 0 and mouse off for the borrow, saved and restored with the
-> minimap's own visibility and input (the owner, 2026-11-09).
+> minimap's own visibility and input (the owner, 2026-11-09). The minimap's quest-area tracking
+> (`Enum.MinimapTrackingFilter.QuestPOIs`, always on in Blizzard's menu) is turned off for the borrow
+> and back on after, the only tracking the scan touches: the areas ignore the map's alpha and mask
+> and flashed across the screen at a locate window's size (the owner, 2026-11-09). Owed back in
+> `NodeRadarDB.questOff`, put back at login and after a loading screen if a scan was cut short.
 >
 > A scan starts only outside combat, Edit Mode, loading screens and the gamepad UI, with the
 > cursor quiet over open world and every admission gate met. Each burst has a placement and a time
@@ -2416,7 +2420,10 @@ of an older generation or another instance is dropped.
   and which mean "unread" (nil, malformed, unsettled) is measured: a valid read always has lines
   (the player, a quest object), an unsettled one has none, nil never came from a valid read. So
   known empty is a valid read with at least one line and no accepted name; no lines or nil is
-  unread.
+  unread. That holds for the presence read, whose cursor sits on the player's arrow (always a
+  line). A locate window off to the side has nothing else to list: in play (the owner's scan log,
+  2026-11-09) 266 of 267 re-checks of veins gone since answered with no lines, so for a window an
+  answer with no lines is no node there; only an invalid read (focus, placement, size) is unread.
 
 What each consumer changes (Codex, round 1):
 
@@ -2490,6 +2497,28 @@ Presence says how many of each name. Locate finds where, only while something ne
   old sweep refuses it (`Scan.Where` nil).
 - **Budgets**: at most 8 placements and 250 ms per burst, then restore; the search resumes at the
   next burst. Its target is under 20 placements for a new node, a performance target, not a bound.
+
+**As built (step 2, Locate.lua):** windows sized for the hit square's guaranteed cover
+(16 − 2 × 3.5 = 9 px); every positive window split, so a neighbour's positive only costs reads.
+A window read with nothing at all is negative (only positives are followed); an empty or invalid
+one is tried twice. Records live on evidence instead of `RECORD_TTL`: the owner's play left 30
+to 100 s between reads (mouse steering), so a time limit blanked them; a presence count of 0, a
+re-check at the spot (every `RECHECK`, or at once when the count falls) and the minimap's range
+drop them. Locate runs whatever the consumers: a node replacing another between two reads is
+found only by its new spot. A count's rise owes its located node a sonar, not a second sound; what
+was there at the first look after a reset is located silently.
+
+**Identity, after eight Codex rounds on PR #102:** a located spot is approximate (its node can be a
+leaf's reach off, per axis), so two estimates of one node can look like two nodes and two near nodes
+like one. Rather than guess which record to sacrifice, each record keeps its uncertainty; re-checks
+are conclusive only when their window covers it (isolated records), and cluster re-checks use half
+the gap to the nearest record so they can't see the neighbour. Anything still ambiguous (a near-
+duplicate, a narrow negative, a group beyond the count) triggers a rebuild of that name: its records
+become priors, still drawn but not counted, a fresh search finds every node again, a node found where
+a prior was keeps that record silently, and the priors not found again go once the count is met. A
+burst stopped mid-way discards its pending leaves; an unresolved search restarts only after
+`BACKOFF`, unless the count rose; Alert's owed tokens keep their own ages (`OWED_TTL`) and are
+retired by falls, gathers and new areas.
 
 ### Cadence
 

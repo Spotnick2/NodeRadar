@@ -357,7 +357,22 @@ local function snapshot(pn, pw, inst)
     return head .. table.concat(parts, ";"), ("%.0f|"):format(inst) .. table.concat(keyed, ";")
 end
 
-local function push(now)
+local retrying = false
+local push
+-- From 70862 (#91) the scan's looks are sparse: a change the throttle turned away (a gather's
+-- withdrawal) is sent again as soon as the throttle allows, not at the next look, possibly tens
+-- of seconds later (Codex, PR #102). One timer at a time; the old sweep's half-second cadence
+-- needed none.
+local function retryLater(now)
+    if retrying or not API.Blind() or not (C_Timer and C_Timer.After) then return end
+    retrying = true
+    C_Timer.After(math.max(0.05, Share.GAP - (now - (lastTry or now)) + 0.05), function()
+        retrying = false
+        push(GetTime())
+    end)
+end
+
+push = function(now)
     if not Share.Sending() then return end
     local ch = channel()
     if not ch then return end
@@ -369,7 +384,10 @@ local function push(now)
     if not pn then return end
     local msg, key = snapshot(pn, pw, inst)
     if key == lastKey and lastAt and now - lastAt < Share.HEARTBEAT then return end
-    if lastTry and now - lastTry < Share.GAP then return end   -- the next sweep after the gap
+    if lastTry and now - lastTry < Share.GAP then                -- the next sweep after the gap
+        if key ~= lastKey then retryLater(now) end
+        return
+    end
     register()
     if not registered then return end
     lastTry = now
@@ -380,6 +398,7 @@ local function push(now)
     else
         -- Refused (3: the throttle, dropped for good): nothing advances, the next sweep tries again.
         API.Fail("share: send", ok and ("result " .. tostring(API.Num(res))) or res)
+        retryLater(now)
     end
 end
 
@@ -394,7 +413,7 @@ end
 -- sender's list goes out at once if its sweep is fresh; the receiver's shared
 -- entries of that name by the player go until the sender's next snapshot.
 function Share.Gathered(name, now)
-    if Share.Sending() and lastSweep and now - lastSweep <= NR.db.interval + 2 then push(now) end
+    if Share.Sending() and API.LocalFresh(lastSweep, 2) then push(now) end
     if not Share.Showing() then return end
     local pn, pw = player()
     if not pn then return end

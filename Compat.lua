@@ -56,10 +56,21 @@ end
 
 function API.Say(msg) print("|cff00ff00[NodeRadar]|r " .. msg) end
 
--- A short trace of the scan's reads and the alert's decisions (#91), in memory only:
--- /nr scan log prints it. The last TRACE_MAX lines.
+-- Whether the local records are current. Before 70862, a sweep within the idle interval plus
+-- `grace`; from 70862 the scan's records live on their own evidence (Locate.lua drops what a
+-- read contradicts, #91), so they are while the scan is on and has published once.
+function API.LocalFresh(last, grace)
+    if last == nil then return false end
+    if API.Blind() then return NR.MoveScan ~= nil and NR.MoveScan.On() end
+    return GetTime() - last <= NR.db.interval + grace
+end
+
+-- A trace of the scan's reads and the alert's decisions (#91): /nr scan log prints the last
+-- TRACE_SHOW lines; with the scan on, the last TRACE_MAX are saved at logout or reload
+-- (NodeRadarDB.scanLog, MoveScan.lua), for the next session's look.
 NR.trace = {}
-NR.TRACE_MAX = 40
+NR.TRACE_MAX = 400
+NR.TRACE_SHOW = 40
 function API.Trace(text)
     local t = NR.trace
     t[#t + 1] = ("%.1f %s"):format(GetTime(), text)

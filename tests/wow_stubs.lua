@@ -806,6 +806,8 @@ function GetMouseFoci()
 end
 function IsMouseButtonDown() return WoW.buttonDown == true end
 function IsMouselooking() return WoW.mouselook == true end
+-- The client's frame rate (the scan's burst line, #91): WoW.fps, else 60.
+function GetFramerate() return WoW.fps or 60 end
 function UnitAffectingCombat(unit) return unit == "player" and WoW.combat == true end
 
 -- What the moved map lists under the real cursor.
@@ -827,7 +829,8 @@ function WoW.moveRead()
             lines[#lines + 1] = { leftText = WoW.secretNames and WoW.Secret("name") or bl.text or bl[1], type = 0 }
         end
     end
-    if #lines == 0 then return nil end
+    -- The minimap hovered with nothing under the cursor: a valid answer with no lines (in
+    -- game, a locate window away from the player's arrow; #91).
     return { type = 21, lines = lines }
 end
 
@@ -861,6 +864,12 @@ C_Minimap = {
     -- WoW.viewRadius[zoom] when given (#27), else 150 yards.
     GetViewRadius = function() return WoW.viewRadius and WoW.viewRadius[Minimap._zoom or 0] or 150 end,
     IsRotateMinimapIgnored = function() return WoW.rotateIgnored == true end,
+    -- A tracking's filter (70862's dump; #91 turns the quest areas, QuestPOIs = 65536, off
+    -- during a scan): { filterID } from the entry's own filterID.
+    GetTrackingFilter = function(i)
+        local t = WoW.tracking[i]
+        if t then return { filterID = t.filterID, spellID = t.spellID } end
+    end,
     -- WoW.refuseTrackingOn / Off: turning a tracking on / off does nothing (a cast the
     -- client refuses). Either way MINIMAP_UPDATE_TRACKING fires.
     SetTracking = function(i, on)

@@ -32,6 +32,25 @@ local gathered = {}   -- [name] = when the player last gathered one
 -- a sound on the vein being mined).
 Alert.NEAR = 15
 local spots = {}      -- [name] = { north, west }: where the player gathered one (70862 on)
+local owed = {}       -- [name] = { at, ... }: one time a token, nodes a count's rise announced,
+                      -- not yet located (70862 on)
+-- Each token lives OWED_TTL seconds at most (its own age: a later rise doesn't renew it), and a
+-- fall, a gather or a new area retires the oldest (Codex, PR #102: an old token silenced a later,
+-- unrelated replacement).
+Alert.OWED_TTL = 60
+local function owedLive(name, now)
+    local list = owed[name]
+    if not list then return nil end
+    for i = #list, 1, -1 do if now - list[i] > Alert.OWED_TTL then table.remove(list, i) end end
+    if #list == 0 then owed[name] = nil; return nil end
+    return list
+end
+local function owedRetire(name, n, now)
+    local list = owedLive(name, now)                  -- the expired out first (Codex, PR #102)
+    for _ = 1, n do if list and #list > 0 then table.remove(list, 1) end end   -- the oldest live first
+end
+local risenFrom = {}
+local prevCounts = {}
 
 local function here()
     local ok, north, west = pcall(UnitPosition, "player")
@@ -46,6 +65,7 @@ end
 
 function Alert.Gathered(name, now)
     gathered[name] = now
+    owedRetire(name, 1, now)
     if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
         hist.counts[name] = hist.counts[name] - 1
         local n, w = here()
@@ -57,12 +77,17 @@ end
 -- The next successful sweep sets the counts without alerting.
 function Alert.Reset(why)
     hist = nil
+    owed = {}
+    -- One baseline: a node the next read counts silently is located silently too (Codex,
+    -- PR #102: a node shown by a zoom out sounded once located).
+    if NR.Locate then NR.Locate.Rebaseline() end
     API.Trace("alert: reset (" .. tostring(why or "?") .. "): the next read is a silent baseline")
 end
 
 -- A new area: counts from zero, so its nodes alert.
 function Alert.NewArea(now)
     hist = { counts = {}, drops = {}, at = now }
+    owed = {}
     API.Trace("alert: a new area, counts from zero")
 end
 
@@ -127,6 +152,7 @@ function Alert.Counts(counts, now, blips, result, every, blink)
         return nil
     end
     local new = {}
+    risenFrom = {}
     for name, spot in pairs(spots) do
         if not near(spot) then spots[name] = nil end      -- moved away: a new one alerts again
     end
@@ -135,6 +161,7 @@ function Alert.Counts(counts, now, blips, result, every, blink)
         if n > before and spots[name] then
             API.Trace("alert: " .. name .. " back while still at the one gathered: the same node, silent")
         elseif n > before then
+            risenFrom[name] = before
             local drop = hist.drops[name]
             if not (drop and now - drop <= (blink or Alert.BLINK)) then
                 new[#new + 1] = name
@@ -154,7 +181,24 @@ function Alert.Counts(counts, now, blips, result, every, blink)
             end
         end
     end
+    prevCounts = hist.counts
     hist.counts, hist.at = counts, now
+    -- From 70862 (#91): each rise is owed a located node, which then ripples without a second
+    -- sound (Alert.Located).
+    if API.Blind() then
+        -- A fall retires as many tokens (the nodes they were for may be the ones gone).
+        for name in pairs(owed) do
+            local fall = (prevCounts[name] or 0) - (counts[name] or 0)
+            if fall > 0 then owedRetire(name, fall, now) end
+        end
+        for _, name in ipairs(new) do
+            if Alert.Wanted(name) then
+                local list = owedLive(name, now) or {}
+                for _ = 1, (counts[name] or 0) - (risenFrom[name] or 0) do list[#list + 1] = now end
+                owed[name] = list
+            end
+        end
+    end
     -- Counted whatever the skill and the choices (a skill-up or a node tracked
     -- again mustn't make old nodes new); a node the player can't gather or
     -- skips neither alerts nor spends the cooldown (#26, #47).
@@ -258,6 +302,7 @@ function Alert.Sonar(x, y, kind)
     s:SetPoint("CENTER", Minimap, "CENTER", x, y)
     s.kind = kind
     s:Show()
+    if NR.MoveScan and NR.MoveScan.On() then NR.MoveScan.Hold(NR.MoveScan.SONAR_HOLD) end   -- seen whole (#91)
     for _, f in ipairs({ s.rings[1], s.rings[2], s.glow }) do
         f.tex:SetVertexColor(c[1], c[2], c[3])
         f:SetAlpha(0)
@@ -329,6 +374,43 @@ function Alert.Fire(names, blips, result)
         local ok, err = pcall(Minimap.PingLocation, Minimap, first.x, first.y)
         if not ok then API.Fail("PingLocation", err) end
     end
+end
+
+-- A node the scan located where none was known (#91, Locate.lua): a rise already announced
+-- it (only its sonar, no second sound), or it's new to us (the full alert: a node replaced
+-- another between two reads, or one beside the node just gathered, which counts can't see).
+function Alert.Located(r, now)
+    local pn, pw = UnitPosition("player")
+    pn, pw = API.Num(pn), API.Num(pw)
+    local okR, radius = pcall(C_Minimap.GetViewRadius)
+    radius = okR and API.Num(radius)
+    local w = API.Num(Minimap:GetWidth())
+    local blip
+    if pn and radius and w and radius > 0 then
+        local k = radius / (w / 2)
+        blip = { x = -(r.west - pw) / k, y = (r.north - pn) / k }
+    end
+    if not Alert.Wanted(r.name) then return end          -- skipped or beyond the skill: nothing (Codex, PR #102)
+    local list = owedLive(r.name, now)
+    if list then
+        table.remove(list)                               -- the newest: the rise this node most likely is
+        API.Trace("alert: " .. r.name .. " located, already announced: its sonar")
+        if blip and NR.db.ring then Alert.Sonar(blip.x, blip.y, r.kind or NR.Learn.Kind(r.name)) end
+        -- The solo ping the sound couldn't place, now it can (Codex, PR #102).
+        if blip and NR.db.ping and not IsInGroup() then
+            local ok, err = pcall(Minimap.PingLocation, Minimap, blip.x, blip.y)
+            if not ok then API.Fail("PingLocation", err) end
+        end
+        return
+    end
+    if r.quiet then return end                          -- there at the first look after a reset
+    if now - lastAlert < NR.db.cooldown then
+        API.Trace("alert: cooldown, silent: " .. r.name .. " (located)")
+        return
+    end
+    lastAlert = now
+    API.Trace("alert: FIRED " .. r.name .. " (located at a new spot)")
+    Alert.Fire({ r.name }, { [r.name] = { blip } })
 end
 
 -- /nr test: the alert at the map's centre.

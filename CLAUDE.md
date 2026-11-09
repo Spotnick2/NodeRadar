@@ -70,8 +70,11 @@ live game, WoWInterface (#37).
   rescale, or call `Hide()` on `Minimap`.** The cluster is an Edit Mode system and a taint minefield
   (porting guide, "Edit Mode systems"). **The one exception is the minimap scan** (#91, `MoveScan.lua`,
   opt-in, from build 70862): it may temporarily change an unprotected `Minimap`'s anchors, width and
-  height, own alpha, icon scale, screen-clamp flag, mouse-click and mouse-wheel states, and give
-  Blizzard's player coordinates and LFG eye alpha 0 and mouse off; never its mouse motion, strata,
+  height, own alpha, icon scale, screen-clamp flag, mouse-click and mouse-wheel states, give
+  Blizzard's player coordinates and LFG eye alpha 0 and mouse off, and turn the minimap's quest-area
+  tracking (`QuestPOIs`, always on in Blizzard's menu) off for the borrow: the one tracking it touches,
+  owed back in `NodeRadarDB.questOff` until it reads on (the owner, 2026-11-09: the areas ignore the
+  map's alpha and flashed across the screen at a locate window's size); never its mouse motion, strata,
   level, parent or scripts, nor another addon's frames. Only out of combat, Edit Mode, loading and the
   gamepad UI, with the cursor resting over the world. Everything saved first and restored on every
   exit, geometry before visibility and input; a restore that fails stays pending (the map invisible
@@ -94,7 +97,7 @@ live game, WoWInterface (#37).
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
 `Track.lua` → `Icons.lua` → `Share.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
-`MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`Locate.lua` → `MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `API.Blind()` (#90: from build 70862, `NR.BLIND_FROM`, a sweep reads
   nothing, so `NR.Step` stops before it and `NR.BlindNotice` says why once per build); `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -220,11 +223,31 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   saved), place the map's centre under the resting cursor and `UpdateBlips`, a settle frame, read and
   restore, a settle frame (the tooltip post-hook still hiding, everything read back). Every 2 s moving,
   6 s still (`MS.Every`). A valid read (lines, `Minimap` the top focus, in place) is a **presence**
-  observation, `NR.Observe("presence", { counts })` → `Alert.Counts` (the sound and the chat line; no
-  positions yet: locate, icons, compass, marker and sharing are the next step). Followers (another
+  observation, `NR.Observe("presence", { counts })` → `Alert.Counts` (the sound and the chat line).
+  The rest of a burst (up to `MS.PLACEMENTS`, within the 250 ms budget) is Locate's windows. Followers (another
   addon's frame anchored into the map) and a Glass MiniMap without version 1 refuse the scan, named
   once. The login prompt (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs'
   move model (`WoW.moveModel`).
+- `Locate.lua` (#91, step 2): where the scan's nodes are. Windows in world yards (`M = 2R·9/W` px: the
+  16 px hit square less twice its 3.5 px offset), the map's sixteenths split while positive down to
+  `FINE` (16 yards), deepest then nearest first; each read paired with the player's move since its
+  placement; a window's empty answer is no node there (nil is unread), and a failed presence read ends
+  the burst. A burst's positive leaves settle at its end, grouped per axis within a leaf's reach
+  (complete-link, in a fixed order), never more new records than the count leaves room for. Records
+  live on evidence (a presence count of 0, a re-check at the spot every `RECHECK` s, out of range by
+  more than `SLACK`, a gather), never time; each keeps its uncertainty `err`. A re-check window covers
+  it when the record is isolated (its negative drops it), or half the gap to the nearest record of its
+  name in a cluster (its negative proves nothing). Identity errors (an ambiguous or narrow re-check, a
+  group beyond the count) trigger a **rebuild**: the name's records become priors (drawn, not counted),
+  a fresh search finds every node again, a node found where a prior was keeps that record silently,
+  the priors left go once the count is met; one per name per `BACKOFF`. A gathered spot (`gone`, `GONE`
+  s) is the same node. Tests: `test_locate`, `test_locate2` (Codex's review rounds on PR #102). Published once a burst with the map
+  home (`NR.Located`): `Icons.SetRecords`, `Share.Send`, `Compass.Reconcile`, `FarMarker.Update`, then
+  `Alert.Located` for the new ones (owed by a count's rise: its sonar; there at the first look after a
+  reset: silent; else the full alert: a node replaced another between reads). The consumers'
+  freshness is `API.LocalFresh` (the sweep's interval before 70862, the scan being on after). The
+  trace (`/nr scan log`) is saved at logout while the scan is on: `NodeRadarDB.scanLog`
+  (`scanLogPrevious` the session before).
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.

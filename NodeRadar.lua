@@ -98,7 +98,7 @@ NR.BLIND_TEXT = "since client build 70862, Blizzard no longer lets addons read t
 NR.SCAN_TEXT = "Since build 70862, NodeRadar can only see nodes by briefly moving your minimap under your "
     .. "mouse. While you move it looks every couple of seconds (every few seconds standing still), and your "
     .. "minimap disappears for a split second each time. It can't look while you steer with a mouse button "
-    .. "held, or in combat. For now it alerts by sound and chat; the icons, the compass and the marker come next."
+    .. "held, or in combat."
 function NR.BlindNotice()
     local db = NR.db
     if not (db and db.enabled and API.Blind()) or db.moveScan then return false end
@@ -183,8 +183,20 @@ function NR.Set(key, value)
     if key == "minimapButton" then NR.Minimap.Apply() end
     if key == "moveScan" or key == "enabled" then
         Alert.Reset(key .. " set")                  -- the first scan sets the counts silently
+        NR.Locate.Reset()                           -- and locates them silently: one baseline (Codex, PR #102)
         NR.MoveScan.Apply()
     end
+end
+
+-- The scan's located nodes changed (#91, Locate.lua), once a burst with the map home: the
+-- consumers as after a sweep, then the new ones announced (their sonar needs the icons' place).
+function NR.Located(new, now)
+    if not (NR.db and NR.db.enabled) then return end
+    Icons.SetRecords(NR.Locate.Records(), now)
+    NR.Share.Send(now)
+    Compass.Reconcile(nil, now)
+    NR.FarMarker.Update({ where = NR.Scan.Where() })
+    for _, r in ipairs(new) do Alert.Located(r, now) end
 end
 
 -- What a minimap scan saw (#91), on completion: presence, the counts of each node name in range.
@@ -271,11 +283,13 @@ events:SetScript("OnEvent", function(_, event, ...)
         NR.Share.Apply()
         Learn.loading = false
         Alert.NewArea(now)
+        NR.MoveScan.WantFirst(now)                 -- the scan's first look, retried if it fails (#91)
         Learn.Resume(now)
         NR.MoveScan.AskSoon(now)                   -- the scan's prompt, once per account (#91)
         trackedKey = trackingKey()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         Alert.NewArea(now)
+        NR.MoveScan.WantFirst(now)
         Learn.Void("the zone changed")
     elseif event == "LOADING_SCREEN_ENABLED" then
         Icons.Clear()
@@ -326,6 +340,11 @@ events:SetScript("OnEvent", function(_, event, ...)
         if gathering and unit == "player" and not API.IsSecret(castGUID) and castGUID == gathering.guid then
             Alert.Gathered(gathering.target, now)
             Icons.Gathered(gathering.target)
+            if API.Blind() then                    -- the scan's records (#91)
+                NR.Locate.Gathered(gathering.target, now)
+                local changed, new = NR.Locate.Take()
+                if changed then NR.Located(new, now) end
+            end
             NR.Share.Gathered(gathering.target, now)  -- after the record went (#83)
             gathering = nil
         end
@@ -523,7 +542,7 @@ SlashCmdList.NODERADAR = function(msg)
         end
     elseif cmd == "scan" and rest == "log" then
         if #NR.trace == 0 then API.Say("the scan's log is empty") end
-        for _, line in ipairs(NR.trace) do API.Say(line) end
+        for i = math.max(1, #NR.trace - NR.TRACE_SHOW + 1), #NR.trace do API.Say(NR.trace[i]) end
     elseif cmd == "scan" and rest ~= "" then
         local secs = tonumber(rest)
         if secs and secs >= 1 and secs <= 10 then

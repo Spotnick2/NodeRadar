@@ -34,6 +34,7 @@ local function fresh(db, build)
     WoW.blips = {}
     local NR = loadAddon({ db = db or { moveScan = true, moveScanAsked = true } })
     NR.db.learn = false
+    NR.MoveScan.PLACEMENTS = 1                     -- step 1's checks: the presence read alone (test_locate: the rest)
     HOME = home()
     return NR
 end
@@ -161,6 +162,43 @@ runBurst()
 C_TooltipInfo.GetMinimapMouseover = realRead2
 SlashCmdList.NODERADAR("scan log")
 check(chatHas("unread %(no lines%): type 21, frame %+4, 2 rereads, size"), "an empty read's details in /nr scan log")
+-- One line a burst (Codex, PR #102): its time, frames, frame rate, end, presence and windows.
+check(chatHas("scan: burst %d+ ms, %d+ frames %(slowest %d+ ms%), [%d?]+ fps; the presence read failed; presence not read; 0 windows; next in"),
+    "a failed burst's summary line")
+check(chatHas("scan: burst %d+ ms, %d+ frames %(slowest %d+ ms%), [%d?]+ fps; done; presence read; 0 windows, then the placement limit; next in"),
+    "a good burst's summary line, with why no window followed")
+
+-- The first look after entering the world (in game it ran over budget on a loading frame at
+-- every reload, then waited 6 s): one that doesn't read is tried again after FIRST_RETRY, at
+-- most FIRST_TRIES times; a good one ends it, and the cadence is the usual one again.
+do
+    local NR2 = fresh()
+    WoW.fire("PLAYER_ENTERING_WORLD")
+    local fails = 99
+    local real = C_TooltipInfo.GetMinimapMouseover
+    C_TooltipInfo.GetMinimapMouseover = function()
+        if fails > 0 then return { type = 21, lines = {} } end
+        return real()
+    end
+    local function nextStart()
+        runBurst()
+        local t = WoW.now
+        untilBorrowed(1000)
+        return WoW.now - t
+    end
+    untilBorrowed(400)
+    local gaps = {}
+    for i = 1, 5 do gaps[i] = nextStart() end
+    check(gaps[1] < 1.5 and gaps[2] < 1.5 and gaps[3] < 1.5, ("a failed first look: tried again within about a second (%.1f, %.1f, %.1f s)"):format(gaps[1], gaps[2], gaps[3]))
+    check(gaps[4] > 5, ("...at most FIRST_TRIES times, then the usual cadence (%.1f s)"):format(gaps[4]))
+    WoW.fire("ZONE_CHANGED_NEW_AREA")                  -- a new area owes a first look too
+    fails = 0
+    local g = nextStart()
+    check(g < 1.5, ("a new area: its first look at once (%.1f s)"):format(g))
+    check(nextStart() > 5, "...and once it read, the usual cadence")
+    C_TooltipInfo.GetMinimapMouseover = real
+end
+NR = fresh()
 
 -- MINIMAP_UPDATE_TRACKING with nothing changed (sent while mining on 70862) keeps the counts:
 -- the next new node still alerts. A real change starts afresh.
@@ -287,6 +325,20 @@ frames(100)
 check(NR.MoveScan.stats.bursts == 0, "after mouselook, the mouse not moved: no burst (it would read nothing)")
 WoW.cursor = { 302, 300 }
 check(untilBorrowed(30), "...the mouse nudged and resting: one comes")
+runBurst()
+-- The cursor's jump as mouselook ends (it reappears where it was) is no move (in game it
+-- passed for one, and every read after it came back empty).
+NR = fresh()
+frames(5)
+WoW.mouselook = true
+WoW.cursor = { 960, 540 }                       -- where it reads during mouselook
+frames(10)
+WoW.mouselook = false
+WoW.cursor = { 300, 300 }                       -- back where it was
+frames(100)
+check(NR.MoveScan.stats.bursts == 0, "the cursor's jump as mouselook ends is not a move: no burst")
+WoW.cursor = { 301, 300 }
+check(untilBorrowed(30), "...a real nudge after it: one comes")
 runBurst()
 -- The cursor must rest: moving every frame, nothing.
 NR = fresh()
