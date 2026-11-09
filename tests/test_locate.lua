@@ -69,6 +69,7 @@ local n1, w1 = spot(20, -15)
 check(bursts(12, function() return recordNear("Silverleaf", n1, w1, 12) ~= nil end),
     "a node in range is located (within 12 yards) in a few bursts")
 check(NR.MoveScan.stats.windows > 0, "...by locate windows after the presence read")
+check(WoW.now < 8, "...within a couple of seconds of the first look (bursts 0.3 s apart while locating)")
 check(#NR.Locate.Records() == 1, "...one record for one node")
 local homeW = Minimap:GetWidth()
 check(homeW == 198 and Minimap:GetAlpha() == 1, "the map is home between bursts")

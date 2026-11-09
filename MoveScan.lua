@@ -565,7 +565,10 @@ local function finish(b, reason)
     restore(true)
     pcall(Minimap.UpdateBlips, Minimap)
     b.phase = "settle"
-    lastBurst, nextAt = GetTime(), GetTime() + MS.Every()
+    -- A node still being located: the next burst soon (the plan's locate bursts, LOCATE_GAP
+    -- apart), so its sonar and compass follow the sound by a second or two, not a few looks.
+    local soon = NR.Locate and NR.Locate.Busy() and MS.LOCATE_GAP or MS.Every()
+    lastBurst, nextAt = GetTime(), GetTime() + soon
 end
 
 -- Seconds between bursts: scanEvery moving, three times that standing still.
@@ -767,6 +770,7 @@ end
 -- The next placement of this burst, if there's room: Locate's windows, up to MS.PLACEMENTS a
 -- burst and while the budget allows another (a margin for its settle frame).
 MS.PLACEMENTS = 8
+MS.LOCATE_GAP = 0.3     -- seconds between bursts while Locate has windows open
 MS.MARGIN = 0.06
 local function nextPlacement(b, now)
     if b.placements >= MS.PLACEMENTS or now - b.t0 > MS.BUDGET - MS.MARGIN or not NR.Locate then return nil end
@@ -850,7 +854,9 @@ function MS.Tick(now)
     end
     looking, moving = look, move
     if burst then return stepBurst(burst, now) end
-    nextAt = math.min(nextAt, lastBurst + MS.Every())   -- starting to move: the shorter wait
+    if not (NR.Locate and NR.Locate.Busy()) then
+        nextAt = math.min(nextAt, lastBurst + MS.Every())   -- starting to move: the shorter wait
+    end
     if now < nextAt then return end
     local why = MS.Refusal(now)
     MS.lastRefusal = why

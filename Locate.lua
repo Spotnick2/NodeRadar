@@ -272,6 +272,12 @@ end
 
 -- Whether the records changed since the last call, and the new ones to announce (the
 -- consumers are told once a burst, with the map home).
+-- Search windows still open (re-checks aside): the scan comes back soon (MoveScan.LOCATE_GAP).
+function Locate.Busy()
+    for _, w in ipairs(windows) do if not w.record then return true end end
+    return false
+end
+
 function Locate.Take()
     local d, f = dirty, found
     dirty, found = false, {}
