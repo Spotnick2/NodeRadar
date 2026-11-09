@@ -94,6 +94,33 @@ end
 check(maxRun >= 3 and maxRun <= 8,
     "quick locate bursts come in runs of at most LOCATE_RUN (" .. maxRun .. ")")
 
+-- A search its run didn't finish gets quick bursts again once the allowance comes back (in
+-- game: one window every 6 s for half a minute), never more than LOCATE_RUN in any QUICK_WINDOW.
+NR = fresh()
+NR.MoveScan.PLACEMENTS = 2                               -- one window a burst: a long search
+WoW.blips = { { "Silverleaf", 70, -60 } }
+local st, inB = {}, false
+for _ = 1, 3500 do
+    frames(1)
+    local b = NR.MoveScan._test.burst() ~= nil
+    if b and not inB then st[#st + 1] = WoW.now end
+    inB = b
+    if #NR.Locate.Records() > 0 then break end
+end
+local quickTimes, longest = {}, 0
+for i = 2, #st do if st[i] - st[i - 1] < 1 then quickTimes[#quickTimes + 1] = st[i] end end
+for i = 1, #quickTimes do
+    local n = 0
+    for k = i, #quickTimes do if quickTimes[k] - quickTimes[i] < (NR.MoveScan.QUICK_WINDOW or 20) then n = n + 1 end end
+    if n > longest then longest = n end
+end
+local late = 0
+for _, t in ipairs(quickTimes) do if t - st[1] > (NR.MoveScan.QUICK_WINDOW or 20) then late = late + 1 end end
+check(late > 0, "an unfinished search: quick bursts again after the allowance comes back (" .. late .. ")")
+check(longest <= NR.MoveScan.LOCATE_RUN, "...never more than LOCATE_RUN in any QUICK_WINDOW (" .. longest .. ")")
+check(#NR.Locate.Records() == 1, "...and the node located (" .. ("%.0f s"):format(WoW.now) .. ")")
+NR.MoveScan.PLACEMENTS = 8
+
 --------------------------------------------------------------------------------
 -- 2. The consumers: the icons draw it, the compass points at it.
 --------------------------------------------------------------------------------

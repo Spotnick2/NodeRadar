@@ -57,7 +57,8 @@ local lastDown = -math.huge
 local cursorX, cursorY, quietSince
 local looking, moving = false, false
 local followers = { at = -math.huge }
-local rapid = 0                       -- quick locate bursts in a row (LOCATE_RUN)
+local quickAt = {}                    -- when the quick locate bursts of the last QUICK_WINDOW started
+local firstLook = nil                 -- { at, tries }: a first look owed (login, a new area, turned on)
 local lastTick, frameDt = nil, 0      -- the frame time (the burst budget's margin)
 local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
 local lookEnded                       -- when mouselook last ended (the trace)
@@ -646,14 +647,43 @@ local function finish(b, reason)
     b.phase = "settle"
     -- A node still being located: the next burst soon (the plan's locate bursts, LOCATE_GAP
     -- apart), so its sonar and compass follow the sound by a second or two, not a few looks.
-    -- At most LOCATE_RUN of them in a row (the owner: three new nodes blinked a long while);
-    -- then the usual cadence, still locating.
+    -- At most LOCATE_RUN of them in any QUICK_WINDOW (the owner: three new nodes blinked a long
+    -- while); then the usual cadence, until the allowance comes back (MS.Tick: in game a search
+    -- left unfinished by its run went on at one window every 6 s for half a minute).
     local busy = NR.Locate and NR.Locate.Busy()
-    if NR.Locate and NR.Locate.TakeFresh() then rapid = 0 end   -- a new node's search: a new quick run
-    rapid = busy and rapid + 1 or 0
-    local soon = (busy and rapid < MS.LOCATE_RUN) and MS.LOCATE_GAP or MS.Every()
+    if NR.Locate then NR.Locate.TakeFresh() end
+    local quick = busy and MS.QuickLeft(GetTime()) > 0
+    local soon = quick and MS.LOCATE_GAP or MS.Every()
+    -- A first look that didn't read (in game the first burst after every reload ran over budget
+    -- on a 275 ms loading frame, then waited the 6 s cadence): tried again soon, a few times.
+    if firstLook then
+        if b.observation then
+            firstLook = nil
+        elseif firstLook.tries < MS.FIRST_TRIES and GetTime() - firstLook.at < MS.FIRST_WINDOW then
+            firstLook.tries = firstLook.tries + 1
+            soon = math.min(soon, MS.FIRST_RETRY)
+        else
+            firstLook = nil
+        end
+    end
     lastBurst, nextAt = GetTime(), GetTime() + soon
-    MS.TraceBurst(b, GetTime(), busy and rapid < MS.LOCATE_RUN, soon)
+    MS.TraceBurst(b, GetTime(), quick, soon)
+end
+
+-- A first look owed (login, a new area, the scan turned on): the next burst at once, and one
+-- that doesn't read is tried again after FIRST_RETRY, FIRST_TRIES times within FIRST_WINDOW.
+MS.FIRST_RETRY = 1
+MS.FIRST_TRIES = 3
+MS.FIRST_WINDOW = 10
+function MS.WantFirst(now)
+    firstLook = { at = now, tries = 0 }
+    nextAt = math.min(nextAt, now)
+end
+
+-- Quick locate bursts left in the rolling allowance (LOCATE_RUN a QUICK_WINDOW, every name's).
+function MS.QuickLeft(now)
+    while quickAt[1] and now - quickAt[1] >= MS.QUICK_WINDOW do table.remove(quickAt, 1) end
+    return MS.LOCATE_RUN - #quickAt
 end
 
 -- One line a burst (Codex, PR #102: one-window bursts in game, the cause unmeasured): how long
@@ -883,7 +913,8 @@ end
 -- burst and while the budget allows another (a margin for its settle frame).
 MS.PLACEMENTS = 8
 MS.LOCATE_GAP = 0.3     -- seconds between bursts while Locate has windows open
-MS.LOCATE_RUN = 8       -- such quick bursts in a row at most (about 3 s of blinking)
+MS.LOCATE_RUN = 8       -- such quick bursts at most in any QUICK_WINDOW (about 3 s of blinking)
+MS.QUICK_WINDOW = 20    -- seconds (Codex, PR #102: a run that didn't finish its search comes back)
 MS.MARGIN = 0.06
 local function nextPlacement(b, now)
     -- Room for a resized placement's three frames at the current frame rate (Codex, PR #102:
@@ -994,7 +1025,10 @@ function MS.Tick(now)
     end
     looking, moving = look, move
     if burst then return stepBurst(burst, now) end
-    if not (NR.Locate and NR.Locate.Busy()) or rapid >= MS.LOCATE_RUN then
+    local locating = NR.Locate and NR.Locate.Busy()
+    if locating and MS.QuickLeft(now) > 0 then
+        nextAt = math.min(nextAt, lastBurst + MS.LOCATE_GAP)  -- the allowance back: locating goes on quickly
+    else
         nextAt = math.min(nextAt, lastBurst + MS.Every())   -- starting to move: the shorter wait
     end
     if now < nextAt then return end
@@ -1015,6 +1049,8 @@ function MS.Tick(now)
         API.Trace(("scan: waited %.0f s: %s"):format(now - waitedSince, table.concat(parts, ", ")))
     end
     waited, waitedSince = {}, nil
+    -- A quick locate burst (sooner than the cadence) spends the allowance.
+    if locating and now - lastBurst < MS.Every() then quickAt[#quickAt + 1] = now end
     borrow(now)
 end
 
@@ -1071,6 +1107,7 @@ function MS.Apply()
     if NR.db and NR.db.moveScan then
         halted, glassRefusals = nil, 0
         followers.at, nextAt = -math.huge, 0
+        MS.WantFirst(GetTime())
     end
     if not MS.On() then MS.Stop("turned off") end
 end
@@ -1081,7 +1118,7 @@ MS._test = {
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
         cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
         prevX, prevY, settleUntil = nil, nil, -math.huge
-        rapid = 0
+        quickAt, firstLook = {}, nil
         followers = { at = -math.huge }
         MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
     end,
