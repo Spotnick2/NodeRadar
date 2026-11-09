@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.7.1
+
+Released 2026-11-08.
 
 - **The radar can't see nodes from client build 70862** (#90): Blizzard no longer lets addons read
   the minimap's dots, on purpose. NodeRadar used to read them with an invisible cursor. Since 70862
