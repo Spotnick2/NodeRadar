@@ -52,9 +52,17 @@ local quiet = nil         -- [name] = nodes in range at the first read after a r
 local active = {}         -- [name] = true while a search of it has windows
 local ended = {}          -- [name] = when its last search ran out (BACKOFF)
 local hits = {}           -- this burst's positive leaves: { name, north, west, size }
+local candidates = {}     -- groups beyond the count, waiting for room: { name, n, w, size, at }
+Locate.CANDIDATE = 30     -- seconds a candidate waits
+Locate.AMBIGUOUS = 2      -- inconclusive re-checks in a row before a record yields to a waiting candidate
 local dirty = false
 local found = {}          -- new records to announce, at the burst's end (the map home again)
 local fresh = false       -- a search started since the last Take (MoveScan's quick run restarts)
+
+local function waiting(name)
+    for _, c in ipairs(candidates) do if c.name == name then return true end end
+    return false
+end
 
 local function d2(a, n, w) return (a.north - n) ^ 2 + (a.west - w) ^ 2 end
 
@@ -69,6 +77,7 @@ function Locate.Records() return records end
 -- read's nodes are the baseline, located silently).
 function Locate.Reset()
     records, windows, gone, counts, found, active, ended, hits = {}, {}, {}, {}, {}, {}, {}, {}
+    candidates = {}
     quiet = nil
     dirty, fresh = true, false
 end
@@ -342,25 +351,17 @@ local function settleHits(now)
     for _, g in ipairs(groups) do
         local name = g[1].name
         if room[name] == nil then room[name] = math.max(0, (counts[name] or 0) - ofName(name)) end
-        if not g.match and room[name] == 0 then
-            -- Beyond the count: a record of the name no group of this burst points at, and older
-            -- than this burst, gives its place to this fresher evidence (Codex, PR #102: a stale
-            -- record beside a live one, their re-checks inconclusive forever, starved a distant
-            -- node once the count was met).
-            local stale
-            for _, r in ipairs(records) do
-                if r.name == name and not pointed[r] and r.at < now and (not stale or r.at < stale.at) then stale = r end
-            end
-            if stale then
-                drop(stale, "replaced by fresher evidence")
-                room[name] = 1
-            end
-        end
         if g.match or room[name] > 0 then
             if not g.match then room[name] = room[name] - 1 end
             located(name, g.n, g.w, now, g[1].size)
         else
-            API.Trace("locate: " .. name .. " an extra group beyond the count, left unresolved")
+            -- Beyond the count: no record is evicted on this evidence alone (Codex, PR #102: one
+            -- node seen twice could evict a live record not re-read this burst). The group waits
+            -- as a candidate, and every record of its name no group pointed at is re-checked now;
+            -- a negative re-check makes room, an ambiguous one twice in a row yields (Read).
+            candidates[#candidates + 1] = { name = name, n = g.n, w = g.w, size = g[1].size, at = now }
+            for _, r in ipairs(records) do if r.name == name and not pointed[r] then r.due = true end end
+            API.Trace("locate: " .. name .. " a group beyond the count waits (records re-checked)")
         end
     end
     hits = {}
@@ -382,12 +383,21 @@ function Locate.Read(p, c, pn, pw, now)
             local reach = w.size / 2 + w.size * Locate.REACH
             for _, o in ipairs(records) do
                 if o ~= r and o.name == r.name and d2(o, north, west) <= reach ^ 2 then
-                    r.checkAfter = now + Locate.RECHECK
+                    r.ambiguous = (r.ambiguous or 0) + 1
+                    -- Ambiguous again while a candidate of its name waits: it yields. If it was
+                    -- the live one, the count still exceeds the records and the search finds it
+                    -- again; a confirmed, unambiguous record never yields.
+                    if r.ambiguous >= Locate.AMBIGUOUS and waiting(r.name) then
+                        drop(r, "ambiguous re-checks, a candidate waits")
+                        return
+                    end
+                    r.checkAfter = now + (waiting(r.name) and 0 or Locate.RECHECK)
+                    if waiting(r.name) then r.due = true end
                     API.Trace("locate: " .. r.name .. " re-check inconclusive (another of its name within reach)")
                     return
                 end
             end
-            r.at, r.due, r.overdue = now, nil, nil
+            r.at, r.due, r.overdue, r.ambiguous = now, nil, nil, nil
         else
             drop(r, "not at its spot")
         end
@@ -452,12 +462,31 @@ end
 
 -- Whether the records changed since the last call, and the new ones to announce (the
 -- consumers are told once a burst, with the map home). The burst's leaves settle first.
+local function placeCandidates(now)
+    for i = #candidates, 1, -1 do
+        local c = candidates[i]
+        local reach = c.size * Locate.REACH
+        local matched = false
+        for _, r in ipairs(records) do
+            if r.name == c.name and math.abs(r.north - c.n) <= reach and math.abs(r.west - c.w) <= reach then matched = true end
+        end
+        if now - c.at > Locate.CANDIDATE or matched then
+            table.remove(candidates, i)
+        elseif (counts[c.name] or 0) > ofName(c.name) then
+            table.remove(candidates, i)
+            located(c.name, c.n, c.w, now, c.size)
+        end
+    end
+end
+
 function Locate.Take()
     if #hits > 0 then settleHits(GetTime()) end
+    if #candidates > 0 then placeCandidates(GetTime()) end
     local d, f = dirty, found
     dirty, found = false, {}
     return d or #f > 0, f
 end
 
-Locate._test = { windows = function() return windows end, gone = function() return gone end,
+Locate._test = { candidates = function() return candidates end,
+                 windows = function() return windows end, gone = function() return gone end,
                  quiet = function() return quiet end, hits = function() return hits end }

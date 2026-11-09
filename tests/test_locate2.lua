@@ -447,29 +447,58 @@ for _, how in ipairs({ "fall", "gather" }) do
 end
 
 --------------------------------------------------------------------------------
--- Round 4: a stale record beside a live node, a distant node beyond the count: the stale one
--- gives its place (their re-checks would stay inconclusive forever).
+-- Rounds 4 and 5: a group beyond the count never evicts a record by itself; it waits as a
+-- candidate, the records no group pointed at are re-checked, a confirmed isolated record
+-- stays, an ambiguous one yields after two inconclusive re-checks, and the candidate is placed.
 --------------------------------------------------------------------------------
 
-NR = fresh()
-WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 } }   -- presence: two in range
-bursts(2)
-for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
-local A0 = { name = "Silverleaf", north = 3000, west = 4000, at = WoW.now - 5, misses = 0 }   -- stale
-local B0 = { name = "Silverleaf", north = 3014, west = 4000, at = WoW.now - 5, misses = 0 }   -- live, near it
-table.insert(NR.Locate.Records(), A0)
-table.insert(NR.Locate.Records(), B0)
 local L = 12.5
 local function hitAt(n, w)
     NR.Locate.Read({ window = { north = n, west = w, size = L, names = { Silverleaf = true }, depth = 6, tries = 0 } },
         { Silverleaf = 1 }, nil, nil, WoW.now)
 end
+local function recheck(r, positive)
+    NR.Locate.Read({ window = { north = r.north, west = r.west, size = 16, names = { Silverleaf = true }, record = r, tries = 0 } },
+        positive and { Silverleaf = 1 } or {}, nil, nil, WoW.now)
+end
+local function recAt(n) for _, r in ipairs(NR.Locate.Records()) do if math.abs(r.north - n) < 1 then return r end end end
+
+-- Round 4: stale A beside live B, distant C, presence two.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local A0 = { name = "Silverleaf", north = 3000, west = 4000, at = WoW.now - 9, misses = 0 }   -- stale
+local B0 = { name = "Silverleaf", north = 3014, west = 4000, at = WoW.now - 5, misses = 0 }   -- live, beside it
+table.insert(NR.Locate.Records(), A0)
+table.insert(NR.Locate.Records(), B0)
 hitAt(3018.75, 4000)                                                   -- B's leaf
 hitAt(3081.25, 4000)                                                   -- C, distant
 NR.Locate.Take()
-local hasC = false
-for _, r in ipairs(NR.Locate.Records()) do if math.abs(r.north - 3081.25) < 1 then hasC = true end end
-check(hasC and not has(NR.Locate.Records(), A0) and #NR.Locate.Records() == 2,
-    "the distant node gets a record; the stale one no group pointed at gives its place")
+check(#NR.Locate._test.candidates() == 1 and has(NR.Locate.Records(), A0), "C beyond the count waits as a candidate; nothing evicted")
+recheck(A0, true); recheck(A0, true)                                   -- lit by B: inconclusive twice
+NR.Locate.Take()
+check(not has(NR.Locate.Records(), A0) and recAt(3081.25) ~= nil and has(NR.Locate.Records(), B0),
+    "the ambiguous stale A yields; C is placed; B stays")
+
+-- Round 5: live A isolated and not re-read, B seen again 18.75 from its record (a duplicate
+-- B'), C new; presence three. A must not be evicted.
+NR = fresh()
+WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -60, 40 }, { "Silverleaf", 40, 60 } }
+bursts(2)
+for i = #NR.Locate.Records(), 1, -1 do table.remove(NR.Locate.Records(), i) end
+local A1 = { name = "Silverleaf", north = 2918.75, west = 4000, at = WoW.now - 10, misses = 0 }
+local B1 = { name = "Silverleaf", north = 3000, west = 4000, at = WoW.now - 5, misses = 0 }
+table.insert(NR.Locate.Records(), A1)
+table.insert(NR.Locate.Records(), B1)
+hitAt(3018.75, 4000)                                                   -- B again: B' (beyond B's reach)
+hitAt(3081.25, 4000)                                                   -- C
+NR.Locate.Take()
+check(has(NR.Locate.Records(), A1), "live A, not re-read this burst, isn't evicted")
+recheck(A1, true)                                                      -- isolated: confirmed
+recheck(B1, true); recheck(B1, true)                                   -- B' within reach: ambiguous twice
+NR.Locate.Take()
+check(has(NR.Locate.Records(), A1) and not has(NR.Locate.Records(), B1) and recAt(3081.25) ~= nil and recAt(3018.75) ~= nil,
+    "A confirmed stays; the ambiguous duplicate yields; C placed (A, B', C)")
 
 done("test_locate2")
