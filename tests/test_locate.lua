@@ -261,6 +261,23 @@ NR.Share.Send = realSend
 check(sends >= 2, "Share.Send after each burst, the record set unchanged")
 check(NR.Compass.Chosen() and recordNear("Silverleaf", nB, wB, 12) == NR.Compass.Chosen(), "...and the compass now chooses B")
 
+-- A node by the rim, the player standing still: its record keeps its identity across several
+-- presence reads and re-checks, and nothing alerts again (Codex, PR #102: its approximate
+-- spot just outside the radius dropped it and found it again).
+NR = fresh()
+WoW.blips = { { "Silverleaf", 94, 22 } }            -- 96.5 base units: 146 yards of the 150
+bursts(20, function() return #NR.Locate.Records() > 0 end)
+local rim = NR.Locate.Records()[1]
+-- Its approximate spot just outside the radius (a leaf's centre past the rim): 156 yards.
+if rim then rim.north, rim.west = WoW.pos[1] + 6, WoW.pos[2] - 156 end
+sounds = #WoW.sounds
+for _ = 1, 4 do
+    WoW.now = WoW.now + NR.Locate.RECHECK
+    bursts(2)
+end
+check(rim ~= nil and NR.Locate.Records()[1] == rim and #NR.Locate.Records() == 1, "a node by the rim keeps its record")
+check(#WoW.sounds == sounds, "...and doesn't alert again")
+
 -- A rotating minimap: nothing is located (screen up isn't north), the presence alert stays.
 NR = fresh()
 WoW.cvars.rotateMinimap = "1"

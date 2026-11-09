@@ -35,7 +35,10 @@ Locate.MATCH = 20         -- yards: a located node this near a record of its nam
 Locate.RECHECK = 15       -- seconds between re-checks of a record at its spot
 Locate.GONE = 120         -- seconds a gathered node's spot is the same node
 Locate.TRIES = 2          -- unread windows are tried this many times
-Locate.OVERDUE = 3        -- presence reads with fewer in range before the surplus goes unchecked
+Locate.OVERDUE = 3
+Locate.SLACK = 25         -- yards: a located spot's error (a leaf's width and its reach); out of
+                          -- range only beyond the radius by this (Codex, PR #102: a node by the rim
+                          -- dropped and found again, alerting each time)        -- presence reads with fewer in range before the surplus goes unchecked
 
 local records = {}        -- { name, kind, north, west, at, instance, misses = 0 }
 local windows = {}        -- { north, west, size, names = {[name] = true}, depth, tries, record }
@@ -120,7 +123,7 @@ function Locate.Presence(c, now)
         radius = okR and API.Num(radius)
         if radius then
             for i = #records, 1, -1 do
-                if d2(records[i], pn, pw) > radius ^ 2 then drop(records[i], "out of range") end
+                if d2(records[i], pn, pw) > (radius + Locate.SLACK) ^ 2 then drop(records[i], "out of range") end
             end
         end
     end
@@ -193,7 +196,7 @@ function Locate.Next(pn, pw, radius, es)
             table.remove(windows, i)
             if w.record then
                 w.record.checking = nil
-                if d2(w.record, pn, pw) > radius ^ 2 then drop(w.record, "out of range") end
+                if d2(w.record, pn, pw) > (radius + Locate.SLACK) ^ 2 then drop(w.record, "out of range") end
             end
         elseif not best or w.depth > best.depth
             or (w.depth == best.depth and d2(w, pn, pw) < d2(best, pn, pw)) then
