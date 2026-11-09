@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.8.0
+
+Released 2026-11-09.
 
 - **The minimap scan mode** (#91), opt-in, for client build 70862 and later: NodeRadar finds nodes
   again by moving the minimap, invisible, under your resting mouse for an instant, every 2 s while
@@ -9,10 +11,12 @@
   the minimap, the sonar on it, the compass and the beacon come back, and sharing with the group.
   A node that replaced another between two looks, or appeared beside the one you just mined,
   alerts too.
-  It waits in combat, while you steer with a mouse button held, over a window, and while another
-  addon's frame anchored to the minimap would follow it; with Glass MiniMap it needs version 1.1.0 or
-  later. Thanks to
-  **ThPi** ([ThorbenP](https://github.com/ThorbenP) on GitHub), who suggested it in a comment on
+  It waits in combat, while you steer with a mouse button held (after that, until you move the
+  mouse), over a window, and while another addon's frame anchored to the minimap would follow it.
+  Autorun or keyboard movement works best, and it's slower while the game is in the background.
+  The located spots are approximate: the icons, the compass and the beacon can be a few yards off
+  the node. With Glass MiniMap it needs version 1.1.0 or later. Thanks to **ThPi**
+  ([ThorbenP](https://github.com/ThorbenP) on GitHub), who suggested it in a comment on
   [NodeRadar's CurseForge page](https://www.curseforge.com/wow/addons/node-radar).
 - **`/nr` help shows its separators again** (#98): lines such as `/nr sound | ring | chat` printed a
   bare `|`, which the game reads as the start of a formatting code, so it could swallow the character

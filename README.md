@@ -10,14 +10,13 @@ on the map, green for herbs, gold for ore. Look up, go grab it, carry on.
 
 Made for **World of Warcraft: Forever**.
 
-> **Client build 70862 and later:** Blizzard no longer lets addons read the minimap's dots the way
-> NodeRadar did, on purpose. On these builds the radar finds nodes only with the **minimap scan**
-> on (`/nr scan`, Options, or the question NodeRadar asks once at login): while your mouse rests over
-> the world, NodeRadar briefly moves your minimap, invisible, under it and reads what lies there.
-> Your minimap disappears from its corner for a split second each time; it can't look while you
-> steer with a mouse button held, or in combat. It alerts with the sound and the chat line, then
-> finds where the node is for the icons, the sonar, the compass and the beacon. With Glass MiniMap,
-> it needs version 1.1.0 or later.
+> [!CAUTION]
+> **Client build 70862 broke how NodeRadar sees nodes.** Blizzard changed the game, on
+> purpose, so that addons can no longer read the minimap's dots from afar, and the radar went blind.
+> Version 1.8.0 brings a workaround, the **minimap scan** (off by default: `/nr scan`, the Options
+> page, or the question asked once at login). It finds nodes again, but your minimap blinks while it
+> looks, and it can't look while you steer with the mouse. We're still working on it; see
+> [The minimap scan](#the-minimap-scan-client-build-70862-and-later) below.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
 ![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)
@@ -29,9 +28,42 @@ Install **NodeRadar** from [CurseForge](https://www.curseforge.com/wow/addons/no
 `Interface\AddOns` folder inside your Forever game folder. Then `/reload`, or start the game, and
 turn on Find Herbs or Find Minerals.
 
+## The minimap scan (client build 70862 and later)
+
+From client build 70862, Blizzard no longer lets addons read the minimap's dots from afar, on
+purpose. On these builds NodeRadar finds nodes only with the **minimap scan** on: `/nr scan`, the
+Options page, or the question it asks once at login.
+
+- **How it looks.** While your mouse rests over the world, NodeRadar moves your minimap, invisible,
+  under the cursor for a few frames and reads what lies there. It does this every 2 s while you move
+  and every 6 s standing still (`/nr scan <1-10>` sets the moving interval). A new herb or ore sounds
+  and gets its chat line as soon as a look sees it.
+- **Where it is.** NodeRadar then narrows the node down with a few more quick looks, usually within
+  a second or two, for its icon, the sonar on it, the compass and the beacon.
+- **Your minimap blinks.** It disappears from its corner for a split second at each look, and more
+  often for a moment while a new node is being located.
+- **When it can't look:**
+  - in combat;
+  - while a mouse button is held, so not while you steer with the mouse;
+  - while a tooltip or menu is open, or the cursor is over a window rather than the world.
+
+  After steering with the mouse, it waits until you move the mouse again. Autorun, or moving and
+  turning with the keyboard, works best.
+- **In the background it's slower.** The game runs a window without focus at its background frame
+  rate (30 by default, `maxFPSBk`), and a look then fits less work, so locating takes much longer.
+- **Positions are approximate.** The icons, the compass and the distant beacon can be a few yards off
+  the node, up to about ten. With the experimental marker on, its nearby stars show the node's exact
+  spot within about 15 yards.
+- **After a reload, located nodes are found again.** That takes a few seconds; until then the
+  minimap shows Blizzard's dots.
+- **Your minimap's quest areas are switched off for each look** and back on right after: they'd
+  otherwise flash across your screen. That's the only tracking the scan touches.
+- **Other minimap addons.** With Glass MiniMap, the scan needs version 1.1.0 or later. If another
+  addon's frame is anchored to your minimap, the scan doesn't run and NodeRadar names the addon once.
+
 ## How it works
 
-- **It reads the minimap's blips.** About every 4 yards you move (every 2 s standing still) it
+- **Before build 70862, it reads the minimap's blips.** About every 4 yards you move (every 2 s standing still) it
   samples the minimap through the client's own mouseover (the same data its tooltip shows), so it
   sees what you'd see by hovering every blip. Each look takes about 4 ms. It works under any minimap
   skin, and your own hover tooltip isn't affected.
@@ -119,7 +151,8 @@ alert.
 
 ## Options
 
-**Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; how often it looks,
+**Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; the minimap scan
+and how often it looks while you move (build 70862 and later); how often the radar looks,
 standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
 for the game to clean up); the sound, from a dropdown (the minimap ping, a sonar or radar ping from
 the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sonar, bell chime,
