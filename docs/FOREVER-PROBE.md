@@ -1091,6 +1091,16 @@ three runs was OK; no blocked action, no Lua error.
 - **On foot, a burst every 2 s for 60 s:** 18 bursts, all valid, 35 to 48 ms each (5 frames).
   The owner found the blinks noticeable and annoying: Glass MiniMap's ring and coordinates flashing
   at the mouse (GlassMiniMap#56), not the home minimap going blank.
+- **With Glass MiniMap #56's dev build and the handshake** (`movescan3` again, run #133):
+  `ScanBegin` acquired in 57 of 57 bursts, no `ScanEnd` threw. What still moves with `Minimap`:
+  `QueueStatusButton` (hidden), `MinimapContainer.PlayerCoords` (Blizzard's, alpha 0 under Glass
+  MiniMap), and two children of `Minimap` that take its alpha. Glass MiniMap's frames and
+  NodeRadar's button stay home (the button is anchored to Glass MiniMap's bar there). On foot, 28
+  bursts at speed 7, all valid: the owner **did not notice the blinks**, not annoying.
+- **The ground after the blinks:** drawn, not blank or patchy (the owner, and the screenshot of
+  the home minimap after the riding step). Alpha 0 doesn't blank it here.
+- **Low frame rate**, `maxFPS` 20 with `useMaxFPS`: a burst took 197 to 203 ms over its 5 frames
+  (about 25 fps), none over the 250 ms budget, all valid; the home minimap is away about 150 ms.
 - **Moving between placement and read:** a burst is too short to tell. Walking at speed 7, the
   player moved 0.1 yd in a 5-frame burst (2.8 yd in a held one); the reads matched the static hit
   square. Weakly in favour of the world at the read; unresolved.

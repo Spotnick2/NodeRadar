@@ -2321,7 +2321,9 @@ an older burst does nothing.
   `UnitAffectingCombat("player")`; `Minimap:IsProtected()` false; no gamepad UI (`API.Gamepad`); not
   in Edit Mode (`EditModeManagerFrame:IsEditModeActive()`, guarded); not loading; not dead, not on a
   taxi, not in an instance; `Minimap` shown and visible; not mouselooking and no mouse button down
-  (`IsMouseButtonDown`); `GetMouseFoci()[1] == WorldFrame`; the cursor still (under 2 px) for 0.2 s,
+  (`IsMouseButtonDown`); `GetMouseFoci()[1] == WorldFrame`, or a frame drawn below `Minimap`
+  (a lower strata, or the same strata at a lower level: a UI suite's full-screen layer, which the
+  borrowed map will be above); no **follower** (below); the cursor still (under 2 px) for 0.2 s,
   not over the minimap's home rect; `GameTooltip` hidden; no open menu; the LFG eye
   (`QueueStatusButton`, anchored to `Minimap`) not shown; a minimum time since the
   last button release (0.3 s).
@@ -2370,6 +2372,16 @@ checked). A setter that throws leaves that part pending.
   1 s without one. A throwing `ScanEnd` is recorded and never blocks our restore.
 - Agreed with Glass MiniMap's session (recorded on GlassMiniMap#56): the boolean return, the
   idempotent `ScanEnd`, the 1 s self-release per owner.
+
+**Followers.** A frame outside `Minimap`'s tree but anchored into it (through its `GetPoint`
+chain) travels with the borrowed map without taking its alpha: Glass MiniMap's before #56, a
+skin's border, a clock moved onto the map, the LFG eye. Never hidden or changed by us (the
+contract); found instead, and the scan refuses while one is shown and visible (effective alpha
+above 0), with one chat line per session naming it (`GetDebugName`). The search walks `UIParent`
+and `MinimapCluster` three levels deep, each frame answered once, **when the scan is turned on, at
+login, and every 10 s while on**, never per frame; the LFG eye is checked every frame of a burst
+(shown mid-burst: the burst ends). Glass MiniMap v1 anchors nothing to `Minimap` (#56, measured
+before release with the probe's handshake).
 
 **Blizzard's tooltip.** `hooksecurefunc(GameTooltip, "SetMinimapMouseover", ...)` at load: while
 suppression is on, it hides `GameTooltip` after the producer showed it. Producer-level, so
@@ -2537,9 +2549,12 @@ so **no burst while it is shown** (an admission check) until its look in a queue
 ### Probe before the code (`/fp steps nr movescan`, one more round)
 
 Done on 70862 (`movescan2`, `movescan3`; docs/FOREVER-PROBE.md, "The scan's last round") except:
-the low frame rate (5; the cap didn't apply), the LFG eye shown in a queue (6), and movement
-between placement and read (9, too short a burst to tell). These three are measured before
-release, not before the code. Item 7's annoyance was Glass MiniMap's frames (#56).
+the LFG eye shown in a queue (6) and movement between placement and read (9, too short a burst
+to tell), measured before release, not before the code. Item 7's annoyance was Glass MiniMap's
+frames: with #56's dev build and the handshake the owner no longer noticed the blinks (on foot;
+mounted before release). The low frame rate (5): about 200 ms a burst at ~25 fps, within the
+budget. Alpha 0 doesn't blank the home minimap's ground (another addon hides by mask, saying it
+does): alpha stays.
 
 1. The hit square H: width and height in screen pixels, at icon scale 0.01, at three minimap sizes,
    two effective scales and two zooms; its edges; two same-name nodes overlapping and apart.

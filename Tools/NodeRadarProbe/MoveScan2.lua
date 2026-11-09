@@ -542,6 +542,17 @@ local function session(o, body)
         return shot, shotAt
     end
 
+    -- Glass MiniMap's scan handshake (GlassMiniMap#56, PUBLIC_API_VERSION 1), as #91 will do it:
+    -- ScanBegin before the first change, one ScanEnd after the restore, whatever happened.
+    local gmm = rawget(_G, "GlassMiniMap")
+    local glassOwed = false
+    if type(gmm) == "table" and rawget(gmm, "PUBLIC_API_VERSION") == 1 and type(rawget(gmm, "ScanBegin")) == "function" then
+        local okB, acquired = pcall(gmm.ScanBegin, "NodeRadarProbe")
+        glassOwed = true
+        rec.glass = okB and tostring(acquired) or ("threw " .. tostring(acquired))
+    else
+        rec.glass = type(gmm) == "table" and "no v1 API" or "not loaded"
+    end
     -- frame 1: borrow + prepare
     rec.alpha0 = pcall(Minimap.SetAlpha, Minimap, 0)
     pcall(Minimap.SetMouseClickEnabled, Minimap, o.clicksOn == true)
@@ -561,6 +572,10 @@ local function session(o, body)
         rok = M.restore(o.step .. " burst retry " .. i)
     end
     rec.restoreOK = rok == true
+    if glassOwed then
+        local okE, errE = pcall(gmm.ScanEnd, "NodeRadarProbe")
+        if not okE then rec.glass = rec.glass .. "; ScanEnd threw " .. tostring(errE) end
+    end
     pcall(Minimap.UpdateBlips, Minimap)
     S.isPlaced, S.restored = false, true
     W.phase = "restored"
@@ -596,10 +611,10 @@ end
 local function burstLine(rec)
     if rec.refused then return "refused: " .. tostring(rec.refused) end
     local rd = rec.reads[1]
-    return ("burst %d: %s; %.0f ms, %d frames; restore %s, readback %s; tooltip shown in %d of %d frames%s"):format(rec.n,
+    return ("burst %d: %s; %.0f ms, %d frames; restore %s, readback %s; tooltip shown in %d of %d frames; glass %s%s"):format(rec.n,
         rd and (rd.valid and "valid" or ("unread (" .. tostring(rd.why) .. ")")) or (rec.interrupted and ("interrupted (" .. tostring(rec.interrupted) .. ")") or "no read"),
         rec.ms or 0, rec.frames or 0, rec.restoreOK and "OK" or "NOT CLEAN", rec.readbackOK and "OK" or "DIFFERS", rec.tipShown or 0, rec.tipFrames or 0,
-        rec.interrupted and rd and (" (interrupted: " .. tostring(rec.interrupted) .. ")") or "")
+        tostring(rec.glass), rec.interrupted and rd and (" (interrupted: " .. tostring(rec.interrupted) .. ")") or "")
 end
 
 --------------------------------------------------------------------------------
@@ -1751,6 +1766,9 @@ M.measure(def3, "Riding: mount up and ride in open world with the KEYBOARD only 
     "Keep riding with the keyboard; keep the mouse still on open world. 60 s.", "riding", "mouse in the middle, riding", ridingBody, 150, nil, true)
 def3[#def3 + 1] = { text = "While riding, did you see the minimap blink at all (a flicker at the top right of the screen)?", ask = true }
 def3[#def3 + 1] = { text = "Was it annoying, something you would switch off? (Yes = annoying, No = barely or not at all; say 'not', 'barely' or 'annoying' in the note.)", ask = true }
+-- Another addon's claim (its own comment): the game draws the minimap's ground blank if it
+-- redraws while the map's alpha is below 1. After a minute of blinks while moving, look.
+def3[#def3 + 1] = { text = "Stop and look at your minimap at its usual place (top right): is any of its ground (the terrain, roads, water) blank, black or missing, all of it or in patches? Answer before you move on; a screenshot is taken as you answer.", ask = true, screenshot = "movescan3: the home minimap after the riding blinks" }
 def3[#def3 + 1] = { text = "Type /reload (or press Reload now) in this window to save the results.", reload = true }
 Probe:Steps("movescan3", def3)
 
