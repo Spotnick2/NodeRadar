@@ -1011,3 +1011,37 @@ reads, cursor and point compared:
 So from 70862 `UpdateMouseoverAtPoint` does nothing: the minimap's mouseover is resolved only
 under the real cursor. NodeRadar stops sweeping from that build (`API.Blind`, `NR.BLIND_FROM`).
 The way back is to move the minimap under the cursor (#91), measured in its own round.
+
+### Reading by moving the minimap: `/fp steps nr movescan` and `/fp nr movetest`, 1.60.1.70862 (the owner, 2026-11-08, the Barrens, Herbalism 98 to 114) (#91)
+
+Eight revisions of the round and its one-shot command (`/fp nr movetest <size> <dx> <dy> [variant]
+[ub] [x<N>] [nofocus]`, and `ladder`). The probe borrows `Minimap` only (never the cluster or its
+container), saves and restores its anchors, size, alpha, clamp, mouse states, strata and children's
+mouse states, and reads every one back.
+
+- **Protection:** `Minimap:IsProtected()` false, `MinimapCluster` true,
+  `MinimapCluster.MinimapContainer` false (the parent chain container, cluster, `UIParent`). Its
+  points: `CENTER` on the container's `CENTER`, 198 units, effective scale 0.64, `LOW` level 3.
+- **Restore:** every readback in every run OK (dozens: off screen, resized, after each step, the
+  children compared by frame identity). Nothing runs once a test is over.
+- **The read follows where the map is drawn:** the map moved so a point of it rests under the
+  still cursor, `C_TooltipInfo.GetMinimapMouseover()` lists what lies at that point, but **only when
+  `Minimap` is the top mouse focus** (`GetMouseFoci()[1]`): over our own console (`TOOLTIP`) every
+  read was nil, even with the minimap raised to `TOOLTIP`. At normal size the first frame after a
+  move reads; after a resize, the first frame reads nothing ("no text") and the next ones read.
+- **A small map lists every node once per node:** shrunk to **24 px** (15 px on screen), one read
+  centred on the player listed every herb in range (Briarthorn, Mageroyal, Wild Steelbloom) and a
+  second Mageroyal as `x2`, with the players, rares (Echeyakee) and quest objects. 32 px read too;
+  **20 px and smaller listed players and rares but never a gathering node.**
+- **Hidden:** alpha 0 with `SetIconScale(0.01)` set while off screen still reads at 24 px. Without
+  the icon scale, the owner saw dots and the arrow flash under the cursor.
+- **Stale reads:** without `Minimap:UpdateBlips()` after a placement, the first placements of a
+  burst could miss the nodes (2 of 5) and the next read them; with it, 5 of 5 read every node.
+- **Mouselook:** with a mouse button held to steer, `GetMouseFoci()` is empty, the cursor is frozen
+  and every read is nil. Nothing can be read while the player steers with the mouse.
+- **Side effects seen:** Blizzard's minimap tooltip (`GameTooltip`, the node names) shows at the
+  cursor during a scan; Glass MiniMap's ring and pills travel with `Minimap` (anchored to it) and
+  don't follow its alpha (GlassMiniMap#56); NodeRadar's LibDBIcon button travels too.
+- Not measured: the exact size of a node's hit square on screen, and whether a 24 px read covers
+  the minimap's rim (a node at the edge).
+

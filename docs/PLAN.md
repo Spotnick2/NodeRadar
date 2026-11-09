@@ -2220,6 +2220,157 @@ mutation-tested.
 Then a look round with the code (`/fp steps nr partylook`): the shared icons on the main's
 minimap while the herbalist follows, the pip, a gather removing the icon, the group left.
 
+## The minimap scan mode (#91), opt-in
+
+From client build 70862, `Minimap:UpdateMouseoverAtPoint` does nothing: the minimap's mouseover is
+resolved only under the real cursor (docs/FOREVER-PROBE.md, "70862: the mouseover can't be
+pointed"). Blizzard calls that intentional and says the API will go (Stanzilla/WoWUIBugs#894).
+#90 made NodeRadar stop and say so. This is the way back: **move `Minimap` itself under the
+resting cursor for a few frames**, invisible, read what lies there, put it back. Measured on 70862
+before any code (docs/FOREVER-PROBE.md, "Reading by moving the minimap"); everything below rests
+on those facts. Two other addons already work this way; their measures were weighed, not copied
+(a Codex review, 2026-11-08).
+
+### What it rests on (measured, 70862)
+
+- `Minimap` is unprotected (only `MinimapCluster` is, and only the cluster is an Edit Mode
+  system): an addon can move and resize it out of combat, and the probe always put it back.
+- A read counts only when `Minimap` is the top mouse focus (`GetMouseFoci()[1]`). Any frame above
+  it at the cursor (our own console was one) leaves it unread.
+- Shrunk to **24 px**, one read centred on the player lists every node in range, once per node (two
+  Mageroyals read `x2`), with players, rares and quest objects. At 20 px and below, gathering nodes
+  are no longer listed. Alpha 0 and `SetIconScale(0.01)` still read; without the icon scale the
+  dots flash under the cursor.
+- `Minimap:UpdateBlips()` after each placement: without it the first reads of a burst can be stale.
+- After a resize the first frame reads nothing; the next reads.
+- With a mouse button held to steer (mouselook) nothing reads at all.
+
+### The contract, amended (CLAUDE.md, "The UI contract")
+
+The rule stays for everything but one narrow, opt-in case:
+
+> Never move, reparent, resize or hide `MinimapCluster` or its container; never reparent, rescale
+> or `Hide()` `Minimap`. **Only the opt-in minimap scan (#91)** may borrow an unprotected `Minimap`
+> for a burst of a few frames, outside combat, Edit Mode, loading screens and the gamepad UI, with
+> the real cursor resting on open world: it moves and resizes it, sets its own alpha to 0, its icon
+> scale, its clamp and its click and wheel states, and nothing else. Every exit puts back and reads
+> back what it changed; a failure stays pending (retried, the scan off) and is never silent.
+> Never replace Blizzard's globals, methods or scripts, bypass another addon's hooks through the
+> frame's metatable, change tracking, or touch the camera or mouselook.
+
+Not taken from the others: calling the frame type's own methods to skip skins' hooks (that removes
+cooperation, it makes nothing safer), raising the strata (we refuse a covered cursor instead),
+turning quest tracking off to hide its areas (the player's tracking is theirs), a fake stand-in
+minimap.
+
+### The scanner (`MoveScan.lua`, new)
+
+One state machine, driven by an `OnUpdate` that exists only while a burst runs:
+**idle → borrow → (prepare → place → read)+ → restore → idle**.
+
+- **Borrow** (one frame): refused unless every gate holds (below). Saves every anchor tuple, the
+  size, own alpha, clamp, click, motion and wheel states, strata and level (read back only). Calls
+  `GlassMiniMap.ScanBegin("NodeRadar")` when `GlassMiniMap.PUBLIC_API_VERSION == 1` (`rawget` +
+  `pcall`; GlassMiniMap#56: its ring stops following `Minimap`, its auto zoom-out pauses). Sets
+  alpha 0, clicks and wheel off, clamp off, `SetIconScale(0.01)`, and moves it off screen.
+- **Prepare** (one frame): the size for the next read, still off screen.
+- **Place**: `SetPoint` so the wanted map point lies under the cursor, then `UpdateBlips()`.
+- **Read** at frame +2 (+1 at normal size): valid only if `GetMouseFoci()[1] == Minimap`, the cursor
+  moved under 2 px since placement, and the placement check (the cursor's offset from the map's
+  centre, in map units) is within 1 unit. An invalid read ends the burst as **unread**, never as
+  "nothing there".
+- **Restore** (always, every exit): anchors, size, alpha, clamp, mouse states, `SetIconScale(1)`,
+  `ScanEnd`, `UpdateBlips()` now and on the next frame; then each property read back. A difference
+  is retried three times a second apart, then the scan turns itself off with one chat line and a
+  failure (`/nr failures`). Triggers: the burst done, an invalid read, `PLAYER_REGEN_DISABLED`,
+  `PLAYER_LEAVING_WORLD`, Edit Mode entering, `MINIMAP_UPDATE_ZOOM`, the setting turned off,
+  `PLAYER_LOGOUT`, a Lua error inside a step (each step in a `pcall`).
+- **The icon scale has no getter.** We set 1 back. If another addon sets one, a `hooksecurefunc` on
+  `SetIconScale` (outside our own calls) remembers it to put back instead.
+- **Blizzard's tooltip:** the minimap's own `OnEnter`/`OnUpdate` shows the hovered names in
+  `GameTooltip` at the cursor during a burst (seen in game). A burst starts only with `GameTooltip`
+  hidden; after each read and at restore, a `GameTooltip` shown since the burst began and owned by
+  `Minimap` (or showing tooltip data type 21, the minimap mouseover) is hidden. `Tooltip.lua` adds
+  no lines during a burst. Nothing else touches the player's tooltips.
+
+**The gates** (all, at borrow and at every frame of a burst): the setting on; `InCombatLockdown()`
+and `UnitAffectingCombat("player")` false; `Minimap:IsProtected()` false; no gamepad UI
+(`API.Gamepad`); no Edit Mode; not loading; not dead, not on a taxi, not in an instance; `Minimap`
+visible; not mouselooking and no mouse button down; `GetMouseFoci()[1] == WorldFrame`; the cursor
+still (under 2 px) for the last 0.2 s and not over the minimap's home rect; `GameTooltip` hidden;
+no open menu. A gate failing mid-burst restores at once.
+
+### What a scan reads
+
+- **Presence** (`MoveScan.Presence`): one 24 px read centred on the player: `{ [name] = count }`
+  for the library's nodes, about 3 frames (prepare, place, read), some 50 ms at 60 fps. This is all
+  the alert needs: a rise in a name's count (`Alert.Update` already counts per name). The sound and
+  the chat line fire on it; the sonar needs a position.
+- **Positions** (`MoveScan.Locate(name)`), only when something uses them (icons, the compass, the
+  marker, sharing, the sonar): a coarse-to-fine window search for that name. At a size where one
+  read covers a window of the map, the windows nearest the motion's leading edge first; then the
+  window that read the name, at a larger size; down to the normal size, where a node is located to
+  a few units. Its cost depends on the hit square's size on screen (not yet measured, the probe
+  first). The target: under 12 placements a new node. Known records (Icons) are checked at their
+  predicted spot first: one normal-size read confirms or drops one.
+- **Coverage at the rim** (not yet measured): if a 24 px read misses the edge, presence becomes
+  five overlapping windows (the centre and four diagonals) instead of one.
+
+### Cadence
+
+A presence burst every `scanEvery` seconds: 2 moving, 6 standing still (the player's choice, 1 to
+10), and at once when the player stops steering (mouselook ended) or stops in place after moving.
+Locate bursts follow a rise, spaced at least 0.3 s, at most one in flight. The minimap blinks out
+for each burst: about 50 ms for presence; locate's few hundred ms only when a new node appears.
+Glass MiniMap decides its own frost (GlassMiniMap#56).
+
+### What stays, what goes
+
+- `Scan.Sweep` stays for builds before 70862 (`API.Blind` false). From 70862 with the scan on,
+  `NR.Step` takes its result from `MoveScan` instead: the same shape (`blips` with names, positions
+  when located, `geometry`, `where`), so `Icons`, `Compass`, `FarMarker`, `Share` and `Alert` keep
+  their interfaces. A presence-only result carries counts and no positions; `Icons` never treats a
+  missing position as a node gone (a name's count says whether it still exists).
+- The learner's toggle experiment never runs from 70862 (it read garbage there: a party member and
+  a quest learned as herbs). Learning from a gathering cast stays. The 70862 junk is cleaned at load
+  (#90's follow-up: toggle-learned entries from build 70862 on are dropped).
+- Off, or before 70862: nothing of this runs or is created.
+
+### Opt-in and the login prompt
+
+`moveScan`, off by default, for everyone. Once per account (`NodeRadarDB.moveScanAsked`), at the
+first quiet moment after login on 70862 or later (out of combat, not loading, no gamepad UI, 10 s
+after entering the world), NodeRadar's own small window asks:
+
+> Since build 70862, NodeRadar can only see nodes by briefly moving your minimap under your mouse.
+> While it looks, your minimap disappears for a moment (a few times a minute), and it can't look
+> while you steer with a mouse button held. Try it?
+> [Try the minimap scan] [Not now]
+
+Our own frame, not Blizzard's popups. Options keeps the switch and the same text; `/nr scan`
+toggles it.
+
+### Not in this
+
+Reading while steering (impossible, measured). Reading in combat. Raising `Minimap`'s strata.
+Moving Blizzard's LFG eye or any other addon's frame: what travels with `Minimap` (the LFG eye, a
+skin's pieces) is left to travel; Glass MiniMap stops it on its side (#56).
+
+### Tests
+
+The stubs gain a minimap whose mouseover follows where it's drawn (the probe's mock: a hit square
+per blip, a size below which gathering blips aren't listed, a stale read without `UpdateBlips`).
+Covered: every gate, refusing and mid-burst; restore on every exit, with readbacks and the
+three-try give-up; an invalid read never counted as an empty map; presence counts with
+multiplicity; locate's search order and budget; the tooltip hidden only when ours; `ScanBegin`/
+`ScanEnd` called in pairs, and safe when Glass MiniMap is missing or throws; the prompt asked once,
+never in combat; nothing created when off. Mutation-tested.
+
+### Probe before the code (`/fp steps nr movescan`, one more round)
+
+The hit square's size on screen (the locate's window sizes); a 24 px read with a node at the
+minimap's rim; the tooltip suppression; a full burst cadence while riding with keyboard steering.
+
 ## A public API (#4), after #3
 
 NodeRadar stays standalone: it reads Blizzard's `Minimap`, so it works under any skin (the stock
