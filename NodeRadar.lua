@@ -183,6 +183,7 @@ function NR.Set(key, value)
     if key == "minimapButton" then NR.Minimap.Apply() end
     if key == "moveScan" or key == "enabled" then
         Alert.Reset(key .. " set")                  -- the first scan sets the counts silently
+        NR.Locate.Reset()                           -- and locates them silently: one baseline (Codex, PR #102)
         NR.MoveScan.Apply()
     end
 end

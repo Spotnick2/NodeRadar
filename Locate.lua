@@ -6,11 +6,11 @@
 -- map M px wide over a view radius of R yards covers, for sure, a window W yards wide around
 -- the map point under the cursor when W/2 yards is at most GUARANTEE_PX/2 px: M = 2R·G/W.
 --
--- The search: the map's four quarters (W = R), each one that lists a name split in four
--- (W/2), down to FINE yards; a positive at that size is the node (the centroid of the
--- positive leaves within MATCH). One read serves every name it lists. Windows are held in
--- world yards and each read paired with where the player was at its placement and at the
--- read: the map follows the player, the frame stays, so what the read covered is the window
+-- The search: the map's sixteenths (its quarters all answered in game), each window that lists
+-- a name split in four, down to FINE yards; the positive leaves of a burst, grouped by name and
+-- adjacency, are its nodes (a group's centre). One read serves every name it lists. Windows are
+-- held in world yards and each read paired with where the player was at its placement and at
+-- the read: the map follows the player, the frame stays, so what the read covered is the window
 -- moved by the player's own move. A positive that came from a neighbour (the reach is wider
 -- than the guarantee) only costs reads: the window that really holds the node is positive too.
 --
@@ -31,22 +31,30 @@ NR.Locate = Locate
 Locate.GUARANTEE_PX = 9   -- the hit square 16 px less twice its 3.5 px offset
 Locate.FINE = 16          -- yards: a window this small is a node's place (in game the leaves went
                           -- to 7 yards: a level of reads for little; a vein took ~10 s to locate)
-Locate.MATCH = 20         -- yards: a located node this near a record of its name is that record
+Locate.REACH = 1.3        -- a positive's reach, in windows: 11.5 px (8 + 3.5) against the 9 px guarantee
+Locate.MATCH = 25         -- yards: a located node this near a record of its name is that record
+                          -- (a leaf's width and its reach: one node lights adjacent leaves)
 Locate.RECHECK = 15       -- seconds between re-checks of a record at its spot
 Locate.GONE = 120         -- seconds a gathered node's spot is the same node
 Locate.TRIES = 2          -- unread windows are tried this many times
-Locate.OVERDUE = 3
+Locate.OVERDUE = 3        -- presence reads with fewer in range before the surplus goes unchecked
 Locate.SLACK = 25         -- yards: a located spot's error (a leaf's width and its reach); out of
                           -- range only beyond the radius by this (Codex, PR #102: a node by the rim
-                          -- dropped and found again, alerting each time)        -- presence reads with fewer in range before the surplus goes unchecked
+                          -- dropped and found again, alerting each time)
+Locate.BACKOFF = 20       -- seconds before a search of a name that ended unresolved starts again
+Locate.NEAR = 25          -- yards: a gather takes the nearest record of its name this near
 
 local records = {}        -- { name, kind, north, west, at, instance, misses = 0 }
 local windows = {}        -- { north, west, size, names = {[name] = true}, depth, tries, record }
-local gone = {}           -- { name, north, west, at }
+local gone = {}           -- { name, north, west, at }: gathered spots, the same node for GONE s
 local counts = {}         -- the last presence read's counts
 local quiet = nil         -- [name] = nodes in range at the first read after a reset, silent
+local active = {}         -- [name] = true while a search of it has windows
+local ended = {}          -- [name] = when its last search ran out (BACKOFF)
+local hits = {}           -- this burst's positive leaves: { name, north, west, size }
 local dirty = false
 local found = {}          -- new records to announce, at the burst's end (the map home again)
+local fresh = false       -- a search started since the last Take (MoveScan's quick run restarts)
 
 local function d2(a, n, w) return (a.north - n) ^ 2 + (a.west - w) ^ 2 end
 
@@ -60,9 +68,9 @@ function Locate.Records() return records end
 -- Everything forgotten: a zone, tracking or zoom change, the scan turned on (quiet: the next
 -- read's nodes are the baseline, located silently).
 function Locate.Reset()
-    records, windows, gone, counts, found = {}, {}, {}, {}, {}
+    records, windows, gone, counts, found, active, ended, hits = {}, {}, {}, {}, {}, {}, {}, {}
     quiet = nil
-    dirty = true
+    dirty, fresh = true, false
 end
 
 local function ofName(name)
@@ -139,7 +147,15 @@ function Locate.Presence(c, now)
     local need = {}
     for name, n in pairs(c) do
         local m = ofName(name)
-        if n > m and not searching(name) then need[name] = true end
+        -- A quiet allowance never outlives the demand it was for (Codex, PR #102).
+        if quiet[name] then quiet[name] = math.min(quiet[name], math.max(0, n - m)) end
+        -- A search that ended unresolved (two nodes too close to tell apart, one by the rim)
+        -- starts again only after BACKOFF (Codex, PR #102: it restarted every presence read).
+        local on = searching(name)
+        if active[name] and not on then active[name], ended[name] = nil, now end
+        if n > m and not on and now - (ended[name] or -math.huge) >= Locate.BACKOFF then
+            need[name], active[name] = true, true
+        end
         if n < m then
             -- Fewer in range than recorded: each re-checked at its spot. Re-checks that can't
             -- read kept a mined vein as a ghost icon in game, so after OVERDUE such presence
@@ -156,6 +172,8 @@ function Locate.Presence(c, now)
                 table.sort(mine, function(a, b) return a.at < b.at end)
                 for i = 1, m - n do drop(mine[i], "fewer in range than recorded") end
             end
+        else
+            for _, r in ipairs(records) do if r.name == name then r.overdue = nil end end
         end
     end
     if next(need) then
@@ -169,23 +187,26 @@ function Locate.Presence(c, now)
             local quarters = {}
             for i = before + 1, #windows do quarters[#quarters + 1] = table.remove(windows) end
             for _, q in ipairs(quarters) do split(q.north, q.west, q.size, need, 2) end
+            fresh = true
         end
     end
 end
 
 -- The next window to read, as a placement for MoveScan, or nil: re-checks first, then the
--- deepest search window (a node found sooner); out of range or no longer needed, dropped.
+-- deepest search window (a node found sooner), the nearest of those; out of range or no
+-- longer needed, dropped.
 function Locate.Next(pn, pw, radius, es)
     local now = GetTime()
     if not NR.Scan.Where() then return nil end
     for _, r in ipairs(records) do
-        if (r.due or now - r.at >= Locate.RECHECK) and not r.checking then
+        if (r.due or now - r.at >= Locate.RECHECK) and not r.checking and now >= (r.checkAfter or 0) then
             r.checking = true
             windows[#windows + 1] = { north = r.north, west = r.west, size = Locate.FINE, names = { [r.name] = true },
                                       depth = 99, tries = 0, record = r }
         end
     end
-    local best, bestI
+    -- Pruned first, then chosen, then removed by identity (Codex, PR #102: removing by an index
+    -- taken before the pruning took the wrong window).
     for i = #windows, 1, -1 do
         local w = windows[i]
         local wanted = false
@@ -198,18 +219,29 @@ function Locate.Next(pn, pw, radius, es)
                 w.record.checking = nil
                 if d2(w.record, pn, pw) > (radius + Locate.SLACK) ^ 2 then drop(w.record, "out of range") end
             end
-        elseif not best or w.depth > best.depth
-            or (w.depth == best.depth and d2(w, pn, pw) < d2(best, pn, pw)) then
-            best, bestI = w, i                             -- deepest, then nearest the player
+        end
+    end
+    local best
+    for _, w in ipairs(windows) do
+        if not best or w.depth > best.depth or (w.depth == best.depth and d2(w, pn, pw) < d2(best, pn, pw)) then
+            best = w                                       -- deepest, then nearest the player
         end
     end
     if not best then return nil end
-    table.remove(windows, bestI)
+    for i, w in ipairs(windows) do
+        if w == best then table.remove(windows, i); break end
+    end
     local px = 2 * radius * Locate.GUARANTEE_PX / best.size       -- the map's width, screen px
     local units = px / es
     local k = 2 * radius / units                                   -- yards per map unit
     return { kind = "window", window = best, units = units, radius = radius,
              ox = -(best.west - pw) / k, oy = (best.north - pn) / k }
+end
+
+local function goneAt(name, north, west, now)
+    for _, g in ipairs(gone) do
+        if g.name == name and now - g.at <= Locate.GONE and d2(g, north, west) <= Locate.MATCH ^ 2 then return g end
+    end
 end
 
 -- A node of `name` located near (north, west): an existing record renewed, a gathered spot's
@@ -225,12 +257,11 @@ local function located(name, north, west, now)
                 instance = instanceNow(), misses = 0 }
     records[#records + 1] = r
     dirty = true
-    for i, g in ipairs(gone) do
-        if g.name == name and now - g.at <= Locate.GONE and d2(g, north, west) <= Locate.MATCH ^ 2 then
-            table.remove(gone, i)
-            API.Trace("locate: " .. name .. " at a gathered spot: the same node, silent")
-            return
-        end
+    -- A gathered spot keeps its node silent for all of GONE, whatever it's found again
+    -- (Codex, PR #102: consumed at the first rediscovery, a second one alerted).
+    if goneAt(name, north, west, now) then
+        API.Trace("locate: " .. name .. " at a gathered spot: the same node, silent")
+        return
     end
     -- There at the scan's first look after a reset: no sound of its own (a rise that
     -- announced it still gets its sonar, Alert.Located).
@@ -240,6 +271,38 @@ local function located(name, north, west, now)
     end
     API.Trace("locate: " .. name .. " found at a new spot" .. (r.quiet and " (there at the first look)" or ""))
     found[#found + 1] = r
+end
+
+-- A burst's positive leaves, one node each group of adjacent ones (a node lights the leaves
+-- within its reach, Codex, PR #102: one node made two records): grouped by name, linked when
+-- within a leaf and its reach, each group's centre located once.
+local function settleHits(now)
+    local done = {}
+    for i, h in ipairs(hits) do
+        if not done[i] then
+            local group, stack = {}, { i }
+            done[i] = true
+            while #stack > 0 do
+                local j = table.remove(stack)
+                local a = hits[j]
+                group[#group + 1] = a
+                for k, b in ipairs(hits) do
+                    -- Per axis: one node lights leaves whose centres are up to 2 x 0.64 leaves
+                    -- apart on each (its reach), diagonal neighbours included.
+                    local link = (a.size + b.size) / 2 * Locate.REACH
+                    if not done[k] and b.name == a.name and math.abs(a.north - b.north) <= link
+                        and math.abs(a.west - b.west) <= link then
+                        done[k] = true
+                        stack[#stack + 1] = k
+                    end
+                end
+            end
+            local n, w = 0, 0
+            for _, g in ipairs(group) do n, w = n + g.north, w + g.west end
+            located(h.name, n / #group, w / #group, now)
+        end
+    end
+    hits = {}
 end
 
 -- A window's read (MoveScan): `c` the counts it listed; (pn, pw) the player at the read.
@@ -253,6 +316,16 @@ function Locate.Read(p, c, pn, pw, now)
         local r = w.record
         r.checking = nil
         if c[r.name] then
+            -- A positive renews it only if no other record of its name lies within the read's
+            -- reach (Codex, PR #102: a neighbour's positive kept a dead one alive).
+            local reach = w.size / 2 + w.size * Locate.REACH
+            for _, o in ipairs(records) do
+                if o ~= r and o.name == r.name and d2(o, north, west) <= reach ^ 2 then
+                    r.checkAfter = now + Locate.RECHECK
+                    API.Trace("locate: " .. r.name .. " re-check inconclusive (another of its name within reach)")
+                    return
+                end
+            end
             r.at, r.due, r.overdue = now, nil, nil
         else
             drop(r, "not at its spot")
@@ -263,13 +336,14 @@ function Locate.Read(p, c, pn, pw, now)
     for name in pairs(w.names) do if c[name] then positive[name] = true end end
     if not next(positive) then return end
     if w.size <= Locate.FINE then
-        for name in pairs(positive) do located(name, north, west, now) end
+        for name in pairs(positive) do hits[#hits + 1] = { name = name, north = north, west = west, size = w.size } end
     else
         split(north, west, w.size, positive, w.depth + 1)
     end
 end
 
--- A read that didn't count: the window tried again later, TRIES times.
+-- A read that didn't count: the window tried again later, TRIES times; an exhausted re-check
+-- waits RECHECK before the next (Codex, PR #102: recreated at once, it starved the searches).
 function Locate.Unread(p)
     local w = p and p.window
     if not w then return end
@@ -278,39 +352,47 @@ function Locate.Unread(p)
         windows[#windows + 1] = w
     elseif w.record then
         w.record.checking = nil
+        w.record.checkAfter = GetTime() + Locate.RECHECK
     end
 end
 
--- The player gathered a node of that name: its records within NEAR yards go, their spots
--- remembered as the same node for GONE seconds (a vein mined again).
-Locate.NEAR = 25           -- a located spot can be ~10 yards off (the 7 to 15 yard leaves, their reach)
+-- The player gathered a node of that name: the nearest record of its name within NEAR goes
+-- (Codex, PR #102: every one within 25 yards went, a live neighbour too), its spot (or the
+-- player's, none recorded) remembered as the same node for GONE seconds (a vein mined again).
 function Locate.Gathered(name, now)
     local ok, n, w = pcall(UnitPosition, "player")
     n, w = ok and API.Num(n), ok and API.Num(w)
     if not n then return end
-    for i = #records, 1, -1 do
-        local r = records[i]
-        if r.name == name and d2(r, n, w) <= Locate.NEAR ^ 2 then
-            table.remove(records, i)
-            dirty = true
-        end
+    local best, bestD
+    for _, r in ipairs(records) do
+        local d = d2(r, n, w)
+        if r.name == name and d <= Locate.NEAR ^ 2 and (not bestD or d < bestD) then best, bestD = r, d end
     end
-    gone[#gone + 1] = { name = name, north = n, west = w, at = now }
+    if best then drop(best, "gathered") end
+    gone[#gone + 1] = { name = name, north = best and best.north or n, west = best and best.west or w, at = now }
 end
 
--- Whether the records changed since the last call, and the new ones to announce (the
--- consumers are told once a burst, with the map home).
 -- Search windows still open (re-checks aside): the scan comes back soon (MoveScan.LOCATE_GAP).
 function Locate.Busy()
     for _, w in ipairs(windows) do if not w.record then return true end end
     return false
 end
 
+-- Whether a search started since the last call (MoveScan restarts its quick run for it).
+function Locate.TakeFresh()
+    local f = fresh
+    fresh = false
+    return f
+end
+
+-- Whether the records changed since the last call, and the new ones to announce (the
+-- consumers are told once a burst, with the map home). The burst's leaves settle first.
 function Locate.Take()
+    if #hits > 0 then settleHits(GetTime()) end
     local d, f = dirty, found
     dirty, found = false, {}
     return d or #f > 0, f
 end
 
 Locate._test = { windows = function() return windows end, gone = function() return gone end,
-                 quiet = function() return quiet end }
+                 quiet = function() return quiet end, hits = function() return hits end }

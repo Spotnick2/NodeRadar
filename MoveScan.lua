@@ -58,6 +58,7 @@ local cursorX, cursorY, quietSince
 local looking, moving = false, false
 local followers = { at = -math.huge }
 local rapid = 0                       -- quick locate bursts in a row (LOCATE_RUN)
+local lastTick, frameDt = nil, 0      -- the frame time (the burst budget's margin)
 local waited, waitedSince = {}, nil   -- why no burst, by reason, since the last one (/nr scan log)
 local lookEnded                       -- when mouselook last ended (the trace)
 -- After mouselook or a click, the minimap's hover answers nothing until the mouse has moved
@@ -364,6 +365,12 @@ function MS.QuestAreas(on)
     return false
 end
 
+-- Whether the quest areas read off now (true when there's no such tracking).
+function MS.QuestAreasOff()
+    local i = questIndex()
+    return not i or questActive(i) == false
+end
+
 -- At login and after a loading screen: a scan cut short (a crash, a logout) put back.
 local lastQuestTry = -math.huge       -- declared before both its users (Codex, PR #102)
 function MS.QuestAreasBack()
@@ -642,6 +649,7 @@ local function finish(b, reason)
     -- At most LOCATE_RUN of them in a row (the owner: three new nodes blinked a long while);
     -- then the usual cadence, still locating.
     local busy = NR.Locate and NR.Locate.Busy()
+    if NR.Locate and NR.Locate.TakeFresh() then rapid = 0 end   -- a new node's search: a new quick run
     rapid = busy and rapid + 1 or 0
     local soon = (busy and rapid < MS.LOCATE_RUN) and MS.LOCATE_GAP or MS.Every()
     lastBurst, nextAt = GetTime(), GetTime() + soon
@@ -792,7 +800,10 @@ local function read(b, now)
     local why = invalid(b)
     local names
     if not why then names, why = MS.ReadNames() end
-    if not names and why == "no lines" and b.cur.kind == "presence" and (b.rereads or 0) < MS.REREADS then
+    -- An empty read is read again next frame: the presence read up to REREADS times (an
+    -- empty one there is a failed read), a window once before its empty answer counts as no
+    -- node (Codex, PR #102: one frame's answer is a thin basis for dropping a record).
+    if not names and why == "no lines" and (b.rereads or 0) < (b.cur.kind == "presence" and MS.REREADS or 1) then
         b.rereads = (b.rereads or 0) + 1
         return false
     end
@@ -809,7 +820,7 @@ local function read(b, now)
         API.Trace(("locate: window %.0f yd%s at %.0f,%.0f from you: %s"):format(w.size, w.record and " (re-check)" or "",
             b.cur.ox * (2 * (b.cur.radius or 0) / b.cur.units), b.cur.oy * (2 * (b.cur.radius or 0) / b.cur.units),
             names and (#listed > 0 and table.concat(listed, ", ") or "no node") or ("unread: " .. tostring(why))))
-        if names or why == "nothing" or why == "no lines" then
+        if names or why == "no lines" then                -- nil was never measured as a valid empty: unread
             local pn, pw = playerPos()
             if NR.Locate then NR.Locate.Read(b.cur, names and countsOf(names) or {}, pn, pw, now) end
         elseif NR.Locate then
@@ -857,7 +868,16 @@ MS.LOCATE_GAP = 0.3     -- seconds between bursts while Locate has windows open
 MS.LOCATE_RUN = 8       -- such quick bursts in a row at most (about 3 s of blinking)
 MS.MARGIN = 0.06
 local function nextPlacement(b, now)
-    if b.placements >= MS.PLACEMENTS or now - b.t0 > MS.BUDGET - MS.MARGIN or not NR.Locate then return nil end
+    -- Room for a resized placement's three frames at the current frame rate (Codex, PR #102:
+    -- a fixed margin at a low frame rate admitted placements that timed out unread).
+    local margin = math.max(MS.MARGIN, 3 * frameDt)
+    if b.placements >= MS.PLACEMENTS or now - b.t0 > MS.BUDGET - margin or not NR.Locate then return nil end
+    -- The locate windows are large maps, where the quest areas' outlines would show: only once
+    -- their tracking reads off (Codex, PR #102: a refused or thrown toggle went unchecked).
+    if saved and saved.quest and not MS.QuestAreasOff() then
+        API.Trace("scan: the quest areas didn't turn off: no locate window this burst")
+        return nil
+    end
     local okR, radius = pcall(C_Minimap.GetViewRadius)
     radius = okR and API.Num(radius)
     local pn, pw = playerPos()
@@ -887,6 +907,9 @@ local function stepBurst(b, now)
     if b.phase == "off" then return place(b, b.cur) end
     if b.frame >= b.placedAt + b.wait then
         if read(b, now) == false then return end
+        -- A failed presence read ends the burst: its windows' empty answers would prove nothing
+        -- and could drop live records (Codex, PR #102).
+        if b.cur.kind == "presence" and not b.observation then return finish(b, "the presence read failed") end
         local p = nextPlacement(b, now)
         if p then return place(b, p) end
         return finish(b, "done")
@@ -912,6 +935,8 @@ function MS.Cancel() gen = gen + 1 end
 --------------------------------------------------------------------------------
 
 function MS.Tick(now)
+    if lastTick then frameDt = math.min(0.5, math.max(0, now - lastTick)) end
+    lastTick = now
     if pending and not burst and now - lastRetry >= MS.RETRY then MS.Retry() end
     -- A saved quest-area obligation (a scan cut short) retried on its own, scan on or not
     -- (Codex, PR #102: a refused restore at login waited for the next loading screen).

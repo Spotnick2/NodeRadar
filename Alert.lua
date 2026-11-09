@@ -32,8 +32,17 @@ local gathered = {}   -- [name] = when the player last gathered one
 -- a sound on the vein being mined).
 Alert.NEAR = 15
 local spots = {}      -- [name] = { north, west }: where the player gathered one (70862 on)
-local owed = {}       -- [name] = nodes a count's rise announced, not yet located (70862 on)
+local owed = {}       -- [name] = { n, at }: nodes a count's rise announced, not yet located (70862 on)
+-- A token lives OWED_TTL seconds at most, never above the name's current count, and a gather or
+-- a new area retires it (Codex, PR #102: an old token silenced a later, unrelated replacement).
+Alert.OWED_TTL = 60
+local function owedLive(name, now)
+    local o = owed[name]
+    if o and (o.n <= 0 or now - o.at > Alert.OWED_TTL) then owed[name], o = nil, nil end
+    return o
+end
 local risenFrom = {}
+local prevCounts = {}
 
 local function here()
     local ok, north, west = pcall(UnitPosition, "player")
@@ -48,6 +57,8 @@ end
 
 function Alert.Gathered(name, now)
     gathered[name] = now
+    local o = owed[name]
+    if o then o.n = o.n - 1 end
     if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
         hist.counts[name] = hist.counts[name] - 1
         local n, w = here()
@@ -66,6 +77,7 @@ end
 -- A new area: counts from zero, so its nodes alert.
 function Alert.NewArea(now)
     hist = { counts = {}, drops = {}, at = now }
+    owed = {}
     API.Trace("alert: a new area, counts from zero")
 end
 
@@ -159,12 +171,22 @@ function Alert.Counts(counts, now, blips, result, every, blink)
             end
         end
     end
+    prevCounts = hist.counts
     hist.counts, hist.at = counts, now
     -- From 70862 (#91): each rise is owed a located node, which then ripples without a second
     -- sound (Alert.Located).
     if API.Blind() then
+        -- A fall retires as many tokens (the nodes they were for may be the ones gone).
+        for name, o in pairs(owed) do
+            local fall = (prevCounts[name] or 0) - (counts[name] or 0)
+            if fall > 0 then o.n = o.n - fall end
+        end
         for _, name in ipairs(new) do
-            if Alert.Wanted(name) then owed[name] = (owed[name] or 0) + (counts[name] or 0) - (risenFrom[name] or 0) end
+            if Alert.Wanted(name) then
+                local o = owedLive(name, now) or { n = 0 }
+                o.n, o.at = o.n + (counts[name] or 0) - (risenFrom[name] or 0), now
+                owed[name] = o
+            end
         end
     end
     -- Counted whatever the skill and the choices (a skill-up or a node tracked
@@ -358,10 +380,16 @@ function Alert.Located(r, now)
         blip = { x = -(r.west - pw) / k, y = (r.north - pn) / k }
     end
     if not Alert.Wanted(r.name) then return end          -- skipped or beyond the skill: nothing (Codex, PR #102)
-    if (owed[r.name] or 0) > 0 then
-        owed[r.name] = owed[r.name] - 1
+    local o = owedLive(r.name, now)
+    if o then
+        o.n = o.n - 1
         API.Trace("alert: " .. r.name .. " located, already announced: its sonar")
         if blip and NR.db.ring then Alert.Sonar(blip.x, blip.y, r.kind or NR.Learn.Kind(r.name)) end
+        -- The solo ping the sound couldn't place, now it can (Codex, PR #102).
+        if blip and NR.db.ping and not IsInGroup() then
+            local ok, err = pcall(Minimap.PingLocation, Minimap, blip.x, blip.y)
+            if not ok then API.Fail("PingLocation", err) end
+        end
         return
     end
     if r.quiet then return end                          -- there at the first look after a reset
