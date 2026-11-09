@@ -333,13 +333,12 @@ local function visibilityHome(s)
     return true
 end
 
-local function restore()
+-- `keep`: the snapshot stays for the settle frame's readback (Codex, PR #101), released only
+-- once everything reads back there.
+local function restore(keep)
     local s = saved
     if not s then return true end
-    if s.scaled then
-        iconScale(lastScale or 1)
-        s.scaled = false
-    end
+    if s.scaled and iconScale(lastScale or 1) then s.scaled = false end   -- kept until the setter works
     if not geometryHome(s) then
         setOn(Minimap, "ClearAllPoints")
         for _, p in ipairs(s.points) do setOn(Minimap, "SetPoint", p[1], p[2], p[3], p[4], p[5]) end
@@ -365,7 +364,13 @@ local function restore()
         halt("the minimap's visibility or input couldn't be put back yet; retried until it can")
         return false
     end
-    pending, saved = nil, nil
+    if s.scaled then
+        pending = "icon scale"
+        halt("the minimap's dots couldn't be put back to their size yet; retried until they can")
+        return false
+    end
+    pending = nil
+    if not keep then saved = nil end
     return true
 end
 
@@ -536,7 +541,7 @@ end
 local function finish(b, reason)
     if burst ~= b then return end
     b.reason = reason
-    restore()
+    restore(true)
     pcall(Minimap.UpdateBlips, Minimap)
     b.phase = "settle"
     lastBurst, nextAt = GetTime(), GetTime() + MS.Every()
@@ -633,7 +638,10 @@ local function invalid(b)
     local cx, cy = Minimap:GetCenter()
     local w = API.Num(ask(Minimap, "GetWidth"))
     cx, cy = API.Num(cx), API.Num(cy)
-    if not (cx and cy and w and w > 0) then return "the placement is unreadable" end
+    local h = API.Num(ask(Minimap, "GetHeight"))
+    if not (cx and cy and w and h and w > 0) then return "the placement is unreadable" end
+    -- The read's size, really (a refused or overridden resize reads a normal map's centre only).
+    if math.abs(w - b.units) > 0.01 or math.abs(h - b.units) > 0.01 then return "not the read's size" end
     local k = b.homeW / w
     if math.abs((b.x / b.es - cx) * k) > MS.PLACE_TOL or math.abs((b.y / b.es - cy) * k) > MS.PLACE_TOL then
         return "the map is not where it was put"

@@ -233,6 +233,49 @@ Minimap._protected, WoW.combat = false, false
 WoW.fire("PLAYER_REGEN_ENABLED")
 check(NR.MoveScan.Pending() == nil and atHome(), "PLAYER_REGEN_ENABLED: retried, everything home")
 
+-- The icon scale's setter failing on the way back: pending, said, retried; never "done"
+-- with the dots at 0.01 (Codex, PR #101).
+NR = fresh()
+local realScale = Minimap.SetIconScale
+untilBorrowed()
+Minimap.SetIconScale = function(self, v) if v ~= 0.01 then error("refused") end return realScale(self, v) end
+runBurst()
+check(NR.MoveScan.Pending() == "icon scale" and Minimap._iconScale == 0.01, "a throwing icon-scale restore stays pending")
+check(chatHas("dots couldn't be put back"), "...said")
+check(Minimap:GetAlpha() == 1 and Minimap:IsMouseClickEnabled() == true, "...while the geometry, visibility and input are home")
+Minimap.SetIconScale = realScale
+WoW.now = WoW.now + 3
+frames(1)
+check(NR.MoveScan.Pending() == nil and Minimap._iconScale == 1, "...retried: the dots back to 1")
+
+-- A resize refused (a skin keeps the minimap's size): the read covers only a normal map's
+-- centre, so it's unread, never counts (Codex, PR #101).
+NR = fresh()
+watch(NR)
+WoW.blips = { { "Silverleaf", 20, -15 } }
+local realSize = Minimap.SetSize
+Minimap.SetSize = function(self, w, h) if w < 100 then return end return realSize(self, w, h) end
+untilBorrowed()
+runBurst()
+Minimap.SetSize = realSize
+check(#observed == 0 and NR.MoveScan.lastUnread == "not the read's size", "a refused resize: unread, no counts")
+check(atHome(), "...and home")
+
+-- Something moving the map between the restore and the settle frame: the readback there
+-- catches it and puts it back (Codex, PR #101).
+NR = fresh()
+untilBorrowed()
+for _ = 1, 10 do
+    frames(1)
+    local b = NR.MoveScan._test.burst()
+    if b and b.phase == "settle" then break end
+end
+check(atHome(), "(control) restored at frame 4")
+Minimap:SetSize(120, 120)
+frames(1)
+check(NR.MoveScan._test.burst() == nil and atHome(), "a change before the settle frame is read back and undone")
+check(NR.MoveScan._test.saved() == nil, "...and the snapshot is released only then")
+
 --------------------------------------------------------------------------------
 -- 8. Blizzard's tooltip: hidden after its producer during a burst and its settle frame only.
 --------------------------------------------------------------------------------
