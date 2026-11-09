@@ -111,18 +111,3 @@ function checkMethods(required)
     return recorded
 end
 
--- FINDING (#98): /nr's help prints "a | b | c" with a stray "|" in six lines, which the
--- client reads as an escape. Until they're doubled, done() accepts exactly those: a
--- NodeRadar chat line of "/nr ..." whose only "|" are " | " separators. Any other stray
--- still fails.
-local kitDone = done
-function done(name)
-    local keep = {}
-    for _, line in ipairs(WoW.strays) do
-        local body = line:gsub("^|cff00ff00%[NodeRadar%]|r /nr ", "")
-        local help = body ~= line and not (body:gsub(" | ", "")):find("|", 1, true)
-        if not help then keep[#keep + 1] = line end
-    end
-    WoW.strays = keep
-    kitDone(name)
-end
