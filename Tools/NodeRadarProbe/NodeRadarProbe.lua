@@ -7252,8 +7252,14 @@ local wake                     -- starts the per-frame driver (it stops itself w
 local strayTries, strayNext = 0, 0
 local dryRun                   -- a movetest, which the round's stop guard must leave alone
 local frameHook                -- called on every frame a placement waits (the steering round logs there)
+local forceCombat              -- movescan2/3 only: borrow even in combat, to measure what the client allows (#91)
+local abortHook                -- movescan3: told of an abort (reason, whether a borrow was open) before it restores
 
+local quiet                    -- movescan2/3: only the lines that say something went wrong (one burst's own record says the rest)
 local function mlog(step, text)
+    if quiet and not (text:find("ERROR", 1, true) or text:find("DIFFERS", 1, true) or text:find("REFUSED", 1, true)
+        or text:find("GAVE UP", 1, true) or text:find("FAILED", 1, true) or text:find("ABORT", 1, true)
+        or text:find("DID NOT READ BACK", 1, true) or text:find("NOT CLEAN", 1, true)) then return end
     local line = ("%.2f movescan: %s f%d %s"):format(GetTime(), step, frameN, text)
     if type(NodeRadarProbeDB) == "table" then
         local d = NodeRadarProbeDB.movescan
@@ -7399,11 +7405,23 @@ local function restore(reason)
         end)
     end
     if s.w and s.h then try("size", function() Minimap:SetSize(s.w, s.h) end) end
-    if s.alpha then try("alpha", function() Minimap:SetAlpha(s.alpha) end) end
     if s.clamp ~= nil then try("clamp", function() Minimap:SetClampedToScreen(s.clamp == true) end) end
-    if s.click ~= nil then try("click", function() Minimap:SetMouseClickEnabled(s.click == true) end) end
-    if s.motion ~= nil then try("motion", function() Minimap:SetMouseMotionEnabled(s.motion == true) end) end
-    if s.wheel ~= nil then try("wheel", function() Minimap:EnableMouseWheel(s.wheel == true) end) end
+    -- The plan's order (#91): geometry first; the icon scale (it moves nothing) at once; then
+    -- visibility and input, only once the geometry reads back right (else they stay pending).
+    if iconTouched then
+        try("icon scale", function() Minimap:SetIconScale(1) end)
+        iconTouched = false
+        mlog("restore", "icon scale set back to 1; the original is unknown (no getter in the dump)")
+    end
+    local g = compare(s, snapshot())
+    if g.points and g.size and g.clamp then
+        if s.alpha then try("alpha", function() Minimap:SetAlpha(s.alpha) end) end
+        if s.click ~= nil then try("click", function() Minimap:SetMouseClickEnabled(s.click == true) end) end
+        if s.motion ~= nil then try("motion", function() Minimap:SetMouseMotionEnabled(s.motion == true) end) end
+        if s.wheel ~= nil then try("wheel", function() Minimap:EnableMouseWheel(s.wheel == true) end) end
+    else
+        mlog("restore", "GEOMETRY DID NOT READ BACK: alpha and clicks stay pending (invisible, click-off)")
+    end
     if s.strata then try("strata", function() Minimap:SetFrameStrata(s.strata) end) end
     if s.level then try("level", function() Minimap:SetFrameLevel(s.level) end) end
     for _, k in ipairs(s.kids or {}) do
@@ -7411,11 +7429,6 @@ local function restore(reason)
             if k.click ~= nil then k.f:SetMouseClickEnabled(k.click == true) end
             if k.motion ~= nil then k.f:SetMouseMotionEnabled(k.motion == true) end
         end)
-    end
-    if iconTouched then
-        try("icon scale", function() Minimap:SetIconScale(1) end)
-        iconTouched = false
-        mlog("restore", "icon scale set back to 1; the original is unknown (no getter in the dump)")
     end
     placed = nil
     local now = snapshot()
@@ -7432,7 +7445,7 @@ end
 -- Why we must not borrow the map now, or nil.
 local function refusal()
     if S then return "already borrowed" end
-    if InCombatLockdown() then return "in combat" end
+    if InCombatLockdown() and not forceCombat then return "in combat" end
     if call(Minimap, "IsProtected") == true then return "Minimap is protected" end
     local n = nr()
     if n and n.API and n.API.Gamepad and n.API.Gamepad() then return "the gamepad UI is on" end
@@ -7456,6 +7469,7 @@ local function begin(step)
 end
 
 local function abort(reason)
+    if abortHook then pcall(abortHook, reason, S ~= nil, job ~= nil) end
     if job then mlog(job.step, "ABORT: " .. tostring(reason)); job = nil; dryRun = false; hidden = false; ubOn, nofocusOn = false, false end
     if S then restore(reason) end
 end
@@ -7694,6 +7708,7 @@ local function finish(summary)
         mlog("ub", "Minimap:UpdateBlips() after coming home " .. (okb and "ok" or ("ERROR " .. tostring(errb))))
     end
     ubOn, nofocusOn = false, false
+    if abortHook then pcall(abortHook, "job end: " .. (j and j.step or "?"), false, false) end
     if j then
         mlog(j.step, "done: " .. tostring(summary) .. (ok and "" or " (RESTORE NOT CLEAN)"))
         if j.done then j.done(summary) end
@@ -7747,7 +7762,7 @@ do
         pcall(er.RegisterCallback, er, "EditMode.Enter", function() abort("EditMode.Enter") end, guard)
     end
 end
-guardRound(KEY, function() return (S ~= nil or job ~= nil) and not dryRun end, function() abort("the round stopped") end)
+guardRound({ KEY, Probe.name .. "/movescan2", Probe.name .. "/movescan3" }, function() return (S ~= nil or job ~= nil) and not dryRun end, function() abort("the round stopped") end)
 
 -- A wait step: holds `hold` seconds while `ready` (if any) says so (and, with `still`,
 -- while the mouse is off the minimap and has not moved), then runs the body. ready may
@@ -8337,6 +8352,21 @@ NS._movescan = {
     lookBody = lookBody, skinBody = skinBody, seeds = seeds, seedWait = seedWait,
     watchBody = watchBody, frame = function() return frameN end,
     at = at, resize = resize, maxCalls = function() return math.max(maxCalls, calls) end,
+}
+-- What MoveScan2.lua (movescan2 and movescan3, the last round before #91's code) reuses.
+NS._ms = {
+    mlog = mlog, call = call, gfn = gfn, frames = frames, pause = pause, offscreen = offscreen, place = place,
+    snapshot = snapshot, compare = compare, describe = describe, restore = restore, begin = begin, refusal = refusal,
+    state = function() return S, job end, start = start, abort = abort, seeds = seeds, seedWait = seedWait,
+    waitStep = waitStep, libraryKind = libraryKind, isPlayerName = isPlayerName, overWorld = overWorld,
+    overMap = overMap, cursor2 = cursor2, setIconScale = setIconScale, rawText = rawText, relName = relName,
+    describeFrame = describeFrame, placementCheck = placementCheck, geometry = geometry, tally = tally,
+    placed = function() return placed end, frame = function() return frameN end, guardRound = guardRound,
+    setFrameHook = function(f) frameHook = f end, setAbortHook = function(f) abortHook = f end,
+    setForceCombat = function(v) forceCombat = v == true end, mouseover = mouseover,
+    setQuiet = function(v) quiet = v == true end,
+    readyStep = readyStep, measure = measure, held = held, str = str, num = num, secret = secret,
+    THRESH = THRESH, KS = KS, say = say, Probe = Probe, nr = nr,
 }
 end
 

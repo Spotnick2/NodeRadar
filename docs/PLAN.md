@@ -2322,7 +2322,8 @@ an older burst does nothing.
   in Edit Mode (`EditModeManagerFrame:IsEditModeActive()`, guarded); not loading; not dead, not on a
   taxi, not in an instance; `Minimap` shown and visible; not mouselooking and no mouse button down
   (`IsMouseButtonDown`); `GetMouseFoci()[1] == WorldFrame`; the cursor still (under 2 px) for 0.2 s,
-  not over the minimap's home rect; `GameTooltip` hidden; no open menu; a minimum time since the
+  not over the minimap's home rect; `GameTooltip` hidden; no open menu; the LFG eye
+  (`QueueStatusButton`, anchored to `Minimap`) not shown; a minimum time since the
   last button release (0.3 s).
 - **Continuation** (every frame of the burst): the setting on, the environment as at admission
   (combat, Edit Mode, loading, gamepad, mouselook, buttons), the scan context unchanged (zone,
@@ -2398,7 +2399,10 @@ of an older generation or another instance is dropped.
 - **unread**: changes nothing, anywhere.
 - **known empty**: a valid read listing no accepted name (`counts` empty) is presence with zero
   counts, distinct from unread. Which client answers mean "valid and empty" (a table with no lines)
-  and which mean "unread" (nil, malformed, unsettled) is measured first (the probe list).
+  and which mean "unread" (nil, malformed, unsettled) is measured: a valid read always has lines
+  (the player, a quest object), an unsettled one has none, nil never came from a valid read. So
+  known empty is a valid read with at least one line and no accepted name; no lines or nil is
+  unread.
 
 What each consumer changes (Codex, round 1):
 
@@ -2454,8 +2458,9 @@ Presence says how many of each name. Locate finds where, only while something ne
 - **Geometry** (measured first, below): a node's hit square is H screen pixels. With the minimap
   M screen pixels wide over a view radius of R yards, one read covers a window 2·R·H / M yards
   wide. For a wanted window W, M = 2·R·H / W, then `SetSize(M / effectiveScale, M / effectiveScale)`.
-  H and its margins
-  are measured, never assumed (the other addon's 16 px is a hint).
+  Measured (docs/FOREVER-PROBE.md, "The scan's last round"): **H = 16 screen px** on a map of
+  61 px or more, its centre up to 3.5 px off the node's spot, so a window's positive read bounds
+  the node within 16 + 2 × 3.5 px; a locate map is never smaller than 61 px (96 units at 0.64).
 - **Order**: first the known records due a re-check, at their predicted world spot; then a
   coarse-to-fine search: windows covering the whole map with overlap, the likeliest first (the
   motion's leading edge, the side the count rose on), each positive window split until the
@@ -2481,7 +2486,9 @@ Presence says how many of each name. Locate finds where, only while something ne
 - **Sizes**: the presence size is measured in screen pixels: 24 frame units at the owner's
   effective scale 0.64 is **15.4 screen px** (read every node), 20 frame units 12.8 screen px (none).
   The scanner
-  sets `SetSize(px / es, px / es)` for 15.4 px (the probe confirms it at another effective scale).
+  sets `SetSize(px / es, px / es)` for 15.4 px: the last round read every node at 12.8 to 18 px,
+  at the rim and at effective scale 0.85 too (Copper Veins; the first round's 12.8 px miss was
+  herbs), so 15.4 px keeps a margin both ways.
 - A presence burst every `scanEvery` seconds: 2 moving, 6 standing still (1 to 10, the player's
   choice); the end of mouselook or a stop after moving asks for one sooner, coalesced, never closer
   than 1 s. Locate bursts follow, spaced at least 0.3 s, one in flight, within their budget.
@@ -2520,12 +2527,19 @@ while it's borrowed.
 
 ### Not in this
 
-Reading while steering (impossible, measured). Reading in combat. Raising `Minimap`'s strata.
-Moving Blizzard's LFG eye or any other addon's frame. What travels with `Minimap`: Glass MiniMap
-stops it on its side (#56); others are measured below and, if they show or catch input, scanning
-refuses in that configuration rather than widening the contract.
+Reading while steering (impossible, measured). Reading in combat (impossible too: the top focus
+is none in combat, measured). Raising `Minimap`'s strata. Moving Blizzard's LFG eye or any other
+addon's frame. What travels with `Minimap`: Glass MiniMap stops it on its side (#56); others are
+measured below and, if they show or catch input, scanning refuses in that configuration rather
+than widening the contract. Measured: `QueueStatusButton` (the LFG eye) is anchored to `Minimap`,
+so **no burst while it is shown** (an admission check) until its look in a queue is measured.
 
 ### Probe before the code (`/fp steps nr movescan`, one more round)
+
+Done on 70862 (`movescan2`, `movescan3`; docs/FOREVER-PROBE.md, "The scan's last round") except:
+the low frame rate (5; the cap didn't apply), the LFG eye shown in a queue (6), and movement
+between placement and read (9, too short a burst to tell). These three are measured before
+release, not before the code. Item 7's annoyance was Glass MiniMap's frames (#56).
 
 1. The hit square H: width and height in screen pixels, at icon scale 0.01, at three minimap sizes,
    two effective scales and two zooms; its edges; two same-name nodes overlapping and apart.

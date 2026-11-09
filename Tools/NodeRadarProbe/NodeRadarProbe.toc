@@ -8,3 +8,4 @@
 ## SavedVariables: NodeRadarProbeDB
 
 NodeRadarProbe.lua
+MoveScan2.lua

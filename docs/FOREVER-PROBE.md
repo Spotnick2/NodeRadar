@@ -1045,3 +1045,53 @@ mouse states, and reads every one back.
 - Not measured: the exact size of a node's hit square on screen, and whether a 24 px read covers
   the minimap's rim (a node at the edge).
 
+### The scan's last round: `/fp steps nr movescan2` and `movescan3`, 1.60.1.70862 (the owner, 2026-11-08, Tirisfal Glades, Mining 1) (#91)
+
+The plan's probe list (docs/PLAN.md, "Probe before the code"), measured with the plan's burst:
+borrow and prepare, place, settle, read and restore, read back. Copper Veins, effective scale 0.64
+unless said. `movescan2` ran three times: the first two measured a looted node (no seed check
+then), the third verified every seed before measuring it. Every restore and readback in all
+three runs was OK; no blocked action, no Lua error.
+
+- **A node's hit square: 16 × 16 screen px** on a map of 61 px or more (96 and 198 units), at
+  both zooms (view radius 233 and 200 yd), icon scale 0.01. Its centre sits up to 3.5 px off the
+  node's projected spot (x -1.5 to -3.5, y -0.5 to -1.5), so a window is not symmetric around it.
+  On maps of 31 and 41 px (48 and 64 units) the run is 24 to 27 px in x and 18 to 19 in y, the x
+  cut by the map's own edge (a lower bound); the node lay well inside the circle (7%), so it's not
+  the rim. Read at +1 and +2 after a placement agreed every time (0 differences in ~600).
+- **The presence read** (the map 12.8 to 18 px on screen, centred or at the seed's place) listed
+  the seeded node at every size tried, at the rim (67 to 85% of the radius), and at a second
+  effective scale (0.85). The smallest tried, 12.8 px, lists Copper Veins: the first round's "20
+  units lists no gathering node" (herbs, the Barrens) does not hold here. 15.4 px reads in both.
+  Two veins in range read `x2` at the presence size and once each at a 96-unit verification.
+- **Known empty vs unread:** a valid read with no node still has lines (the player, a quest
+  object: 1 or 2 non-node lines); a read one frame after a resize (unsettled) has no lines at all.
+  Nil never came from a valid read.
+- **Tooltip:** `hooksecurefunc(GameTooltip, "SetMinimapMouseover", ...)` installs (the method
+  exists at login). Hiding there while a flag is on: shown 0 of ~1000 frames over held and short
+  bursts, the settle frame included; with the flag off, shown 98% of the frames (the screenshots:
+  the node names, the quest line and "Requires Mining (1)" at the cursor).
+- **Clicks and mouselook mid-burst** (8 left, 8 right, 8 mouselook starts): every press during a
+  borrow ended the burst, the restore OK; `MINIMAP_PING` never fired. The control (clicks left on,
+  one click) didn't ping either, so a click reaching the borrowed map is not excluded, only unseen.
+- **Combat:** two of three fights started inside a borrow; the map was home 0.3 s later each time.
+  `Minimap` moves in combat without a block (a forced burst in each fight), but **nothing reads in
+  combat**: the top focus is none.
+- **Edit Mode** entered inside a borrow: home at once, OK.
+- **Low frame rate:** not measured. `maxFPS` alone left 127 fps: it applies only with `useMaxFPS`
+  on (the probe now sets both and puts both back).
+- **What moves with `Minimap`** (rects before and during a borrow): Glass MiniMap's frames under
+  `MinimapContainer` (the ring, the zone-name bar, `PlayerCoords`, the zoom buttons, bars),
+  `MinimapBackdrop`, `Minimap.ZoomHitArea`, NodeRadar's LibDBIcon button, and
+  **`QueueStatusButton` (the LFG eye), anchored to `Minimap`**: hidden here (no queue on that
+  character), unmeasured while shown. `GameTimeFrame` stays home.
+- **A skin pulling `Minimap` home on `SetPoint`:** every read unread (the top focus `WorldFrame`),
+  no restore failure. When it also sets the alpha to 1, the map shows for 2 frames per burst: the
+  owner saw "the full minimap flashing".
+- **On foot, a burst every 2 s for 60 s:** 18 bursts, all valid, 35 to 48 ms each (5 frames).
+  The owner found the blinks noticeable and annoying: Glass MiniMap's ring and coordinates flashing
+  at the mouse (GlassMiniMap#56), not the home minimap going blank.
+- **Moving between placement and read:** a burst is too short to tell. Walking at speed 7, the
+  player moved 0.1 yd in a 5-frame burst (2.8 yd in a held one); the reads matched the static hit
+  square. Weakly in favour of the world at the read; unresolved.
+
