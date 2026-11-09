@@ -15,7 +15,8 @@ Made for **World of Warcraft: Forever**.
 > purpose, so that addons can no longer read the minimap's dots from afar, and the radar went blind.
 > Version 1.8.0 brings a workaround, the **minimap scan** (off by default: `/nr scan`, the Options
 > page, or the question asked once at login). It finds nodes again, but your minimap blinks while it
-> looks, and it can't look while you steer with the mouse. We're still working on it; see
+> looks, and it can't look while you steer with the mouse: **autorun, or moving and turning with the
+> keyboard, gives much better results.** We're still working on it; see
 > [The minimap scan](#the-minimap-scan-client-build-70862-and-later) below.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
