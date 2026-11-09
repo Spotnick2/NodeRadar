@@ -283,11 +283,13 @@ events:SetScript("OnEvent", function(_, event, ...)
         NR.Share.Apply()
         Learn.loading = false
         Alert.NewArea(now)
+        NR.MoveScan.WantFirst(now)                 -- the scan's first look, retried if it fails (#91)
         Learn.Resume(now)
         NR.MoveScan.AskSoon(now)                   -- the scan's prompt, once per account (#91)
         trackedKey = trackingKey()
     elseif event == "ZONE_CHANGED_NEW_AREA" then
         Alert.NewArea(now)
+        NR.MoveScan.WantFirst(now)
         Learn.Void("the zone changed")
     elseif event == "LOADING_SCREEN_ENABLED" then
         Icons.Clear()
