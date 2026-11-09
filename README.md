@@ -10,7 +10,8 @@ on the map, green for herbs, gold for ore. Look up, go grab it, carry on.
 
 Made for **World of Warcraft: Forever**.
 
-> **Warning: client build 70862 broke how NodeRadar sees nodes.** Blizzard changed the game, on
+> [!CAUTION]
+> **Client build 70862 broke how NodeRadar sees nodes.** Blizzard changed the game, on
 > purpose, so that addons can no longer read the minimap's dots from afar, and the radar went blind.
 > Version 1.8.0 brings a workaround, the **minimap scan** (off by default: `/nr scan`, the Options
 > page, or the question asked once at login). It finds nodes again, but your minimap blinks while it
