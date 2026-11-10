@@ -1012,6 +1012,25 @@ So from 70862 `UpdateMouseoverAtPoint` does nothing: the minimap's mouseover is 
 under the real cursor. NodeRadar stops sweeping from that build (`API.Blind`, `NR.BLIND_FROM`).
 The way back is to move the minimap under the cursor (#91), measured in its own round.
 
+### 70888: still not pointed: `/fp steps nr health`, 1.60.1.70888 (the owner, 2026-11-10, Herbalism 125)
+
+The same round again on the next build, to see whether it came back. Its API dump is identical to
+70862's for every documented function, widget method and namespace function (the one change is
+`PARTY_INVITE_REQUEST`'s new `isCrossShard`), so only behaviour could say. It hasn't come back:
+
+- **The real cursor on the minimap:** at the dot remembered from step A, with the soft cursor on, off
+  and read a frame later, every read returned Silverleaf, the herb under the real cursor at step B,
+  not the point given.
+- **The real cursor off the minimap** (C0: over the minimap false): the point in the six spaces, after
+  `Minimap:UpdateBlips()`, and read a frame later: all **nothing**; every
+  `UpdateMouseoverAtPoint` call returned without error. A full sweep: **0 blips**, with herb dots on
+  the map. The sweep covers the whole map, so this holds even though step A's cursor wasn't on the
+  dot itself (its read there was empty).
+- No error, failure, secret or taint. The probe's preamble reads three functions v1.8.1 no longer has
+  (`Alert.Quiet`, `API.OnTaxi`, `API.InCombat`: "READ FAILED"), a stale probe, nothing the client did.
+
+So `NR.BLIND_FROM` (70862) stays open-ended, and the scan (#91) remains the way to read the map.
+
 ### Reading by moving the minimap: `/fp steps nr movescan` and `/fp nr movetest`, 1.60.1.70862 (the owner, 2026-11-08, the Barrens, Herbalism 98 to 114) (#91)
 
 Eight revisions of the round and its one-shot command (`/fp nr movetest <size> <dx> <dy> [variant]
