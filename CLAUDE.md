@@ -107,7 +107,7 @@ live game, WoWInterface (#37).
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
 `Track.lua` → `Icons.lua` → `Share.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
-`Locate.lua` → `MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`Locate.lua` → `ScanFace.lua` → `MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `API.Blind()` (#90: from build 70862, `NR.BLIND_FROM`, a sweep reads
   nothing, so `NR.Step` stops before it and `NR.BlindNotice` says why once per build); `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -258,6 +258,12 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   freshness is `API.LocalFresh` (the sweep's interval before 70862, the scan being on after). The
   trace (`/nr scan log`) is saved at logout while the scan is on: `NodeRadarDB.scanLog`
   (`scanLogPrevious` the session before).
+- `ScanFace.lua` (#103): the scan's stand-in at the minimap's home while a burst borrows it: a
+  dark radar face with a turning sweep (`Media/Scan*.tga`) under a copy of Blizzard's frame ring
+  (`MinimapCompassTexture`'s atlas, read at the borrow), an unnamed mouse-off frame on `UIParent`.
+  `ScanFace.Begin` in the borrow before the map moves, `ScanFace.End` at the restore: held 0.4 s,
+  faded 0.2 s (Glass MiniMap's timing). Ours only without Glass MiniMap, or when its
+  `ScanStandIn()` answers false; its 1.1.0 (no `ScanStandIn`) gets none. Tests: `test_scanface`.
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.

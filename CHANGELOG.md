@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **The minimap scan no longer blinks the minimap** (#103): while it looks, a radar face stands in
+  at the minimap's place, under Blizzard's own frame ring, with a sweep turning on it, and fades out
+  just after. With Glass MiniMap, its own face does this instead (from its version 1.2.0).
+
 ## v1.8.0
 
 Released 2026-11-09.

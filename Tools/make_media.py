@@ -53,6 +53,18 @@ The marker in the world (#61, docs/PLAN.md, "A marker in the world"):
                  core and a mint halo fading to blue. Drawn additively over a
                  faint SonarGlow haze, following the owner's FFXIV video.
 
+The scan's stand-in (#103, docs/PLAN.md, "The stand-in face"): drawn at the
+minimap's home while the scan borrows it, under a copy of Blizzard's frame ring.
+All 256 x 256, drawn at the map's size (198 at the stock scale), round already.
+
+  ScanDisc       a white disc to radius 127 px with a 1.5 px soft edge, vertex
+                 coloured dark in game (the face's body).
+  ScanFace       faint range rings at 1/3 and 2/3 of the radius, a crosshair
+                 and a centre dot: white, the shape in alpha, tinted in game.
+  ScanSweep      the sweep: a bright leading edge pointing up (12 o'clock) and
+                 a trail fading over 70 degrees anticlockwise behind it, since
+                 it turns clockwise in game. White, drawn additively, tinted.
+
 The sounds come from Tools/import_sounds.py.
 
 Plain Python, no dependencies: 32-bit uncompressed TGA (RGB and 8-bit alpha),
@@ -258,6 +270,50 @@ def marker_vapor(x, y):
     return 1.0, 1.0, 1.0, min(1.0, haze * envelope)
 
 
+# ---------------------------------------------------------------------------
+# The scan's stand-in face (#103): 256 x 256, round, drawn at the map's size
+# ---------------------------------------------------------------------------
+
+SCAN = 256
+SCAN_R = SCAN / 2.0 - 1.0          # the face's radius in px
+SWEEP_TRAIL = 70.0                 # degrees of fading trail behind the leading edge
+
+
+def _stroke(d, half, a):
+    """A soft line `half` px either side of d = 0, alpha `a`."""
+    return a * max(0.0, min(1.0, (half - abs(d)) / 0.9 + 0.5))
+
+
+def scan_disc(x, y):
+    d, _, _ = polar(x, y, SCAN / 2.0)
+    return 1.0, 1.0, 1.0, 1.0 - smooth(SCAN_R - 1.5, SCAN_R, d)
+
+
+def scan_face(x, y):
+    c = SCAN / 2.0
+    dx, dy = x - c, y - c
+    d = math.hypot(dx, dy)
+    if d > SCAN_R:
+        return 1.0, 1.0, 1.0, 0.0
+    rings = max(_stroke(d - SCAN_R * k, 0.8, 0.8) for k in (1 / 3.0, 2 / 3.0))
+    inside = 1.0 - smooth(SCAN_R - 8, SCAN_R - 3, d)          # the crosshair stops short of the edge
+    cross = max(_stroke(dx, 0.6, 0.6), _stroke(dy, 0.6, 0.6)) * inside
+    dot = 1.0 - smooth(1.8, 2.8, d)
+    return 1.0, 1.0, 1.0, max(rings, cross, dot)
+
+
+def scan_sweep(x, y):
+    d, _, angle = polar(x, y, SCAN / 2.0)                     # angle 0 at the top, clockwise positive
+    if d > SCAN_R or d == 0:
+        return 1.0, 1.0, 1.0, 0.0
+    theta = math.degrees(angle)
+    behind = -theta                                           # degrees behind the leading edge
+    trail = 0.55 * (1 - behind / SWEEP_TRAIL) ** 2 if 0 <= behind <= SWEEP_TRAIL else 0.0
+    lead = math.exp(-((math.radians(abs(theta)) * d) / 1.3) ** 2) if abs(theta) < 90 else 0.0
+    radial = (1.0 - smooth(SCAN_R - 3, SCAN_R, d)) * (0.35 + 0.65 * d / SCAN_R)
+    return 1.0, 1.0, 1.0, max(trail, lead) * radial
+
+
 def main():
     os.makedirs(MEDIA, exist_ok=True)
     for name, fn in (("SonarRing", ring), ("SonarGlow", glow)):
@@ -268,7 +324,9 @@ def main():
                            ("CompassRim", 128, 128, compass_rim), ("CompassArc", 128, 128, compass_arc),
                            ("CompassArrow", 64, 64, compass_arrow), ("CompassPill", 128, 64, compass_pill),
                            ("IconRing", 64, 64, icon_ring), ("MarkerStar", 64, 64, marker_star),
-                           ("MarkerVapor", 128, 128, marker_vapor)):
+                           ("MarkerVapor", 128, 128, marker_vapor),
+                           ("ScanDisc", SCAN, SCAN, scan_disc), ("ScanFace", SCAN, SCAN, scan_face),
+                           ("ScanSweep", SCAN, SCAN, scan_sweep)):
         path = os.path.join(MEDIA, name + ".tga")
         write_rgba(path, w, h, fn)
         print("wrote", os.path.relpath(path, ROOT))

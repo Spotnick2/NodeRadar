@@ -644,6 +644,7 @@ local function finish(b, reason)
     -- A window placed but not read (interrupted): back in Locate's queue.
     if b.cur and b.cur.kind == "window" and not b.cur.read and NR.Locate then NR.Locate.Unread(b.cur) end
     restore(true)
+    if NR.ScanFace then NR.ScanFace.End() end            -- held over the returned map, then faded
     pcall(Minimap.UpdateBlips, Minimap)
     b.phase = "settle"
     -- A node still being located: the next burst soon (the plan's locate bursts, LOCATE_GAP
@@ -746,6 +747,8 @@ local function borrow(now)
     b.cur = { units = MS.PRESENCE_PX / s.es, ox = 0, oy = 0, kind = "presence" }
     saved, burst, suppress = s, b, true
     MS.stats.bursts = MS.stats.bursts + 1
+    -- The stand-in at the home first, read while the map is still there (#103).
+    if NR.ScanFace then NR.ScanFace.Begin(glass, g) end
     -- Invisible and inert before it moves.
     setOn(Minimap, "SetAlpha", 0)
     for _, h in ipairs(s.held) do

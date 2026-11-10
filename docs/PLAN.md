@@ -2287,7 +2287,8 @@ rounds 1 to 3 on 2026-11-08, each "approve with changes", all taken below; round
 
 Not taken from the others: the frame type's own methods to skip skins' hooks (that removes
 cooperation, it makes nothing safer), raising the strata (a covered cursor is refused instead),
-turning quest tracking off to hide its areas, a fake stand-in minimap, hiding every tooltip.
+turning quest tracking off to hide its areas, hiding every tooltip. (A stand-in at the map's home
+was on this list too; the owner reversed it in #103: "The stand-in face", below.)
 
 ### The scanner (`MoveScan.lua`, new)
 
@@ -2538,6 +2539,34 @@ retired by falls, gathers and new areas.
 - That is 10 to 30 presence blinks a minute, plus locates when nodes appear. A burst has an elapsed
   time limit (250 ms), checked every frame.
 - Glass MiniMap decides its own frost (GlassMiniMap#56).
+
+### The stand-in face (#103, `ScanFace.lua`)
+
+Blizzard's frame ring (`MinimapBackdrop`, `MinimapCompassTexture`) is a child of `Minimap`, so on
+the stock UI the whole minimap vanished for each look: up to 8 in a row while a node is located,
+read in game as a blink (the owner, 2026-11-09). A stand-in of ours covers the home meanwhile, so
+it reads as the radar pinging.
+
+- **The face:** a dark disc at the map's size, faint range rings and a crosshair, a sweep turning
+  clockwise once per 1.2 s, in the tracking dots' yellow (`Media/Scan*.tga`, `Tools/make_media.py`;
+  the sweep turned with `SetRotation` on its own `OnUpdate`). On top, a copy of Blizzard's ring:
+  `MinimapCompassTexture`'s atlas, and the underlay in the rotating mode, each at its size and
+  centre, only while it shows (a skin that hides it gets the face without it). The client can't
+  snapshot the map's picture, so the face is generic.
+- **Where:** an unnamed frame of ours on `UIParent`, mouse off, placed at each borrow from the map's
+  home read then (centre and size, its effective scale converted), in `MinimapBackdrop`'s strata
+  and level, so whatever draws over the stock ring draws over the face. Nothing of Blizzard's is
+  touched, only read. A map hidden or at alpha 0 at home gets no face.
+- **When** (Glass MiniMap's timing, GlassMiniMap#59, so both skins look alike): at full in the
+  borrow's own call, before the map goes; after the restore held 0.4 s over the returned map, then
+  faded over 0.2 s; a borrow meanwhile brings it straight back, so bursts 0.3 s apart read as one
+  ping. Never left up: every exit path goes through the restore's end, a face at full for 1 s
+  without one is released anyway, and a map hidden meanwhile (`ToggleMinimap`) hides it at once.
+- **Who draws it**, read at each borrow: Glass MiniMap not loaded, ours; version 1 with
+  `ScanStandIn`, ours only if `pcall` returns false (its ring failed to build); version 1 without
+  it (1.1.0), none (ours would stack over its ring); a throwing `ScanStandIn`, none.
+- **Failures:** the face's build or placement in a `pcall`; a failure records `scan face`
+  (`/nr failures`), draws nothing and never stops the scan.
 
 ### The learned names cleanup (#90's follow-up, before this)
 
