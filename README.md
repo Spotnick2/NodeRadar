@@ -14,9 +14,8 @@ Made for **World of Warcraft: Forever**.
 > **Client build 70862 broke how NodeRadar sees nodes.** Blizzard changed the game, on
 > purpose, so that addons can no longer read the minimap's dots from afar, and the radar went blind.
 > Version 1.8.0 brings a workaround, the **minimap scan** (off by default: `/nr scan`, the Options
-> page, or the question asked once at login). It finds nodes again, but your minimap blinks while it
-> looks, and it can't look while you steer with the mouse: **autorun, or moving and turning with the
-> keyboard, gives much better results.** We're still working on it; see
+> page, or the question asked once at login). It finds nodes again, but it can't look while you steer
+> with the mouse: **autorun, or moving and turning with the keyboard, gives much better results.** We're still working on it; see
 > [The minimap scan](#the-minimap-scan-client-build-70862-and-later) below.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
@@ -41,8 +40,11 @@ Options page, or the question it asks once at login.
   and gets its chat line as soon as a look sees it.
 - **Where it is.** NodeRadar then narrows the node down with a few more quick looks, usually within
   a second or two, for its icon, the sonar on it, the compass and the beacon.
-- **Your minimap blinks.** It disappears from its corner for a split second at each look, and more
-  often for a moment while a new node is being located.
+- **A radar face stands in for your minimap.** The minimap leaves its corner for a split second at
+  each look, more often for a moment while a new node is being located. Meanwhile a radar face with
+  a turning sweep takes its place, under the minimap's frame, and fades out just after. With Glass
+  MiniMap, its own face does this from its version 1.2.0 (with 1.1.0 the minimap still blinks).
+  Sometimes the minimap's ground stays blank after a look until you move; we're working on it.
 - **When it can't look:**
   - in combat;
   - while a mouse button is held, so not while you steer with the mouse;
