@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.8.2, after v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.9.0, after v1.8.2, v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -75,6 +75,13 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 - v1.8.2: GatherMate2 1.52.5's node variants (#120, PR #121): the extractor reads its table entries;
   Poor Copper Vein is new, and Wilted Peacebloom and Stunted Silverleaf get their node's skill and
   item (skill 1 on Wowhead Forever). Offline tested.
+
+- v1.9.0: the scan round (PR #124, PR #126): the real minimap ground in the stand-in (#117, checked
+  in game on 70888, zoomed out and in, stock UI), square skins' shape, the busy waits (#113), a first
+  look after a fight, a taxi and a dismount (#114), why it isn't running in Options (#116), another
+  scanner stands down (never named to the player), the scan on the default UI (#118: an empty
+  `GetMouseFoci()` over the world), no looks on a stale hover after mouselook or a click (#125:
+  a move counts from 2 px, two empty reads wait for the mouse). #111 (blank ground) unresolved.
 
 Next: the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
 suppression bound to one node, names interleaved in a search, no beacon on a coarse record, then

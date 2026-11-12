@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.9.0
+
+Released 2026-11-12.
 
 - **The scan's stand-in shows the real minimap** (#117): while the minimap scan looks, the stand-in
   at the minimap's place draws the minimap's own ground around you, with your arrow, so a look
@@ -21,7 +23,7 @@
   until the mouse really moves, and the cursor's tiny wobble passed for a move, so many looks read
   nothing. A move now counts from 2 pixels, and after two empty reads in a row the scan waits for
   the mouse instead of looking again and again for nothing.
-- **The scan runs on the default UI** (#111): with no other addon loaded, the game reports nothing
+- **The scan runs on the default UI** (#118): with no other addon loaded, the game reports nothing
   under the cursor over the world, and the scan took that for "not over the world" and never
   looked.
 
