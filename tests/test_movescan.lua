@@ -19,12 +19,8 @@ end
 
 -- A fresh client: the stubs and the addon loaded again (see test_blind.lua for the counts).
 local function fresh(db, build)
-    local passed, failed = 0, 0
-    if Kit then passed, failed = Kit.counts() end
     dofile("tests/wow_stubs.lua")
     dofile("tests/harness.lua")
-    for _ = 1, passed do check(true) end
-    for _ = 1, failed do check(false, "(an earlier case's failure, carried over)") end
     NodeRadar, NodeRadarDB, NodeRadarCharDB = nil, nil, nil
     WoW.build = build or "70862"
     WoW.moveModel = true

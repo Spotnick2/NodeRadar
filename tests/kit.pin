@@ -1,5 +1,5 @@
 # WowTestKit for these tests: the commit, and the client build to test against.
 # build stays 70450 with MEASURED_ON_BUILD and the GetBuildInfo stub: moving to a newer build is a re-measure in game first.
-sha=5ecf61145c36b19685e8bcea9b3e87e140c2fa19
+sha=c99451a06cbed5107cba9aa3655fa8f54375d6c0
 build=70450
-api=1
+api=2

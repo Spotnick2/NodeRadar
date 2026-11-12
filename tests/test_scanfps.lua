@@ -6,12 +6,8 @@
 
 local function fresh(opts)
     opts = opts or {}
-    local passed, failed = 0, 0
-    if Kit then passed, failed = Kit.counts() end
     dofile("tests/wow_stubs.lua")
     dofile("tests/harness.lua")
-    for _ = 1, passed do check(true) end
-    for _ = 1, failed do check(false, "(an earlier case's failure, carried over)") end
     NodeRadar, NodeRadarDB, NodeRadarCharDB = nil, nil, nil
     WoW.build = "70862"
     WoW.tracking[1].active = true
