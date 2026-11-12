@@ -1498,7 +1498,9 @@ function MS.Tick(now)
             quietSince, cursorX, cursorY = now, x, y
         end
     end
-    if buttonDown() then lastDown, movedSince, anchorX, anchorY = now, false, nil, nil end
+    -- Held: the anchor is the last held sample, so a move made between the last held frame and
+    -- the first released one still counts (Codex, PR #126).
+    if buttonDown() then lastDown, movedSince, anchorX, anchorY = now, false, x, y end
     -- The home holding still, sampled outside our own borrows (#116).
     local warmed = false
     if not (burst or saved) then
@@ -1595,7 +1597,8 @@ events:SetScript("OnEvent", function(_, event)
         if key ~= lastGathering then MS.Stop(event) end
         lastGathering = key
     elseif event == "GLOBAL_MOUSE_DOWN" then
-        lastDown, movedSince, anchorX, anchorY = GetTime(), false, nil, nil
+        local cx, cy = cursor()
+        lastDown, movedSince, anchorX, anchorY = GetTime(), false, cx, cy
         if burst then MS.Stop("a mouse button") end
     else
         -- Combat, a loading screen, logout: home now (Minimap stays unprotected, so this is

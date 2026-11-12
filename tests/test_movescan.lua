@@ -359,6 +359,18 @@ frames(11)
 check(NR.MoveScan.stats.bursts == 0, "0.24 s after a mouse button came up: no burst yet")
 check(untilBorrowed(10), "...from 0.3 s, one comes")
 runBurst()
+-- The button released and the mouse moved before the next frame, then still: that move counts
+-- (Codex, PR #126: the anchor is the last held sample, not the first released one).
+NR = fresh()
+frames(5)
+WoW.buttonDown = true
+frames(5)
+WoW.buttonDown = false
+WoW.cursor = { 304, 300 }                       -- released and moved within the same frame
+frames(12)
+check(NR.MoveScan.stats.bursts == 0, "released and moved: 0.24 s on, no burst yet")
+check(untilBorrowed(30), "...a move made before the first released frame counts: a burst")
+runBurst()
 -- After a click or mouselook the minimap's hover answers nothing until the mouse moves (in
 -- game: empty reads): no burst until it has.
 NR = fresh()
