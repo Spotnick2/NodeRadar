@@ -1,11 +1,18 @@
 # Changelog
 
-## Unreleased
+## v1.10.0
+
+Released 2026-11-12.
 
 - **The radar animation is now a choice** (Options, off by default): during a look the stand-in
   shows the minimap's own ground where it can, and the radar face with its turning sweep only if
-  you pick it (and still indoors and where the ground can't be drawn). Glass MiniMap can follow
-  the same choice.
+  you pick it (and still indoors and where the ground can't be drawn). Glass MiniMap 1.2.0 follows
+  the same choice, and under it NodeRadar now draws the ground too.
+- **Far less memory while the scan runs** (PR #130): with many addons, NodeRadar's memory climbed
+  to 50-80 MB of garbage as the scan checked your tracking and walked the minimap's frames every
+  frame; it now stays at a few MB.
+- **A faded minimap gets a faded stand-in**: with Glass MiniMap's fader dimming the minimap at
+  rest, the stand-in at each look is just as translucent instead of an opaque flash.
 - **The scan can raise the background frame rate while it locates a node** (#104, Options, per
   character, off by default): in a window without focus the game runs at 30 fps, and the scan then
   takes up to a minute to place a node. With it on, the background frame rate is 60 only while that
