@@ -728,6 +728,43 @@ for _ = 1, 30 do
 end
 check(NR.MoveScan.Trouble(GetTime()) == nil and NR.MoveScan.stats.bursts >= 1,
     "the same anchors set again and again: no trouble, the scan runs")
+-- Another scanner loaded with its scan on (a setting it can't read counts as on): ours stands
+-- down, and neither the chat line nor the Options line names it (the owner, 2026-11-12).
+NR = fresh()
+local nRivals = #NR.MoveScan.RIVALS
+check(nRivals >= 1, "MS.RIVALS lists the other scanners")
+for i = 1, nRivals do
+    NR = fresh()
+    local r = NR.MoveScan.RIVALS[i].name          -- its folder name: never in a label or a message
+    WoW.loadedAddons = { [r] = true }
+    local printed, realPrint = {}, print
+    print = function(...) printed[#printed + 1] = table.concat({ ... }, " ") end
+    frames(60)
+    print = realPrint
+    check(NR.MoveScan.stats.bursts == 0 and NR.MoveScan.lastRefusal == "another minimap scanner is on",
+        "rival " .. i .. " loaded, its setting unread (counts as on): no burst, refused as another scanner (got "
+        .. tostring(NR.MoveScan.lastRefusal) .. ")")
+    local key, line, hint = NR.MoveScan.Trouble(GetTime())
+    local text = table.concat(printed, " | ") .. " | " .. tostring(line) .. " | " .. tostring(hint)
+    check(key == "rival" and #printed >= 1, "rival " .. i .. ": the chat line and the Options line say so")
+    check(not text:lower():find(r:lower(), 1, true), "rival " .. i .. ": never named to the player")
+    WoW.loadedAddons = nil
+end
+-- One loaded with its scan off: ours runs.
+NR = fresh()
+table.insert(NR.MoveScan.RIVALS, { name = "OtherScanner", on = function() return false end })
+WoW.loadedAddons = { OtherScanner = true }
+check(untilBorrowed(), "another scanner loaded with its scan off: ours runs")
+runBurst()
+WoW.loadedAddons = nil
+-- One whose setting throws: counts as on (stand down when in doubt).
+NR = fresh()
+table.insert(NR.MoveScan.RIVALS, { name = "OtherScanner", on = function() error("unreadable") end })
+WoW.loadedAddons = { OtherScanner = true }
+frames(60)
+check(NR.MoveScan.stats.bursts == 0 and NR.MoveScan.lastRefusal == "another minimap scanner is on",
+    "another scanner whose setting throws: ours stands down")
+WoW.loadedAddons = nil
 -- Something that keeps moving it: three moves in ten seconds stop the scan for 30 s.
 NR = fresh()
 check(untilBorrowed(), "(control) the first look")

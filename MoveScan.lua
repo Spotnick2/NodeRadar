@@ -185,7 +185,8 @@ end
 -- scale for the player's. Read fresh every time it decides (Codex): admission, every burst frame,
 -- the warm-up, the settle frame. Their settings say "refuse new work", never "who moved the map".
 -- Polling is not mutual exclusion: one starting inside one of our frames can still capture our
--- borrowed state. Their names appear here and in the message only (the owner's exception).
+-- borrowed state. Their folder and saved-variable names appear in MS.RIVALS only, never to the
+-- player (the owner's narrow exception, CLAUDE.md "Conventions").
 --------------------------------------------------------------------------------
 
 local function addonLoaded(name)
@@ -204,9 +205,12 @@ local function field(t, key)
     return v, true
 end
 
+-- Other addons that scan the minimap by moving it: `name` is the addon's folder, `on` reads its
+-- saved setting. Identifiers only where detection needs them; never named to the player (the
+-- owner, 2026-11-12: CLAUDE.md, "Conventions").
 MS.RIVALS = {
-    {   name = "NodeSight", how = "turn off Scan the minimap on NodeSight's Scanning page",
-        -- Per character (NodeSightCharDB) unless that's turned off (own == false), then shared.
+    {   name = "NodeSight",
+        -- Per character unless that's turned off (own == false), then account-wide; on by default.
         on = function()
             local char = rg("NodeSightCharDB")
             local own, okOwn = field(char, "own")
@@ -214,8 +218,8 @@ MS.RIVALS = {
             local v, ok = field(t, "scanMinimap")
             return not ok or v ~= false                      -- on by default
         end },
-    {   name = "Lueur", how = "turn off its Herb and Ore icons (/lueur nodes)",
-        -- Account-wide, off by default (since its 1.6.1).
+    {   name = "Lueur",
+        -- Account-wide, off by default.
         on = function()
             local t = rg("LueurDB")
             local herbs, ok1 = field(t, "nodeHerbs")
@@ -224,15 +228,15 @@ MS.RIVALS = {
         end },
 }
 
--- The first other scanner loaded with its scan on: its name and how to turn it off, or nil.
+-- Whether another scanner is loaded with its scan on (a setting we can't read counts as on).
 function MS.Rival()
     for _, r in ipairs(MS.RIVALS) do
         if addonLoaded(r.name) then
             local ok, on = pcall(r.on)
-            if not ok or on then return r.name, r.how end
+            if not ok or on then return true end
         end
     end
-    return nil
+    return false
 end
 
 --------------------------------------------------------------------------------
@@ -890,10 +894,9 @@ end
 function MS.Refusal(now)
     if not MS.On() then return "off" end
     if saved or pending then return "a restore is pending" end
-    local rival, how = MS.Rival()
-    if rival then
-        say("rival", "the minimap scan stands down: " .. rival .. "'s minimap scan is on too, and two scans break "
-            .. "each other's minimap. To use NodeRadar's, " .. how .. "; or turn NodeRadar's off: /nr scan.")
+    if MS.Rival() then
+        say("rival", "the minimap scan stands down: another addon's minimap scan is on too, and two scans break "
+            .. "each other's minimap. To use NodeRadar's, turn the other one's off; or turn NodeRadar's off: /nr scan.")
         return "another minimap scanner is on"
     end
     if tinyScale() then return "the minimap's dots are set tiny" end
@@ -957,11 +960,10 @@ function MS.Trouble(now)
     if halted then
         return "halted", "it turned itself off this session (" .. halted .. ").", "/nr scan turns it on again."
     end
-    local rival, how = MS.Rival()
-    if rival then
-        return "rival", rival .. " scans the minimap too.",
-            "Two minimap scans break each other's minimap, so NodeRadar's stands down. To use it, " .. how
-            .. "; or turn NodeRadar's scan off."
+    if MS.Rival() then
+        return "rival", "another addon scans the minimap too.",
+            "Two minimap scans break each other's minimap, so NodeRadar's stands down. To use it, turn the "
+            .. "other addon's minimap scan off; or turn NodeRadar's scan off."
     end
     if tinyScale() and now - lastScaleAt >= MS.TINY_LASTS then
         return "tiny", ("the minimap's dots are set tiny (%.2f)."):format(lastScale),

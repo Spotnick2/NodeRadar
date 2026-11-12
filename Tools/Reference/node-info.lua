@@ -3,7 +3,7 @@
 -- `node`). An input to Tools/export_nodes.lua, which joins it to every
 -- language's names as NodeRadar.NODE_INFO (#26); never loaded by the addon.
 --
--- The Classic (1.12) values, checked against Lueur 1.2.0's table. Forever
+-- The Classic (1.12) values, checked against another addon's table. Forever
 -- keeps them: Mageroyal refused at Herbalism 25, "Requires Herbalism 50"
 -- (docs/FOREVER-PROBE.md, 70450). The ooze-covered veins share their base
 -- vein's. No skill where unsure: Hakkari Thorium Vein (216), Bloodvine (430)

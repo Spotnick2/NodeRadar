@@ -402,7 +402,11 @@ the probe.
 - Match the surrounding code's idiom. Keep pure refactors in their own commit.
 - **Never name a competing addon** in tracked files, issues, PRs or commits (the owner, 2026-10-19).
   Notes on how others do things go in `.local/` (gitignored); the owner's own sibling addons and
-  the libraries we use are fine to name.
+  the libraries we use are fine to name. **One narrow exception** (the owner, 2026-11-12): where
+  compatibility detection needs them, the exact addon folder names and saved-variable keys may
+  appear in code (`MoveScan.lua`'s `MS.RIVALS`, the other minimap scanners). Never in what the
+  player sees (messages stay generic: "another addon's minimap scan"), explanatory comments,
+  docs or release notes.
 
 ## Consulting Codex
 
