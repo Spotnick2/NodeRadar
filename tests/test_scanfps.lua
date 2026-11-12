@@ -18,6 +18,7 @@ local function fresh(opts)
     WoW.cvars.maxFPSBk = opts.fps or "30"
     WoW.cvars.useMaxFPSBk = opts.cap or "1"
     local db = opts.db or { moveScan = true, moveScanAsked = true }
+    if opts.beforeLoad then opts.beforeLoad() end
     local NR = loadAddon({ db = db, charDb = opts.charDb or { scanFps = true } })
     NR.db.learn = false
     -- A search under way unless a case says otherwise (Locate's own windows are test_locate's).
@@ -163,5 +164,61 @@ secs(1.5)
 C_CVar.SetCVar("maxFPSBk", "30")
 secs(2)
 check(fps() == "30" and NR.charDb.scanFpsCancelled == true, "the player putting 30 back mid-session: theirs, not claimed again")
+
+-- Codex on PR #129.
+-- 1. Our logout put-back's CVAR_UPDATE arriving late (measured for the marker's CVars): no check
+-- after logout, so the claim and the option survive for the next login.
+NR = fresh()
+secs(1.5)
+local realSet2 = C_CVar.SetCVar
+C_CVar.SetCVar = function(name, value) WoW.cvars[name] = value; return true end   -- the event held back
+WoW.fire("PLAYER_LOGOUT")
+C_CVar.SetCVar = realSet2
+WoW.fire("CVAR_UPDATE", "maxFPSBk", "30")                                          -- ...delivered late
+secs(2)
+check(fps() == "30" and NR.db.fpsClaim ~= nil and NR.charDb.scanFpsCancelled == nil,
+    "a late CVAR_UPDATE after logout: the claim kept, the option not cancelled")
+
+-- 2. A raise that takes but doesn't read back at once: the original kept, put back later.
+NR = fresh({ search = false })
+secs(1.5)
+local realGet2, blind = C_CVar.GetCVar, false
+C_CVar.GetCVar = function(name) if blind and name == "maxFPSBk" then blind = false; return nil end return realGet2(name) end
+local realSet3 = C_CVar.SetCVar
+C_CVar.SetCVar = function(name, value) realSet3(name, value); if name == "maxFPSBk" then blind = true end end
+SEARCH = true
+secs(1.2)
+C_CVar.SetCVar = realSet3
+check(fps() == "60" and NR.db.fpsClaim and NR.db.fpsClaim.old == "30", "a raise unreadable at once: the original saved")
+secs(1.2)
+check(NR.db.fpsClaim and not NR.db.fpsClaim.pending, "...confirmed at the next readable check")
+NR.charDb.scanFps = false; NR.ScanFps.Toggle()
+check(fps() == "30" and NR.db.fpsClaim == nil, "...and put back when the option goes off")
+C_CVar.GetCVar = realGet2
+-- A raise that didn't take at all: the pending claim dropped at the next check, nothing cancelled.
+NR = fresh({ search = false })
+secs(1.5)
+local realSet4 = C_CVar.SetCVar
+C_CVar.SetCVar = function() end
+SEARCH = true
+secs(1.2)
+C_CVar.SetCVar = realSet4
+SEARCH = false
+secs(1.2)
+check(fps() == "30" and NR.charDb.scanFpsCancelled == nil, "a raise that didn't take: nothing cancelled, 30 left")
+
+-- 3. The first read after login unreadable: the login check waits for a readable value.
+local loginBlind = 2
+NR = fresh({ db = { moveScan = true, moveScanAsked = true, fpsClaim = { old = "30", ours = "60" } },
+    beforeLoad = function()
+        local g = C_CVar.GetCVar
+        C_CVar.GetCVar = function(name)
+            if name == "maxFPSBk" and loginBlind > 0 then loginBlind = loginBlind - 1; return nil end
+            return g(name)
+        end
+    end })
+secs(3)
+check(fps() == "60" and NR.charDb.scanFpsCancelled == nil and NR.db.fpsClaim and NR.db.fpsClaim.old == "30",
+    "an unreadable first read at login: then 30 read as our put-back, claimed again, not cancelled")
 
 done("test_scanfps")

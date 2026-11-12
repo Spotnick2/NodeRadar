@@ -36,6 +36,7 @@ local writing = false     -- inside our own SetCVar: its CVAR_UPDATE is ours
 local ready = false       -- from the first PLAYER_ENTERING_WORLD
 local loginRead = false   -- the first check after login: the old value may be our put-back that stuck
 local lastSearch = -math.huge -- when a search was last seen under way
+local loggingOut = false  -- from PLAYER_LOGOUT: our put-back's late CVAR_UPDATE must not judge (Codex, PR #129)
 
 local function get(name)
     if not (C_CVar and C_CVar.GetCVar) then return nil end
@@ -78,15 +79,23 @@ end
 
 -- One check: the claim reconciled, then claimed or put back.
 function FS.Update(now)
-    if not ready or not NR.db or not NR.charDb then return end
+    if not ready or loggingOut or not NR.db or not NR.charDb then return end
     if InCombatLockdown() then return end
     now = now or GetTime()
-    local fromOld = loginRead
-    loginRead = false
     local c = NR.db.fpsClaim
     local cur = get(FS.CVAR)
+    if cur == nil then return end                        -- unreadable: kept (a claim, the login read), tried again
+    -- The login read waits for a readable value (Codex, PR #129).
+    local fromOld = loginRead
+    loginRead = false
     if c then
-        if cur == nil then return end                    -- unreadable: kept, tried again
+        if c.pending and same(cur, c.old) then
+            -- A raise whose read-back failed didn't take: nothing of ours there.
+            NR.db.fpsClaim = nil
+            API.Trace("scan fps: an unconfirmed raise didn't take; nothing to put back")
+            return
+        end
+        c.pending = nil
         if same(cur, c.ours) then
             if not FS.Active(now) then
                 if put(c.old) then
@@ -99,9 +108,13 @@ function FS.Update(now)
         elseif fromOld and same(cur, c.old) then
             -- Login: our logout put-back stuck. Claimed again only if the scan runs.
             NR.db.fpsClaim = nil
-            if FS.Active(now) and raisable(cur) and put(FS.TARGET) then
-                NR.db.fpsClaim = { old = cur, ours = FS.TARGET }
-                API.Trace(("scan fps: login, claimed again %s -> %s"):format(cur, FS.TARGET))
+            if FS.Active(now) and raisable(cur) then
+                -- Saved before the write: a raise that takes but doesn't read back keeps its original.
+                NR.db.fpsClaim = { old = cur, ours = FS.TARGET, pending = true }
+                if put(FS.TARGET) then
+                    NR.db.fpsClaim.pending = nil
+                    API.Trace(("scan fps: login, claimed again %s -> %s"):format(cur, FS.TARGET))
+                end
             end
         else
             -- Someone else's value: theirs kept, no claim again until the option is off and on.
@@ -113,8 +126,11 @@ function FS.Update(now)
         return
     end
     if FS.Active(now) and raisable(cur) then
+        -- The original saved before the write (Codex, PR #129): a raise that takes but doesn't read
+        -- back stays pending and is judged at the next readable check.
+        NR.db.fpsClaim = { old = cur, ours = FS.TARGET, pending = true }
         if put(FS.TARGET) then
-            NR.db.fpsClaim = { old = cur, ours = FS.TARGET }
+            NR.db.fpsClaim.pending = nil
             API.Trace(("scan fps: claimed %s -> %s"):format(cur, FS.TARGET))
         else
             API.Trace(("scan fps: the raise to %s didn't read back (%s)"):format(FS.TARGET, tostring(get(FS.CVAR))))
@@ -128,8 +144,10 @@ function FS.Toggle()
     FS.Update(GetTime())
 end
 
--- At logout, best effort: ours put back, the claim kept for the next login's check.
+-- At logout, best effort: ours put back, the claim kept for the next login's check. No check after
+-- it: the put-back's CVAR_UPDATE can come late (measured for the marker's CVars).
 local function atLogout()
+    loggingOut = true
     local c = NR.db and NR.db.fpsClaim
     if not c or InCombatLockdown() then return end
     if same(get(FS.CVAR), c.ours) then
@@ -163,5 +181,5 @@ end)
 
 FS._test = {
     ready = function() return ready end,
-    reset = function() writing, ready, loginRead, since, lastSearch = false, false, false, 0, -math.huge end,
+    reset = function() writing, ready, loginRead, since, lastSearch, loggingOut = false, false, false, 0, -math.huge, false end,
 }
