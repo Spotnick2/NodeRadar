@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.8.1, after v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.8.2, after v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -71,6 +71,10 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   MiniMap's timing; Glass MiniMap draws its own from its 1.2.0). Checked in game on 70862 (stock UI).
   Seen then: the map's ground sometimes blank after a look until the player moves, likely another
   addon's zoom nudge (HereBeDragons, on `MINIMAP_UPDATE_ZOOM`) landing mid-borrow; unmeasured.
+
+- v1.8.2: GatherMate2 1.52.5's node variants (#120, PR #121): the extractor reads its table entries;
+  Poor Copper Vein is new, and Wilted Peacebloom and Stunted Silverleaf get their node's skill and
+  item (skill 1 on Wowhead Forever). Offline tested.
 
 Next: the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
 suppression bound to one node, names interleaved in a search, no beacon on a coarse record, then
