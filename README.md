@@ -44,8 +44,10 @@ Options page, or the question it asks once at login.
   each look, more often for a moment while a new node is being located. Meanwhile NodeRadar draws
   the minimap's own ground and your arrow at its place, under its frame, so a look barely shows:
   outdoors in Eastern Kingdoms and Kalimdor, on the default minimap or a skin that says its shape
-  (square ones too). Indoors, with a rotating minimap and elsewhere, a radar face with a turning
-  sweep stands in instead. With Glass MiniMap, its own face does this from its version 1.2.0.
+  (square ones too), Glass MiniMap's too from its version 1.2.0. Indoors, with a rotating minimap and
+  elsewhere, a radar face with a turning sweep stands in instead; prefer that radar animation at
+  every look? Options has it (off by default), and Glass MiniMap 1.2.0 follows the choice. A minimap
+  faded at rest (Glass MiniMap's fader) gets a stand-in just as faded.
   Rarely the minimap's ground has stayed blank after a look until you move; we're looking into it.
 - **When it can't look:**
   - in combat;
@@ -59,6 +61,8 @@ Options page, or the question it asks once at login.
   turning with the keyboard, works best.
 - **In the background it's slower.** The game runs a window without focus at its background frame
   rate (30 by default, `maxFPSBk`), and a look then fits less work, so locating takes much longer.
+  Options can raise it to 60 while a node is being located, per character, and put yours back a few
+  seconds after (off by default).
 - **Positions are approximate.** The icons, the compass and the distant beacon can be a few yards off
   the node, up to about ten. With the experimental marker on, its nearby stars show the node's exact
   spot within about 15 yards.
@@ -162,7 +166,8 @@ alert.
 ## Options
 
 **Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; the minimap scan,
-how often it looks while you move and, in red, why it isn't running (build 70862 and later); how often the radar looks,
+how often it looks while you move and, in red, why it isn't running (build 70862 and later); the
+radar animation at each look; the background frame rate while it locates a node (per character); how often the radar looks,
 standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
 for the game to clean up); the sound, from a dropdown (the minimap ping, a sonar or radar ping from
 the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sonar, bell chime,

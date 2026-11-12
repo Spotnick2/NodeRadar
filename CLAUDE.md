@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.9.0, after v1.8.2, v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.10.0, after v1.9.0, v1.8.2, v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -82,6 +82,12 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   scanner stands down (never named to the player), the scan on the default UI (#118: an empty
   `GetMouseFoci()` over the world), no looks on a stale hover after mouselook or a click (#125:
   a move counts from 2 px, two empty reads wait for the mouse). #111 (blank ground) unresolved.
+
+- v1.10.0 (PR #129, PR #130): the scan's memory churn cut by ten (Learn.AnyOn cached, childless
+  frames skipped, measured with `/fp nr mem` and `alloc`: 492 -> 45 KB/s); the background frame rate raised while a search is under way (#104, per
+  character, off); the radar look a choice (`scanRadar`, off), followed by Glass MiniMap 1.2.0, which
+  hands the stand-in to NodeRadar otherwise; the stand-in at the map's effective alpha (the fader).
+  Offline tested; in game unchecked.
 
 Next: the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
 suppression bound to one node, names interleaved in a search, no beacon on a coarse record, then
