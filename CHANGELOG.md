@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **The real ground in Forever's own zones too**: the scan's stand-in now draws the minimap's own
+  ground on Zephras Isle, Hyjal Crater, Azshara Crater, Dalaran City and Forever's other open-world
+  maps, not only Eastern Kingdoms and Kalimdor, so the radar face no longer shows there.
+
 ## v1.10.0
 
 Released 2026-11-12.

@@ -279,6 +279,21 @@ local _, _, arrow = NR.ScanFace._test.ground()
 check(arrow:IsShown(), "the player arrow on top")
 runBurst()
 
+-- Forever's own open-world maps (Tools/export_tiles.py --maps): Zephras Isle (Map 2991) has its
+-- tiles too, so the ground is drawn there, not the radar face (the owner, 2026-11-12).
+NR = fresh()
+local zeph = NR.MINIMAP_TILES[2991]
+local zk
+for k in pairs(zeph or {}) do zk = k; break end
+check(zk ~= nil, "(control) the shipped table has Zephras Isle (2991)")
+if zk then
+    standIn(math.floor(zk / 64), zk % 64, 2991)
+    check(NR.ScanFace.Ground() == "tiles", "on Zephras Isle: the ground can be drawn (got " .. tostring(NR.ScanFace.Ground()) .. ")")
+end
+for _, inst in ipairs({ 37, 2995, 2980 }) do
+    check(NR.MINIMAP_TILES[inst] ~= nil, "(control) the table has Forever's map " .. inst)
+end
+
 -- Fallbacks: the radar face, and why.
 local function fallsBack(setup, why)
     NR = fresh()
