@@ -262,7 +262,7 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   once. No look while the cursor is busy (#113: aiming, something held, casting, a loot window, a
   unit hovered, within `NEAR_PX` of the map) nor until the map's home has held still `STABLE` s (#116:
   sampled every frame outside our borrows, no hook; `MOVES` changes in 10 s stop the scan 30 s,
-  "something keeps moving the minimap"); a first look after combat, a taxi and a dismount (#114).
+  "something keeps moving the minimap"); a first look after combat, a taxi, a dismount (#114) and a gather (the loot window closing, #133).
   `MS.Trouble`: the lasting reason it can't run, shown in red in Options (#116). The login prompt
   (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs' move model
   (`WoW.moveModel`).
