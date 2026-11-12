@@ -311,7 +311,9 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.
 - `Data/MinimapTiles.lua` (#117): **generated** by `Tools/export_tiles.py <community-listfile.csv>
-  --release <tag> --write` (the wowdev listfile's `world/minimaps/{azeroth,kalimdor}/map<x>_<y>.blp`):
+  --release <tag> --maps <References/Forever/db/forever-map-<build>.csv> --write` (the wowdev
+  listfile's `world/minimaps/<Directory>/map<x>_<y>.blp`, for the two continents and every
+  open-world map in Forever's Map table with tiles: Zephras Isle, Hyjal Crater, Azshara Crater, ...):
   `NodeRadar.MINIMAP_TILES[instance][x * 64 + y] = fileID`. Never edit it by hand.
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
   prints additions with their provenance for review, writes with `--write`.

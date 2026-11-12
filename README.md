@@ -43,7 +43,8 @@ Options page, or the question it asks once at login.
 - **Your minimap's own ground stands in for it.** The minimap leaves its corner for a split second at
   each look, more often for a moment while a new node is being located. Meanwhile NodeRadar draws
   the minimap's own ground and your arrow at its place, under its frame, so a look barely shows:
-  outdoors in Eastern Kingdoms and Kalimdor, on the default minimap or a skin that says its shape
+  outdoors in Eastern Kingdoms, Kalimdor and Forever's own open-world zones (Zephras Isle, Hyjal
+  Crater and more), on the default minimap or a skin that says its shape
   (square ones too), Glass MiniMap's too from its version 1.2.0. Indoors, with a rotating minimap and
   elsewhere, a radar face with a turning sweep stands in instead; prefer that radar animation at
   every look? Options has it (off by default), and Glass MiniMap 1.2.0 follows the choice. A minimap
