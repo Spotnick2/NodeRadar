@@ -73,6 +73,8 @@ function Methods.GetScale(w) return w._scale or 1 end
 -- Overrides of the core (test_styles, test_probe_glass and _bronze read the mask on the
 -- texture: t._mask; the core keeps a list, t._masks).
 function Methods.AddMaskTexture(t, m) t._mask = m end
+-- The kit has GetChildren but not GetNumChildren (the scan's walks ask it first, the memory churn).
+function Methods.GetNumChildren(w) return #(w._children or {}) end
 function Methods.GetEffectiveAlpha(w) return (w._alpha or 1) * (w._parent and Methods.GetEffectiveAlpha(w._parent) or 1) end
 function Methods.RegisterUnitEvent(w, e, ...)
     if not WoW.KNOWN_EVENTS[e] then error("Attempt to register unknown event \"" .. e .. "\"", 2) end

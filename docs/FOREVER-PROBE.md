@@ -1190,3 +1190,27 @@ toggle stays in the probe in case the icon is ever seen shifting against its dot
   `GetCursorPosition`, 0.4 s and 16 s after mouselook), not moves. Two empty reads in a row now wait
   for the mouse, and a move counts from 2 px away from where the cursor sat (`MS.REARM_PX`); with
   the first of those, the next session had 5 empty reads in 95 looks, no run over 2.
+
+### NodeRadar's memory churn: `/fp nr mem` and `/fp nr alloc`, 1.60.1.70888 (the owner, 2026-11-12, two gatherers, ~90 add-ons)
+
+The game menu showed NodeRadar at 50 to 82 MB (the figure counts garbage not yet collected).
+`mem` measures its growth per phase (20 s each, `UpdateAddOnMemoryUsage` every 0.5 s), `alloc`
+which of its functions allocate (`collectgarbage("count")` across every call for 20 s).
+
+| Phase | Before | AnyOn cached | Childless frames skipped |
+|---|---|---|---|
+| As is | 492 KB/s | 71 KB/s | 45 KB/s |
+| Others' icons not quieted | 285 KB/s | 19 KB/s | 5.5 KB/s |
+| The scan off | 0.8 KB/s | 0.4 KB/s | 0.7 KB/s |
+| The scan on, icons/compass/marker off | 843 KB/s | 161 KB/s | 37 KB/s |
+
+- **`Learn.AnyOn` was 12.4 KB a call, about every frame** (727 calls in 20 s): `GetTrackingInfo`
+  returns a new table for each of the character's ~30 tracking types. Now cached, read again on
+  `MINIMAP_UPDATE_TRACKING`, our own `SetTracking` and every 5 s.
+- **`MoveScan.FindFollower` was 1.4 MB a search** (every 10 s, UIParent three levels deep): its
+  tables are now kept and emptied, and no closure per frame visited.
+- **The minimap carried 1,175 to 1,388 frames** (Questie and RestedXP pins, six levels deep): the
+  walks ask `GetNumChildren` first and build no list for a childless one.
+- `QuestAreas` was 19 KB a call (twice a look): the quest filter's index is kept and checked.
+- What remains is mostly the follower search every 10 s (kept: an addon frame anchored to the map
+  must be found before it travels with a look) and each look's walk.

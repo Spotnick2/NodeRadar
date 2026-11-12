@@ -1812,3 +1812,181 @@ Probe:Command("snap", function()
     end
 end, "#122: NodeRadar's minimap icons with pixel snapping off, and back (a toggle)")
 end
+
+--------------------------------------------------------------------------------
+-- mem: where NodeRadar's memory churn comes from (the owner: 50-80 MB with two gatherers)
+--   /fp nr mem [seconds per phase, default 20]
+-- The memory the game shows includes garbage not yet collected: what matters is how fast it
+-- grows. Phases, each `secs` seconds: as is; other frames not quieted (scanQuiet off); the scan
+-- off; the scan back on with icons, compass and marker off. Every 0.5 s UpdateAddOnMemoryUsage
+-- and NodeRadar's figure; the growth summed (drops are collections), per second, with the
+-- scan's bursts and the minimap's descendants. Settings put back at the end. Stand still or
+-- walk the same way through all of it, the cursor over the world.
+--------------------------------------------------------------------------------
+do
+local ROUND = "mem"
+local MM = {}
+
+local function descendants()
+    local n = 0
+    local function walk(f, d)
+        local ok, kids = pcall(function() return { f:GetChildren() } end)
+        if not ok then return end
+        for _, k in ipairs(kids) do n = n + 1; if d < 6 then walk(k, d + 1) end end
+    end
+    walk(Minimap, 1)
+    return n
+end
+
+local function memNow()
+    local up, get = g("UpdateAddOnMemoryUsage"), g("GetAddOnMemoryUsage")
+    if type(up) ~= "function" or type(get) ~= "function" then return nil end
+    pcall(up)
+    local ok, kb = pcall(get, "NodeRadar")
+    return ok and tonumber(kb) or nil
+end
+
+local PHASES = {
+    { name = "as is", set = function() end },
+    { name = "others not quieted (scanQuiet off)", set = function(n) n.db.scanQuiet = false end },
+    { name = "the scan off", set = function(n) n.db.scanQuiet = MM.saved.scanQuiet; n.Set("moveScan", false) end },
+    { name = "the scan on, icons, compass and marker off", set = function(n)
+        n.Set("moveScan", true); n.Set("icons", false); n.Set("compass", false); n.Set("marker", false) end },
+}
+
+local function finish(why)
+    local n = nrAddon()
+    if MM.ticker then MM.ticker:Cancel(); MM.ticker = nil end
+    if n and n.db and MM.saved then
+        n.db.scanQuiet = MM.saved.scanQuiet
+        if n.db.moveScan ~= MM.saved.moveScan then n.Set("moveScan", MM.saved.moveScan) end
+        for _, k in ipairs({ "icons", "compass", "marker" }) do
+            if n.db[k] ~= MM.saved[k] then n.Set(k, MM.saved[k]) end
+        end
+    end
+    slog(ROUND, "ended (" .. tostring(why) .. "), settings put back")
+    MM.running = false
+end
+
+local function phaseLine(p)
+    local secs = p.t1 - p.t0
+    slog(ROUND, ("%s: %.0f s, grew %.0f KB (%.1f KB/s), %d drops, %s -> %s KB now, %d bursts, %s minimap descendants"):format(
+        p.name, secs, p.grew, secs > 0 and p.grew / secs or 0, p.drops, v(p.first), v(p.last), p.bursts, tostring(p.desc)))
+end
+
+Probe:Command("mem", function(args)
+    local n = nrAddon()
+    if not (n and n.db) then slog(ROUND, "NodeRadar isn't loaded"); return end
+    if MM.running then finish("stopped"); return end
+    local secs = tonumber(args and args:match("%d+")) or 20
+    if not memNow() then slog(ROUND, "GetAddOnMemoryUsage is missing"); return end
+    MM = { running = true, i = 0, saved = { scanQuiet = n.db.scanQuiet, moveScan = n.db.moveScan, icons = n.db.icons,
+        compass = n.db.compass, marker = n.db.marker } }
+    slog(ROUND, ("started: %d phases of %d s; NodeRadar at %s KB; scan %s, icons %s, compass %s, marker %s; build %s"):format(
+        #PHASES, secs, v(memNow()), tostring(n.db.moveScan), tostring(n.db.icons), tostring(n.db.compass), tostring(n.db.marker),
+        tostring(select(2, GetBuildInfo()))))
+    local function nextPhase()
+        MM.i = MM.i + 1
+        local p = PHASES[MM.i]
+        if not p then finish("done"); return end
+        pcall(p.set, n)
+        local ms = n.MoveScan and n.MoveScan.stats
+        MM.p = { name = p.name, t0 = GetTime(), grew = 0, drops = 0, prev = memNow(), b0 = ms and ms.bursts or 0, desc = descendants() }
+        MM.p.first = MM.p.prev
+    end
+    nextPhase()
+    MM.ticker = C_Timer.NewTicker(0.5, function()
+        local p = MM.p
+        if not p then return end
+        local m = memNow()
+        if m and p.prev then
+            if m >= p.prev then p.grew = p.grew + (m - p.prev) else p.drops = p.drops + 1 end
+        end
+        p.prev, p.last = m or p.prev, m or p.last
+        if GetTime() - p.t0 >= secs then
+            p.t1 = GetTime()
+            local ms = n.MoveScan and n.MoveScan.stats
+            p.bursts = (ms and ms.bursts or 0) - p.b0
+            phaseLine(p)
+            nextPhase()
+        end
+    end)
+end, "NodeRadar's memory churn by phase: as is, others not quieted, the scan off, icons off (/fp nr mem [s]; again to stop)")
+end
+
+--------------------------------------------------------------------------------
+-- alloc: which of NodeRadar's functions allocate (the memory churn, `mem`'s follow-up)
+--   /fp nr alloc [seconds, default 20]
+-- Wraps every function in NodeRadar's module tables (NR.MoveScan, NR.Learn, NR.ScanFace, NR.API,
+-- ...; not _test) for `secs` seconds, adding collectgarbage("count")'s growth across each call
+-- (inclusive: a caller counts its callees; a collection inside a call reads negative and is
+-- skipped), then puts every function back and logs the top 25 by KB. Calls through a local
+-- copy of a function aren't seen; they count in their caller.
+--------------------------------------------------------------------------------
+do
+local ROUND = "alloc"
+local AL = {}
+
+local function restoreAll()
+    for _, w in ipairs(AL.wrapped or {}) do
+        if w.t[w.k] == w.wrapper then w.t[w.k] = w.orig end
+    end
+    AL.wrapped = {}
+end
+
+local function report()
+    local list = {}
+    for name, s in pairs(AL.stats or {}) do list[#list + 1] = { name, s } end
+    table.sort(list, function(a, b) return a[2].kb > b[2].kb end)
+    local total = collectgarbage("count")
+    slog(ROUND, ("%d functions wrapped; the top by KB allocated in %.0f s (inclusive):"):format(#(AL.wrapped or {}), GetTime() - AL.t0))
+    for i = 1, math.min(25, #list) do
+        local name, s = list[i][1], list[i][2]
+        if s.kb < 1 then break end
+        slog(ROUND, ("%2d. %s: %.0f KB in %d calls (%.2f KB a call)"):format(i, name, s.kb, s.calls, s.kb / math.max(1, s.calls)))
+    end
+end
+
+Probe:Command("alloc", function(args)
+    local n = nrAddon()
+    if not n then slog(ROUND, "NodeRadar isn't loaded"); return end
+    if AL.running then
+        if AL.timer then AL.timer:Cancel() end
+        restoreAll(); report(); AL.running = false
+        slog(ROUND, "stopped early, everything put back")
+        return
+    end
+    local secs = tonumber(args and args:match("%d+")) or 20
+    AL = { running = true, stats = {}, wrapped = {}, t0 = GetTime() }
+    for modName, mod in pairs(n) do
+        if type(mod) == "table" and modName ~= "_test" and modName ~= "db" and modName ~= "charDb" and modName ~= "trace" then
+            for k, f in pairs(mod) do
+                if type(f) == "function" and k ~= "_test" then
+                    local name = modName .. "." .. k
+                    local st = { kb = 0, calls = 0 }
+                    AL.stats[name] = st
+                    local orig = f
+                    -- No table of our own per call: the results pass through as varargs.
+                    local function done(before, ok, ...)
+                        local d = collectgarbage("count") - before
+                        if d > 0 then st.kb = st.kb + d end
+                        st.calls = st.calls + 1
+                        if not ok then error((...), 0) end
+                        return ...
+                    end
+                    local wrapper = function(...)
+                        return done(collectgarbage("count"), pcall(orig, ...))
+                    end
+                    mod[k] = wrapper
+                    AL.wrapped[#AL.wrapped + 1] = { t = mod, k = k, orig = orig, wrapper = wrapper }
+                end
+            end
+        end
+    end
+    slog(ROUND, ("started: %d functions wrapped for %d s; play as usual, the scan on"):format(#AL.wrapped, secs))
+    AL.timer = C_Timer.NewTimer(secs, function()
+        restoreAll(); report(); AL.running = false
+        slog(ROUND, "ended (done), everything put back")
+    end)
+end, "Which NodeRadar functions allocate memory: wraps them for N s, then the top 25 by KB (/fp nr alloc [s])")
+end

@@ -877,6 +877,7 @@ NR.Options._test.panel:Hide()
 NR.Options._test.panel:Show()
 check(NR.Options._test.trouble == "no tracking", "Options shows the trouble on show")
 WoW.tracking[1].active = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")                -- as the client does on a tracking change
 for _ = 1, 60 do WoW.tick(0.02) end
 check(NR.Options._test.trouble == nil, "...and clears it within a second of the fix, the page open")
 
@@ -1005,6 +1006,35 @@ check(untilBorrowed(), "the mouse moved: a look again")
 runBurst()
 check(NR.MoveScan.stats.valid >= 1, "...and it reads")
 C_TooltipInfo.GetMinimapMouseover = realRead3
+-- The memory churn (the owner, 2026-11-12: 50-80 MB; measured 12 KB a call in Learn.AnyOn, about
+-- every frame): the tracking list is read on MINIMAP_UPDATE_TRACKING and at least every
+-- ANYON_TTL s, not every frame; a change without the event still seen within ANYON_TTL.
+NR = fresh()
+local realInfo, infoCalls = C_Minimap.GetTrackingInfo, 0
+C_Minimap.GetTrackingInfo = function(...) infoCalls = infoCalls + 1; return realInfo(...) end
+frames(150)                                          -- 3 s, the scan on, looks included
+check(infoCalls <= 2 * #WoW.tracking * 3, "3 s of frames: the tracking list read a few times, not every frame ("
+    .. infoCalls .. " reads)")
+WoW.tracking[1].active = false                       -- no event: only the TTL catches it
+frames(math.ceil((NR.Learn.ANYON_TTL + 0.5) / 0.02))
+check(NR.MoveScan.lastRefusal == "no gathering tracking on", "a change without its event: seen within ANYON_TTL (got "
+    .. tostring(NR.MoveScan.lastRefusal) .. ")")
+WoW.tracking[1].active = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")
+check(NR.Learn.AnyOn() == true, "the event: read again at once")
+C_Minimap.GetTrackingInfo = realInfo
+-- The walks build no list for a frame without children (the owner's minimap: 1,388 frames, most
+-- of them childless pins): GetChildren asked only of frames that have some.
+NR = fresh()
+for _ = 1, 30 do local leaf = CreateFrame("Frame", nil, Minimap); leaf:Show(); leaf:EnableMouse(true) end
+local gcCalls = 0
+local realKids = WoW.Methods.GetChildren
+WoW.Methods.GetChildren = function(w) gcCalls = gcCalls + 1; return realKids(w) end
+check(untilBorrowed(), "(control) a burst")
+runBurst()
+local found = NR.MoveScan.FindFollower()
+WoW.Methods.GetChildren = realKids
+check(gcCalls < 30, "30 childless frames on the map: GetChildren never asked of them, only of frames with children (" .. gcCalls .. " calls)")
 -- And with no such hook, both come back.
 NR = fresh()
 local pin2 = CreateFrame("Frame", nil, Minimap)
