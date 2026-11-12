@@ -1158,3 +1158,11 @@ the player moves. Screenshots 0.5 s after each restore, each checked by eye.
   false, not mouselooking, cursor read fine): the scan read that as "not over the world" and never
   looked without another add-on (one of the owner's draws a full-screen frame below the map, which
   counts). An empty list now counts as over the world; mouselook (also empty) is refused first.
+
+### Pixel snapping on the icons: `/fp nr snap`, 1.60.1.70888 (the owner, 2026-11-12, Tirisfal Glades, Mining) (#122)
+
+NodeRadar's icon textures snap to the pixel grid by default (`IsSnappingToPixelGrid()` true,
+`GetTexelSnappingBias()` 0.30). `SetSnapToPixelGrid(false)` and `SetTexelSnappingBias(0)` on the
+icon's 12 regions (its textures and masks), held for 27 s while walking past a located node with
+the scan on: **no visible difference** (the owner, with screenshots of both). Left as it is; the
+toggle stays in the probe in case the icon is ever seen shifting against its dot.
