@@ -57,7 +57,12 @@ same(info.deDE["Brühschlammbedecktes Silbervorkommen"], 75, 2775, "an ooze-cove
 same(info.enUS["Black Lotus"], 300, 13468, "Black Lotus")
 eq(info.enUS["Hakkari Thorium Vein"], nil, "only the English reference names it, without an ID: no entry")
 eq(info.enUS["Bloodvine"], nil, "nothing known: no entry")
-eq(info.enUS["Wilted Peacebloom"], nil, "Forever's own herb: no entry")
+-- Forever's own names: GatherMate2 1.52.5 lists them as variants of the classic nodes
+-- (Wowhead Forever, 2026-11-11: each "Requires Herbalism (1)" / "Requires Mining (1)").
+same(info.enUS["Wilted Peacebloom"], 1, 2447, "Forever's own herb, Peacebloom's variant")
+same(info.enUS["Stunted Silverleaf"], 1, 765, "...Silverleaf's")
+same(info.enUS["Poor Copper Vein"], 1, 2770, "...and Copper Vein's")
+same(info.deDE["Verwelkte Friedensblume"], 1, 2447, "...in German too")
 for locale, names in pairs(info) do
     for name in pairs(names) do check(lib[locale] and lib[locale][name], "info only for library names: " .. name) end
 end

@@ -45,6 +45,53 @@ eq(byName["Old Herb"], nil, "another commented-out entry: left out")
 eq(byName["Floating Wreckage"], nil, "fishing: left out")
 eq(#nodes, 7, "seven classic nodes")
 
+-- From GatherMate2 1.52.5 an entry can be a table: its id, the names of variants of the same
+-- node (Forever's), old IDs. Over several lines or one, commented out, inside fishing.
+local tables = G.parseNodes([[
+local node_ids = {
+	["Fishing"] = {
+		["Sagefish School"] = { id = 108, variants = { "Sagefish Shoal" } },
+	},
+	["Mining"] = {
+		["Copper Vein"] = {
+			id = 201,
+			variants = {
+				"Poor Copper Vein"
+			}
+		},
+		["Tin Vein"] 						= 202,
+		["Elethium Deposit"]				= {
+			id = 280,
+			variants = { "Rich Elethium Deposit" },
+			old_ids = { 281, 291, 292 },
+		},
+		--["Silver Vein"] = {
+		--	id = 204,
+		--	variants = { "Old Silver Vein" },
+		--},
+		["Gold Vein"] = { id = 205, variants = { "Poor Gold Vein", "Rich Gold Vein" } }, -- one line
+	},
+	["Herb Gathering"] = {
+		["Peacebloom"] = { id = 401, variants = { "Wilted Peacebloom" } },
+		["Silverleaf"] 						= 402,
+	},
+}
+]])
+local byTable = {}
+for _, n in ipairs(tables) do byTable[n[1]] = n end
+eq(byTable["Copper Vein"] and byTable["Copper Vein"][3], 201, "a table entry over several lines: its id")
+eq(byTable["Poor Copper Vein"] and byTable["Poor Copper Vein"][3], 201, "...its variant, the same node's ID")
+eq(byTable["Poor Copper Vein"] and byTable["Poor Copper Vein"][2], "ore", "...and kind")
+eq(byTable["Tin Vein"] and byTable["Tin Vein"][3], 202, "the plain entry after a table one is still read")
+eq(byTable["Rich Gold Vein"] and byTable["Rich Gold Vein"][3], 205, "a table on one line, its variants")
+eq(byTable["Wilted Peacebloom"] and byTable["Wilted Peacebloom"][2], "herbs", "a herb's variant")
+eq(byTable["Silverleaf"] and byTable["Silverleaf"][3], 402, "...and the herb after it")
+eq(byTable["Elethium Deposit"], nil, "a later expansion's table entry: left out")
+eq(byTable["Silver Vein"], nil, "a commented-out table entry: left out")
+eq(byTable["Old Silver Vein"], nil, "...its variants too")
+eq(byTable["Sagefish Shoal"], nil, "fishing's table entries: left out")
+eq(#tables, 9, "nine classic names (5 nodes, 4 variants)")
+
 -- A locale file: only NewLocale is given; anything else it touches fails.
 local de = G.readLocale([[
 local L = LibStub("AceLocale-3.0"):NewLocale("GatherMate2", "deDE")
@@ -104,7 +151,7 @@ if f then
     local cf = io.open(real .. "/Constants.lua", "rb")
     local realNodes = G.parseNodes(cf:read("*a"))
     cf:close()
-    eq(#realNodes, 51, "GatherMate2 1.52.3-10: 51 classic nodes")
+    eq(#realNodes, 54, "GatherMate2 1.52.5.1: 51 classic nodes and 3 variants")
 else
     io.write("  real GatherMate2 check SKIPPED (no ../References)\n")
 end
