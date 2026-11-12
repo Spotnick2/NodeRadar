@@ -89,7 +89,8 @@ local body, lines, sweep, rings = NR.ScanFace._test.parts()
 check(rings[2]:IsShown() and rings[2]._atlas == "UI-HUD-Minimap-Frame", "Blizzard's frame ring copied: its atlas")
 check(near(rings[2]:GetWidth(), 215 * k) and near(rings[2]:GetHeight(), 226 * k), "...its size")
 local rp = { rings[2]:GetPoint(1) }
-check(rp[2] == UIParent and near(rp[4], HOME[1] * k) and near(rp[5], HOME[2] * k), "...its centre")
+check(rp[2] == face and rp[3] == "CENTER" and near(rp[4], 0) and near(rp[5], 0),
+    "...its centre: on the face's (the map's), anchored to the face so a preview moves it too")
 check(not rings[1]:IsShown(), "the underlay not drawn when Blizzard's isn't (the fixed mode)")
 check(sweep._blend == "ADD", "the sweep drawn additively")
 
@@ -220,5 +221,337 @@ CreateFrame = create
 runBurst()
 check(NR.failures["scan face"] ~= nil, "...the failure recorded (/nr failures)")
 check(Minimap:GetAlpha() == 1 and NR.MoveScan.stats.valid == 1, "...and the scan read and restored as usual")
+
+--------------------------------------------------------------------------------
+-- #117: the real ground. Outdoors on a continent with tiles, the face draws the minimap's tiles
+-- around the player (Data/MinimapTiles.lua, the shipped table), the arrow on top, the radar's
+-- lines and sweep hidden; anywhere else the radar face, and SF.Ground() says why.
+--------------------------------------------------------------------------------
+
+-- The player in the middle of Kalimdor tile (x, y), a quarter in from its north-west corner.
+local T = 1600 / 3
+local function standIn(x, y, inst)
+    WoW.pos = { (32 - y - 0.25) * T, (32 - x - 0.25) * T, inst or 1 }
+end
+local function visibleTiles(NR)
+    local _, tiles = NR.ScanFace._test.ground()
+    local list = {}
+    for _, t in ipairs(tiles or {}) do if t:IsShown() then list[#list + 1] = t end end
+    return list
+end
+
+NR = fresh()
+local TX, TY = 40, 30                                    -- a Kalimdor tile the table has
+check(NR.MINIMAP_TILES[1][TX * 64 + TY] ~= nil and NR.MINIMAP_TILES[1][TX * 64 + TY + 1] ~= nil,
+    "(control) the shipped table has Kalimdor tile 40_30 and 40_31")
+standIn(TX, TY)
+check(NR.ScanFace.Ground() == "tiles", "outdoors on Kalimdor with tiles: the ground can be drawn")
+check(untilBorrowed(), "(control) a burst")
+local _, _, sweep0 = NR.ScanFace._test.parts()
+local list = visibleTiles(NR)
+local own
+for _, t in ipairs(list) do if t._file == NR.MINIMAP_TILES[1][TX * 64 + TY] then own = t end end
+check(NR.ScanFace.Grounded() and #list >= 1 and own ~= nil, "the player's own tile drawn, by its FileDataID")
+-- 150 yards across half a 198-unit map at scale 1.2 (UIParent 1): its top-left a quarter tile
+-- up and to the left of the face's centre.
+local perYard = 198 * 1.2 / 2 / 150
+local p, rel, rp, ox, oy = own:GetPoint(1)
+check(p == "TOPLEFT" and rp == "CENTER" and near(ox, -0.25 * T * perYard) and near(oy, 0.25 * T * perYard),
+    "the tile placed from UnitPosition: x east, y south (" .. tostring(ox) .. ", " .. tostring(oy) .. ")")
+check(near(own:GetWidth(), T * perYard), "a tile's size: 533 yards at the map's scale")
+check(not sweep0:IsShown(), "the ground drawn: the radar's sweep hidden")
+local _, _, arrow = NR.ScanFace._test.ground()
+check(arrow:IsShown(), "the player arrow on top")
+runBurst()
+
+-- Fallbacks: the radar face, and why.
+local function fallsBack(setup, why)
+    NR = fresh()
+    standIn(TX, TY)
+    setup()
+    check(NR.ScanFace.Ground() == why, why .. ": Ground() says so (got " .. tostring(NR.ScanFace.Ground()) .. ")")
+    untilBorrowed()
+    local _, _, sw = NR.ScanFace._test.parts()
+    check(not NR.ScanFace.Grounded() and #visibleTiles(NR) == 0 and sw:IsShown(), why .. ": the radar face instead")
+    runBurst()
+end
+fallsBack(function() WoW.indoors = true end, "indoors")
+fallsBack(function() WoW.cvars.rotateMinimap = "1" end, "the map rotates or is unreadable")
+fallsBack(function() standIn(TX, TY, 530) end, "no tiles for this map")
+fallsBack(function() NR.ScanFace.GROUND = false end, "off")
+-- A spot with no tile at all (the ocean beyond the table): no ground, the radar face.
+NR = fresh()
+WoW.pos = { (32 - 63.5) * T, (32 - 63.5) * T, 1 }
+untilBorrowed()
+check(not NR.ScanFace.Grounded(), "no tile in view: the radar face")
+runBurst()
+-- The ground failing: recorded, the radar face, the scan goes on.
+NR = fresh()
+standIn(TX, TY)
+NR.ScanFace.TileID = function() error("broken table") end
+check(untilBorrowed(), "a ground that throws: the burst still starts")
+check(NR.failures["scan face ground"] ~= nil and not NR.ScanFace.Grounded(), "...recorded, the radar face")
+runBurst()
+
+-- Codex's round: the shape, the stacking, the loading.
+-- Not the stock minimap (its ring hidden, or another atlas) and no shape said: no ground.
+local UNKNOWN = "the minimap's shape is unknown"
+fallsBack(function() MinimapCompassTexture:Hide() end, UNKNOWN)
+fallsBack(function() MinimapCompassTexture:SetAtlas("Some-Skin-Square-Frame") end, UNKNOWN)
+-- Shown but not drawn (Codex: a skin fades the stock ring and keeps its atlas): no ground either.
+fallsBack(function() MinimapCompassTexture:SetAlpha(0) end, UNKNOWN)
+fallsBack(function() MinimapBackdrop:SetAlpha(0) end, UNKNOWN)
+-- A shape-teller that throws, or answers nonsense: still unknown.
+fallsBack(function() MinimapCompassTexture:Hide(); GetMinimapShape = function() error("x") end end, UNKNOWN)
+GetMinimapShape = nil
+fallsBack(function() MinimapCompassTexture:Hide(); GetMinimapShape = function() return "HEXAGON" end end, UNKNOWN)
+GetMinimapShape = nil
+
+-- Square minimaps (the owner, 2026-11-10: the round face over a square skin's map). The face
+-- takes the map's shape: a square skin's map a square plate, cropped as the skin crops it.
+local SQ_BODY, SQ_MASK = "Interface\\Buttons\\WHITE8X8", "Interface\\ChatFrame\\ChatFrameBackground"
+local function shaped(setup)
+    NR = fresh()
+    standIn(TX, TY)
+    MinimapCompassTexture:Hide()                        -- a skin hides Blizzard's ring
+    setup()
+    frames(5)                                           -- the warm-up loads the tiles
+    untilBorrowed()
+    local f = NR.ScanFace._test.face()
+    local b, l, s = NR.ScanFace._test.parts()
+    local c = NR.ScanFace._test.ground()
+    local m = c and select(1, c:GetRegions())
+    return f, b, l, s, m
+end
+local function cleanShapes() GetMinimapShape, EllesmereUI, Minimap.GetHitRectInsets = nil, nil, nil end
+local kS = 1.2                                          -- the stubs' map scale, UIParent 1
+
+-- A skin that says SQUARE (LibDBIcon's GetMinimapShape).
+local f, b, l, s, m = shaped(function() GetMinimapShape = function() return "SQUARE" end end)
+check(select(1, NR.ScanFace.Shape()) == "square" and select(3, NR.ScanFace.Shape()) == "declared",
+    "GetMinimapShape SQUARE: a square map, declared")
+check(b._file == SQ_BODY, "a square map: a square plate, not the disc (" .. tostring(b._file) .. ")")
+check(near(f:GetWidth(), 198 * kS) and near(f:GetHeight(), 198 * kS), "...the map's whole square")
+check(m and m._file == SQ_MASK and m._atlas == nil, "...the ground under a square mask")
+check(NR.ScanFace.Grounded() and NR.ScanFace.lastGround == "tiles", "...the shape known: the real ground drawn")
+runBurst()
+-- Back to the stock map: the disc and the round mask again.
+cleanShapes()
+MinimapCompassTexture:Show()
+check(untilBorrowed(600), "(control) the next look")
+check(b._file and b._file:find("ScanDisc") and m._atlas == NR.ScanFace.MASK_ATLAS,
+    "the stock map again: the disc and Blizzard's round mask")
+runBurst()
+
+-- A declaration wins over the stock ring (a square skin can leave Blizzard's ring over its map);
+-- with none, the ring drawn says stock.
+NR = fresh()
+check(select(1, NR.ScanFace.Shape()) == "round" and select(3, NR.ScanFace.Shape()) == "stock", "the stock ring drawn: round, stock")
+GetMinimapShape = function() return "SQUARE" end
+check(select(1, NR.ScanFace.Shape()) == "square" and select(3, NR.ScanFace.Shape()) == "declared",
+    "SQUARE declared with the ring still drawn: square")
+cleanShapes()
+
+-- Mixed shapes by their quarters: three round ones a round map, else square.
+MinimapCompassTexture:Hide()
+GetMinimapShape = function() return "TRICORNER-BOTTOMLEFT" end
+check(select(1, NR.ScanFace.Shape()) == "round", "TRICORNER: three round quarters, round")
+GetMinimapShape = function() return "CORNER-TOPLEFT" end
+check(select(1, NR.ScanFace.Shape()) == "square", "CORNER: one round quarter, square")
+GetMinimapShape = function() return "side-left" end
+check(select(1, NR.ScanFace.Shape()) == "square", "SIDE (any case): two round quarters, square")
+GetMinimapShape = function() return "ROUND" end
+check(select(1, NR.ScanFace.Shape()) == "round" and select(3, NR.ScanFace.Shape()) == "declared", "ROUND declared: round")
+cleanShapes()
+MinimapCompassTexture:Show()
+
+-- EllesmereUI (no GetMinimapShape): its module's MinimapShape(); rectangular is a square map
+-- cropped top and bottom by its hit rect insets (a quarter of 198 in all: 24.75 each side).
+local function eui(shape)
+    EllesmereUI = { _ModuleNS = { EllesmereUIMinimap = { MinimapShape = function() return shape end } } }
+end
+f, b, l, s, m = shaped(function()
+    eui("rectangular")
+    Minimap.GetHitRectInsets = function() return 0, 0, 24.75, 24.75 end
+end)
+check(select(3, NR.ScanFace.Shape()) == "EllesmereUI" and b._file == SQ_BODY, "EllesmereUI rectangular: a square plate")
+check(near(f:GetWidth(), 198 * kS) and near(f:GetHeight(), (198 - 49.5) * kS),
+    "...cropped as its skin crops it (" .. tostring(f:GetHeight()) .. ")")
+check(near(l:GetWidth(), (198 - 49.5) * kS) and near(s:GetHeight(), (198 - 49.5) * kS),
+    "...the radar's rings and sweep a centred square within it, not stretched")
+check(NR.ScanFace.Grounded(), "...the real ground")
+runBurst()
+cleanShapes()
+f, b = shaped(function() eui("circle") end)
+check(select(1, NR.ScanFace.Shape()) == "round" and b._file:find("ScanDisc"), "EllesmereUI circle: the disc")
+check(NR.ScanFace.Grounded(), "...and the ground, round")
+runBurst()
+-- A square EllesmereUI over a GetMinimapShape another addon left saying ROUND: EllesmereUI's.
+cleanShapes()
+eui("square")
+GetMinimapShape = function() return "ROUND" end
+check(select(1, NR.ScanFace.Shape()) == "square", "EllesmereUI's own shape first")
+-- No crop without both insets (a skin's hit rect trimmed on one side only).
+Minimap.GetHitRectInsets = function() return 0, 0, 20, 0 end
+check(select(2, NR.ScanFace.Shape()) == 0, "one inset only: no crop")
+cleanShapes()
+MinimapCompassTexture:Show()
+-- No warm-up while a look couldn't come (Codex: no blocking loads in combat or loading).
+local function noWarm(set, unset, why)
+    NR = fresh()
+    standIn(TX, TY)
+    set()
+    frames(80)
+    local _, tw = NR.ScanFace._test.ground()
+    unset()
+    check(tw == nil or tw[1].id == nil, why .. ": no tile loaded")
+end
+noWarm(function() WoW.combat = true end, function() WoW.combat = false end, "in combat")
+noWarm(function() NodeRadar.Learn.loading = true end, function() NodeRadar.Learn.loading = false end, "loading")
+noWarm(function() WoW.tracking[1].active = false end, function() WoW.tracking[1].active = true end, "no tracking")
+noWarm(function() WoW.indoors = true end, function() WoW.indoors = false end, "indoors (no ground to draw)")
+-- A frame that loaded a tile starts no borrow (the load isn't charged to its budget).
+NR = fresh()
+standIn(TX, TY)
+local warmedFrame, borrowFrame
+local realWarm2 = NR.ScanFace.Warm
+local f0 = 0
+NR.ScanFace.Warm = function(...)
+    local loaded = realWarm2(...)
+    if loaded and not warmedFrame then warmedFrame = f0 end
+    return loaded
+end
+for i = 1, 200 do
+    f0 = i
+    frames(1)
+    if NR.MoveScan._test.burst() and not borrowFrame then borrowFrame = i end
+end
+NR.ScanFace.Warm = realWarm2
+check(warmedFrame and borrowFrame and borrowFrame > warmedFrame, "the warm-up's frame borrows nothing; a later one does")
+runBurst()
+-- A load on the very frame a look is due: that frame borrows nothing (the player crossing into a
+-- new tile every frame, the warm-up unthrottled, so every frame loads).
+NR = fresh()
+check(untilBorrowed(), "(control) a first look")
+runBurst()
+NR.ScanFace.WARM_EVERY = 0
+local coincide, loads = 0, 0
+for i = 1, 400 do
+    standIn(TX, TY + (i % 2))
+    local before = NR.MoveScan._test.burst()
+    local loadedNow = false
+    local w = NR.ScanFace.Warm
+    NR.ScanFace.Warm = function(...) local r = w(...); loadedNow = loadedNow or r; return r end
+    frames(1)
+    NR.ScanFace.Warm = w
+    if loadedNow then loads = loads + 1 end
+    if loadedNow and not before and NR.MoveScan._test.burst() then coincide = coincide + 1 end
+end
+NR.ScanFace.WARM_EVERY = 1
+check(loads > 100 and coincide == 0, "a frame that loaded a tile never starts a borrow (" .. loads .. " loads, " .. coincide .. " together)")
+runBurst()
+-- A warm-up that loads one tile and has the next refused (or throws) still did the work: that
+-- frame borrows nothing either (Codex, third round). SetTexture calls observed directly.
+NR = fresh()
+check(untilBorrowed(), "(control) a first look")
+runBurst()
+local _, tr = NR.ScanFace._test.ground()
+local calls, callsThisFrame = 0, 0
+for _, t in ipairs(tr) do
+    local real = t.SetTexture
+    t.SetTexture = function(self, id)
+        calls, callsThisFrame = calls + 1, callsThisFrame + 1
+        if calls % 2 == 0 then return false end          -- every second one refused
+        return real(self, id)
+    end
+end
+NR.ScanFace.WARM_EVERY = 0
+local together, tried = 0, 0
+for i = 1, 400 do
+    standIn(TX, TY + (i % 2))
+    callsThisFrame = 0
+    local before = NR.MoveScan._test.burst()
+    frames(1)
+    if callsThisFrame > 0 then tried = tried + 1 end
+    if callsThisFrame > 0 and not before and NR.MoveScan._test.burst() then together = together + 1 end
+end
+NR.ScanFace.WARM_EVERY = 1
+check(tried > 100 and together == 0, "a frame whose warm-up tried a load, refused or not, starts no borrow ("
+    .. tried .. " frames tried, " .. together .. " borrowed)")
+runBurst()
+-- No ground possible (indoors): the warm-up builds nothing at all.
+NR = fresh()
+standIn(TX, TY)
+WoW.indoors = true
+local dialog = CreateFrame("Frame", nil, UIParent)
+dialog:SetFrameStrata("DIALOG")
+WoW.focus = dialog                                      -- no look either: nothing else builds the face
+frames(80)
+check(NR.ScanFace._test.face() == nil, "indoors, no look: the warm-up built nothing")
+WoW.focus, WoW.indoors = nil, false
+-- The arrow and the ring copies draw over the tiles: a frame above the tiles' frame.
+NR = fresh()
+standIn(TX, TY)
+untilBorrowed()
+local clipF, _, arrowT = NR.ScanFace._test.ground()
+local _, _, _, ringsT = NR.ScanFace._test.parts()
+check(arrowT:GetParent() ~= clipF and arrowT:GetParent():GetFrameLevel() > clipF:GetFrameLevel()
+    and ringsT[2]:GetParent() == arrowT:GetParent(), "the arrow and the ring sit on a frame above the tiles")
+runBurst()
+-- Tiles never loaded inside a borrow: only ones the warm-up loaded before it are drawn.
+NR = fresh()
+standIn(TX, TY)
+local realWarm = NR.ScanFace.Warm
+NR.ScanFace.Warm = function() end                      -- never warmed
+untilBorrowed()
+check(not NR.ScanFace.Grounded() and NR.ScanFace.lastGround == "tiles not loaded yet",
+    "tiles not loaded before the borrow: the radar face (" .. tostring(NR.ScanFace.lastGround) .. ")")
+local _, tilesT = NR.ScanFace._test.ground()
+check(tilesT[1].id == nil, "...and nothing loaded inside the borrow")
+runBurst()
+NR.ScanFace.Warm = realWarm
+-- A texture not loaded yet (IsObjectLoaded false): the radar face this time.
+NR = fresh()
+standIn(TX, TY)
+frames(5)                                               -- the warm-up runs
+local _, tl = NR.ScanFace._test.ground()
+check(tl and tl[1].id ~= nil, "(control) the warm-up loaded the tiles, outside any borrow")
+for _, t in ipairs(tl) do t.IsObjectLoaded = function() return false end end
+untilBorrowed()
+check(not NR.ScanFace.Grounded() and NR.ScanFace.lastGround == "tiles still loading", "a tile still loading: the radar face")
+runBurst()
+-- Glass MiniMap drawing its own stand-in: no warm-up either.
+NR = fresh()
+standIn(TX, TY)
+GlassMiniMap = { PUBLIC_API_VERSION = 1, ScanBegin = function() return true end, ScanEnd = function() end,
+                 ScanStandIn = function() return true end }
+WoW.addonsLoaded = WoW.addonsLoaded or {}
+local realLoaded = C_AddOns.IsAddOnLoaded
+C_AddOns.IsAddOnLoaded = function(name) return name == "GlassMiniMap" or realLoaded(name) end
+frames(80)
+local _, tg = NR.ScanFace._test.ground()
+check(tg == nil or tg[1].id == nil, "Glass MiniMap draws its own: no tiles loaded")
+C_AddOns.IsAddOnLoaded, GlassMiniMap = realLoaded, nil
+runBurst()
+
+-- Preview: beside the home, for its seconds, without a borrow; never over a borrow's face.
+NR = fresh()
+standIn(TX, TY)
+check(untilBorrowed(), "(control) a burst")
+local okB, whyB = NR.ScanFace.Preview(-250, 0, 1)
+check(okB == false and whyB == "a borrow's face is up", "no preview over a borrow's face")
+runBurst()
+frames(math.ceil((NR.ScanFace.HOLD + NR.ScanFace.FADE) / 0.02) + 2)
+local bursts0 = NR.MoveScan.stats.bursts
+local ok, how = NR.ScanFace.Preview(-250, 0, 1)
+local f = NR.ScanFace._test.face()
+local fx0 = select(4, f:GetPoint(1))
+check(ok == true and how == "tiles" and NR.ScanFace.State() == "preview" and f:IsShown(), "Preview: shown, with the ground")
+check(near(fx0, HOME[1] * 1.2 - 250), "...250 units left of the home (" .. tostring(fx0) .. ")")
+local _, _, _, ringsP = NR.ScanFace._test.parts()
+check(ringsP[2]:IsShown() and select(2, ringsP[2]:GetPoint(1)) == f, "...its ring copy moves with it (anchored to the face)")
+check(Minimap:GetAlpha() == 1 and NR.MoveScan.stats.bursts == bursts0, "...the minimap untouched")
+frames(math.ceil(1 / 0.02) + 2)
+check(not f:IsShown() and NR.ScanFace.State() == nil, "...gone after its seconds")
 
 done("test_scanface")

@@ -19,6 +19,7 @@ Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 Libs\LibDBIcon-1.0\LibDBIcon-1.0.lua
 Compat.lua
 Data\Nodes.lua
+Data\MinimapTiles.lua
 Scan.lua
 Learn.lua
 Alert.lua

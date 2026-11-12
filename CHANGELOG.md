@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **The scan's stand-in shows the real minimap** (#117): while the minimap scan looks, the stand-in
+  at the minimap's place draws the minimap's own ground around you, with your arrow, so a look
+  barely shows. Outdoors in Eastern Kingdoms and Kalimdor, on the stock minimap or a skin that says
+  its shape; the radar face stays indoors, with the minimap rotating and anywhere else.
+- **The stand-in fits square minimaps**: under a square minimap skin (EllesmereUI, SexyMap and
+  others that say their shape), the stand-in is square, cropped as the skin crops it, instead of
+  a round face over a square map.
+- **The scan waits while you're busy** (#113): no look while you aim a spell, hold something on
+  the cursor, cast, loot, hover a creature or player, or rest the mouse on a button around the
+  minimap; a look under way stops when you start aiming or pick something up.
+- **A look right after a fight, a flight and dismounting** (#114), instead of at the next turn.
+- **Options says why the scan isn't running** (#116), in red under its checkbox, with what to do
+  on hover: no gathering tracking on, the minimap hidden, the gamepad UI, an instance, a frame
+  following the minimap, and more. The scan also waits while something else keeps moving the
+  minimap (two addons that move it break each other).
+- **The scan runs on the default UI** (#111): with no other addon loaded, the game reports nothing
+  under the cursor over the world, and the scan took that for "not over the world" and never
+  looked.
+
 ## v1.8.1
 
 Released 2026-11-09.

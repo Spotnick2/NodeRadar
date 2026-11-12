@@ -644,4 +644,70 @@ NR.Locate.Unread({ window = { size = 15, tries = 0 } })
 check(traced("locate: a 15 yd window placed but not read %(try 1 of 2%)"), "trace: a window placed but not read")
 check(traced("; queued %d+ search, %d+ re%-check"), "trace: the burst line's queue")
 
+--------------------------------------------------------------------------------
+-- #112: the search capped where the minimap stops listing nodes (Locate.LISTS), whatever the
+-- zoom: off until measured (Codex: a cap set blind hides the nodes that would measure it), and
+-- set, it narrows the search only, never what's out of range; the drops say how far the record
+-- was (the scan's log measures the distance).
+--------------------------------------------------------------------------------
+
+NR = fresh()
+check(NR.Locate.LISTS == nil and NR.Locate.Reach(233) == 233, "shipped off: the search covers the whole view")
+NR.Locate.LISTS = 190
+WoW.viewRadius = { [0] = 233 }
+Minimap._zoom = 0
+local pn, pw = WoW.pos[1], WoW.pos[2]
+check(NR.Locate.Reach(233) == 190 and NR.Locate.Reach(150) == 150, "set: the reach is the radius, capped at 190 yards")
+NR.Locate.Presence({ Silverleaf = 1 }, GetTime())
+local far = 0
+for _, w in ipairs(NR.Locate._test.windows()) do
+    far = math.max(far, math.abs(w.north - pn) + w.size / 2, math.abs(w.west - pw) + w.size / 2)
+end
+check(#NR.Locate._test.windows() == 16 and math.abs(far - 190) < 0.01,
+    "at a 233-yard radius the sixteenths cover 190 yards around the player, not 233 (" .. far .. ")")
+-- The map's size still follows the real radius (the guarantee): a 95-yard window at 233.
+local p1 = NR.Locate.Next(pn, pw, 233, 1.2)
+check(p1 and math.abs(p1.units - 2 * 233 * NR.Locate.GUARANTEE_PX / 95 / 1.2) < 0.01, "a window's map size uses the real radius")
+-- A window beyond the reach is never placed: pruned, even the deepest.
+table.insert(NR.Locate._test.windows(), { north = pn + 200, west = pw, size = 16, names = { Silverleaf = true },
+    depth = 9, tries = 0 })
+local placed200 = false
+for _ = 1, 30 do
+    local p = NR.Locate.Next(pn, pw, 233, 1.2)
+    if not p then break end
+    if p.window.north == pn + 200 then placed200 = true end
+end
+check(not placed200, "a window 200 yards off (beyond the 190-yard reach) is never placed")
+-- A record's re-check window past the reach but within the view is still placed (records live on
+-- evidence: the cap never makes one unverifiable).
+table.insert(NR.Locate.Records(), { name = "Silverleaf", kind = "herbs", north = pn + 200, west = pw,
+    at = GetTime() - 100, misses = 0, err = 20 })
+local rechecked = false
+for _ = 1, 40 do
+    local p = NR.Locate.Next(pn, pw, 233, 1.2)
+    if not p then break end
+    if p.window.record then rechecked = true end
+end
+check(rechecked, "a record 200 yards off, beyond the reach: its re-check still placed")
+-- Out of range stays the radius plus SLACK, cap or not, with the distance.
+NR = fresh()
+NR.Locate.LISTS = 190
+WoW.viewRadius = { [0] = 233 }
+table.insert(NR.Locate.Records(), { name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 216, west = WoW.pos[2],
+    at = GetTime(), misses = 0, err = 20 })
+NR.Locate.Presence({ Silverleaf = 1 }, GetTime())
+check(#NR.Locate.Records() == 1, "the cap set: a record 216 yards off at a 233-yard radius stays (233 + 25)")
+NR = fresh()
+table.insert(NR.Locate.Records(), { name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 180, west = WoW.pos[2],
+    at = GetTime(), misses = 0, err = 20 })
+NR.Locate.Presence({ Silverleaf = 1 }, GetTime())
+check(#NR.Locate.Records() == 0 and traced("locate: Silverleaf dropped %(out of range, 180 yd%)"),
+    "a record 180 yards off at a 150-yard radius: out of range (150 + 25), the distance traced")
+-- Not in range: the distance too.
+NR = fresh()
+table.insert(NR.Locate.Records(), { name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 50, west = WoW.pos[2],
+    at = GetTime(), misses = 0, err = 20 })
+NR.Locate.Presence({}, GetTime())
+check(traced("locate: Silverleaf dropped %(not in range, 50 yd%)"), "a name no longer listed: dropped with its distance")
+
 done("test_locate2")

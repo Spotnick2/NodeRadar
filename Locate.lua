@@ -45,6 +45,14 @@ Locate.BACKOFF = 20       -- seconds before a search of a name that ended unreso
 Locate.MIN_CHECK = 5      -- yards: the smallest re-check window (two records nearer than ~2x this
                           -- are near-duplicates: ambiguous, rebuilt)
 Locate.NEAR = 25          -- yards: a gather takes the nearest record of its name this near
+Locate.LISTS = nil        -- yards: the farthest the minimap lists a node, whatever the zoom (#112).
+                          -- Off until measured (the drop lines' distances, /fp steps nr range):
+                          -- set, it narrows the search only, never what counts as out of range.
+
+-- The search's reach: the view radius, capped where the minimap stops listing nodes (#112).
+-- A window's map size still uses the real radius (the guarantee).
+local function reachOf(radius) return math.min(radius, Locate.LISTS or radius) end
+Locate.Reach = reachOf
 
 local records = {}        -- { name, kind, north, west, at, instance, misses = 0 }
 local windows = {}        -- { north, west, size, names = {[name] = true}, depth, tries, record }
@@ -60,6 +68,7 @@ local found = {}          -- new records to announce, at the burst's end (the ma
 local fresh = false       -- a search started since the last Take (MoveScan's quick run restarts)
 
 local function d2(a, n, w) return (a.north - n) ^ 2 + (a.west - w) ^ 2 end
+local function yards(a, n, w) return ("%.0f yd"):format(math.sqrt(d2(a, n, w))) end
 
 local function instanceNow()
     local ok, _, _, _, inst = pcall(UnitPosition, "player")
@@ -157,7 +166,9 @@ function Locate.Presence(c, now)
         radius = okR and API.Num(radius)
         if radius then
             for i = #records, 1, -1 do
-                if d2(records[i], pn, pw) > (radius + Locate.SLACK) ^ 2 then drop(records[i], "out of range") end
+                if d2(records[i], pn, pw) > (radius + Locate.SLACK) ^ 2 then
+                    drop(records[i], "out of range, " .. yards(records[i], pn, pw))
+                end
             end
         end
     end
@@ -168,7 +179,7 @@ function Locate.Presence(c, now)
     -- A name no longer in range: its records go (a valid read lists every node in range).
     for i = #records, 1, -1 do
         local r = records[i]
-        if not c[r.name] then drop(r, "not in range") end
+        if not c[r.name] then drop(r, "not in range, " .. yards(r, pn, pw)) end
     end
     -- Names gone from range: their search state and quiet allowances go with them (Codex,
     -- PR #102: an allowance left by a vanished node silenced a later one of its name).
@@ -255,7 +266,7 @@ function Locate.Presence(c, now)
         -- node's hit square covers most of the tiny map), four reads for nothing a search.
         if radius then
             local before = #windows
-            split(pn, pw, 2 * radius, need, 1)
+            split(pn, pw, 2 * reachOf(radius), need, 1)
             local quarters = {}
             for i = before + 1, #windows do quarters[#quarters + 1] = table.remove(windows) end
             for _, q in ipairs(quarters) do split(q.north, q.west, q.size, need, 2) end
@@ -297,11 +308,13 @@ function Locate.Next(pn, pw, radius, es)
         for name in pairs(w.names) do
             if w.record or (counts[name] or 0) > ofName(name) then wanted = true end
         end
-        if not wanted or math.sqrt(d2(w, pn, pw)) > radius + w.size / 2 then
+        if not wanted or math.sqrt(d2(w, pn, pw)) > (w.record and radius or reachOf(radius)) + w.size / 2 then
             table.remove(windows, i)
             if w.record then
                 w.record.checking = nil
-                if d2(w.record, pn, pw) > (radius + Locate.SLACK) ^ 2 then drop(w.record, "out of range") end
+                if d2(w.record, pn, pw) > (radius + Locate.SLACK) ^ 2 then
+                    drop(w.record, "out of range, " .. yards(w.record, pn, pw))
+                end
             end
         end
     end

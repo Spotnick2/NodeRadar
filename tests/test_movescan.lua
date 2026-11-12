@@ -295,6 +295,30 @@ refusedBy(function() WoW.cursor = { (800 + 99) * 1.2, (500 + 99) * 1.2 } end, fu
 local covered = CreateFrame("Frame", nil, UIParent)
 covered:SetFrameStrata("DIALOG")
 refusedBy(function() WoW.focus = covered end, function() WoW.focus = nil end, "a window under the cursor")
+-- #113: the cursor busy, each with its own reason; and a button around the ring.
+local function busyBy(set, unset, reason)
+    local got = refusedBy(set, unset, reason)
+    check(got == reason, reason .. ": the reason says so (got " .. tostring(got) .. ")")
+end
+busyBy(function() WoW.targeting = true end, function() WoW.targeting = false end, "aiming a spell")
+busyBy(function() WoW.cursorInfo = "item" end, function() WoW.cursorInfo = nil end, "something on the cursor")
+busyBy(function() WoW.casting = "Herb Gathering" end, function() WoW.casting = nil end, "casting")
+busyBy(function() WoW.lootItems = 2 end, function() WoW.lootItems = 0 end, "a loot window is open")
+busyBy(function() WoW.units.mouseover = { name = "Kobold" } end, function() WoW.units.mouseover = nil end, "a unit under the mouse")
+-- 10 screen px left of the map (its rect from 800 at effective scale 1.2): near; 30 px: not.
+busyBy(function() WoW.cursor = { 800 * 1.2 - 10, (500 + 99) * 1.2 } end, function() end, "the cursor is near the minimap")
+NR = fresh()
+WoW.cursor = { 800 * 1.2 - 30, (500 + 99) * 1.2 }
+check(untilBorrowed(), "30 screen px from the minimap's edge: a burst starts (only the margin refuses)")
+runBurst()
+-- A busy check that throws or is missing is not busy (an older client).
+NR = fresh()
+local realTargeting = SpellIsTargeting
+SpellIsTargeting = function() error("no such thing") end
+GetCursorInfo = nil
+check(untilBorrowed(), "SpellIsTargeting throwing and GetCursorInfo missing: not busy, a burst starts")
+runBurst()
+SpellIsTargeting, GetCursorInfo = realTargeting, function() return WoW.cursorInfo end
 -- A UI suite's full-screen layer below the minimap doesn't block it.
 NR = fresh()
 local layer = CreateFrame("Frame", nil, UIParent)
@@ -303,6 +327,24 @@ WoW.focus = layer
 check(untilBorrowed(), "a frame drawn below the minimap under the cursor: the burst still starts")
 runBurst()
 WoW.focus = nil
+-- The cursor over the 3D world: on the stock UI no focus at all (GetMouseFoci() empty, measured on
+-- 70888); with WorldFrame's mouse on, WorldFrame. Both are over the world. (The default stub is the
+-- empty list, so every other test here runs on it too.)
+NR = fresh()
+check(#GetMouseFoci() == 0, "the stub: over the world, no focus")
+check(untilBorrowed(), "no focus at all (the stock UI over the world): a burst starts")
+runBurst()
+NR = fresh()
+WoW.worldFocus = true
+check(GetMouseFoci()[1] == WorldFrame, "the stub: WorldFrame the focus")
+check(untilBorrowed(), "WorldFrame the focus: a burst starts")
+runBurst()
+WoW.worldFocus = nil
+-- GetMouseFoci failing is not "over the world".
+local realFoci
+local gotFoci = refusedBy(function() realFoci = GetMouseFoci; GetMouseFoci = function() error("no such thing") end end,
+    function() GetMouseFoci = realFoci end, "GetMouseFoci throwing")
+check(gotFoci == "the cursor is not over the world", "GetMouseFoci throwing: the reason says so (got " .. tostring(gotFoci) .. ")")
 -- A click just released: 0.3 s before a burst (a quick second click mustn't meet the map).
 NR = fresh()
 frames(5)
@@ -370,6 +412,48 @@ WoW.combat = false
 interruptedBy(function() WoW.cursor = { 320, 300 } end, "the cursor moving")
 interruptedBy(function() WoW.fireRegistry("EditMode.Enter") end, "Edit Mode")
 interruptedBy(function() NR.Set("moveScan", false) end, "the setting turned off")
+interruptedBy(function() WoW.targeting = true end, "a spell aimed")
+WoW.targeting = false
+interruptedBy(function() WoW.cursorInfo = "item" end, "an item picked up")
+WoW.cursorInfo = nil
+
+--------------------------------------------------------------------------------
+-- 6b. #114: a look at once after a fight, a taxi's end and a dismount, never forced.
+--------------------------------------------------------------------------------
+
+-- A burst just ran; the next one isn't due for 6 s (standing still). `event` asks for one now.
+local function soonAfter(setup, event, ...)
+    NR = fresh()
+    check(untilBorrowed(), "(control) a first burst")
+    runBurst()
+    frames(60)                                      -- 1.2 s on: the 6 s cadence not due
+    local before = NR.MoveScan.stats.bursts
+    setup()
+    WoW.fire(event, ...)
+    local came = untilBorrowed(20)                  -- within 0.4 s
+    runBurst()
+    return came, NR.MoveScan.stats.bursts > before
+end
+local came = soonAfter(function() end, "PLAYER_REGEN_ENABLED")
+check(came, "PLAYER_REGEN_ENABLED: a look at once, not at the 6 s turn")
+came = soonAfter(function() end, "PLAYER_CONTROL_GAINED")
+check(came, "PLAYER_CONTROL_GAINED (a taxi's end): a look at once")
+came = soonAfter(function() WoW.mounted = false end, "PLAYER_MOUNT_DISPLAY_CHANGED")
+check(came, "dismounted: a look at once")
+came = soonAfter(function() WoW.mounted = true end, "PLAYER_MOUNT_DISPLAY_CHANGED")
+WoW.mounted = false
+check(not came, "mounting: no extra look (the cadence)")
+came = soonAfter(function() frames(1); WoW.combat = false end, "PLAYER_REGEN_ENABLED")
+check(came, "(control) the fight's end with combat off")
+-- Never forced: refused while the cursor is busy.
+came = soonAfter(function() WoW.targeting = true end, "PLAYER_REGEN_ENABLED")
+WoW.targeting = false
+check(not came, "after a fight but aiming a spell: refused, no look")
+-- Off: nothing asked.
+NR = fresh({ moveScanAsked = true })
+WoW.fire("PLAYER_REGEN_ENABLED")
+frames(30)
+check(NR.MoveScan.stats.bursts == 0, "the scan off: a fight's end starts nothing")
 
 --------------------------------------------------------------------------------
 -- 7. A geometry restore that fails: the map stays invisible and click-off, retried until
@@ -546,7 +630,7 @@ check(NR.MoveScan.stats.bursts == 0 and g.begins == 3 and g.ends == 3, "refused:
 check(chatHas("Glass MiniMap refused it 3 times"), "...three refusals turn the scan off, said")
 NR = fresh()
 g = glass(function() error("boom") end)
-frames(20)
+frames(40)                                      -- the home holds still 0.5 s first (#116)
 check(NR.MoveScan.stats.bursts == 0 and g.ends == g.begins and g.begins >= 1, "a throwing ScanBegin: no borrow, ScanEnd paid")
 NR = fresh()
 rawset(_G, "GlassMiniMap", {})
@@ -607,5 +691,148 @@ SlashCmdList.NODERADAR("scan 3")
 check(NR.db.scanEvery == 3, "/nr scan 3: every 3 s while moving")
 SlashCmdList.NODERADAR("scan")
 check(NR.db.moveScan == false, "/nr scan again: off")
+
+--------------------------------------------------------------------------------
+-- 14. #116: the home must hold still before a borrow; something that keeps moving the map stops
+-- the scan for a while; MS.Trouble says why, lasting reasons only; Options shows it.
+--------------------------------------------------------------------------------
+
+-- Another addon's borrow, done to the map from outside: away for a few frames, then home.
+local function foreignBorrow()
+    local p = { Minimap:GetPoint(1) }
+    Minimap:ClearAllPoints()
+    Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", -2000, -2000)
+    Minimap:SetAlpha(0)
+    frames(3)
+    Minimap:ClearAllPoints()
+    Minimap:SetPoint(p[1], p[2], p[3], p[4], p[5])
+    Minimap:SetAlpha(1)
+end
+
+NR = fresh()
+frames(5)
+foreignBorrow()
+local okNow = NR.MoveScan.Refusal(GetTime())
+check(okNow == "the minimap just moved", "the map just came home from someone else's move: no borrow (" .. tostring(okNow) .. ")")
+check(untilBorrowed(), "...once it has held still 0.5 s, a burst")
+runBurst()
+check(atHome(), "(control) home after it")
+-- A skin re-asserting the same anchors changes nothing.
+NR = fresh()
+frames(30)
+for _ = 1, 30 do
+    local p = { Minimap:GetPoint(1) }
+    Minimap:ClearAllPoints()
+    Minimap:SetPoint(p[1], p[2], p[3], p[4], p[5])
+    frames(1)
+end
+check(NR.MoveScan.Trouble(GetTime()) == nil and NR.MoveScan.stats.bursts >= 1,
+    "the same anchors set again and again: no trouble, the scan runs")
+-- Something that keeps moving it: three moves in ten seconds stop the scan for 30 s.
+NR = fresh()
+check(untilBorrowed(), "(control) the first look")
+runBurst()
+local b0 = NR.MoveScan.stats.bursts
+for _ = 1, 3 do foreignBorrow(); frames(10) end
+check(NR.MoveScan.Trouble(GetTime()) == "mover", "three foreign moves in 10 s: Trouble says something keeps moving it")
+frames(400)                                     -- past the 6 s cadence: a look is due
+check(NR.MoveScan.stats.bursts == b0 and NR.MoveScan.lastRefusal == "something keeps moving the minimap",
+    "...no burst meanwhile")
+check(chatHas("something else keeps moving the minimap"), "...said once")
+WoW.now = WoW.now + 31
+check(untilBorrowed(), "...30 s without a move: the scan again")
+runBurst()
+-- Tripped, a lone move later restarts the quiet (Codex): one move 20 s on holds the scan 30 s more.
+NR = fresh()
+check(untilBorrowed(), "(control) the first look")
+runBurst()
+for _ = 1, 3 do foreignBorrow(); frames(10) end
+check(NR.MoveScan.Trouble(GetTime()) == "mover", "(control) tripped")
+WoW.now = WoW.now + 20
+foreignBorrow()
+frames(5)
+WoW.now = WoW.now + 15                                  -- 35 s after the trip, 15 s after the last move
+frames(2)
+check(NR.MoveScan.Trouble(GetTime()) == "mover", "a move 20 s after the trip: still held, 15 s on")
+WoW.now = WoW.now + 16
+frames(2)
+check(NR.MoveScan.Trouble(GetTime()) == nil, "...30 s after that last move: free")
+-- A getter failing for a frame, again and again, is no move (Codex: nothing committed unread).
+NR = fresh()
+check(untilBorrowed(), "(control) the first look")
+runBurst()
+local realW = Minimap.GetWidth
+for _ = 1, 4 do
+    Minimap.GetWidth = function() return nil end
+    frames(2)
+    Minimap.GetWidth = realW
+    frames(5)
+end
+check(NR.MoveScan.Trouble(GetTime()) == nil, "the width unreadable for a frame four times: no 'keeps moving'")
+check(NR.MoveScan.Refusal(GetTime()) ~= "something keeps moving the minimap", "...and no such refusal")
+-- The first readable sample after unreadable ones is the baseline, not a move.
+NR = fresh()
+realW = Minimap.GetWidth
+Minimap.GetWidth = function() return nil end
+frames(3)
+Minimap.GetWidth = realW
+frames(3)                                               -- the first readable sample: the baseline
+foreignBorrow(); frames(10)                             -- two changes: below MOVES unless the baseline counted
+check(NR.MoveScan.Trouble(GetTime()) == nil, "after unreadable first samples, the first readable one is the baseline, not a move")
+foreignBorrow(); frames(10)
+check(NR.MoveScan.Trouble(GetTime()) == "mover", "(control) real moves still count")
+
+-- Our own bursts never count as moves.
+NR = fresh()
+for _ = 1, 5 do
+    check(untilBorrowed(400), "(control) a burst of our own")
+    runBurst()
+end
+check(NR.MoveScan.Trouble(GetTime()) == nil, "five of our own bursts: no 'something keeps moving it'")
+
+-- Trouble: the lasting reasons, keyed; the moment-to-moment ones never.
+local function troubleBy(set, unset, key)
+    NR = fresh()
+    set()
+    frames(2)
+    local got = NR.MoveScan.Trouble(GetTime())
+    unset()
+    check(got == key, "Trouble: " .. key .. " (got " .. tostring(got) .. ")")
+end
+troubleBy(function() WoW.tracking[1].active = false end, function() end, "no tracking")
+troubleBy(function() Minimap._protected = true end, function() Minimap._protected = false end, "protected")
+troubleBy(function() WoW.instanced = true end, function() WoW.instanced = false end, "instance")
+troubleBy(function() Minimap:Hide() end, function() Minimap:Show() end, "hidden")
+NR = fresh()
+WoW.combat, GameTooltip._shown, WoW.targeting = true, true, true
+check(NR.MoveScan.Trouble(GetTime()) == nil, "combat, a tooltip, a spell aimed: no trouble (they pass)")
+WoW.combat, GameTooltip._shown, WoW.targeting = false, false, false
+NR = fresh({ moveScanAsked = true })
+WoW.tracking[1].active = false
+check(NR.MoveScan.Trouble(GetTime()) == nil, "the scan off: no trouble line")
+NR = fresh(nil, "70450")
+WoW.tracking[1].active = false
+check(NR.MoveScan.Trouble(GetTime()) == nil, "before 70862 (the radar reads itself): no trouble line")
+
+-- Options: the red line under the scan's checkbox, read on show and each second while shown.
+NR = fresh()
+WoW.tracking[1].active = false
+NR.Options.Register()
+NR.Options._test.panel:Hide()
+NR.Options._test.panel:Show()
+check(NR.Options._test.trouble == "no tracking", "Options shows the trouble on show")
+WoW.tracking[1].active = true
+for _ = 1, 60 do WoW.tick(0.02) end
+check(NR.Options._test.trouble == nil, "...and clears it within a second of the fix, the page open")
+
+-- A loot window, empty ones too: LOOT_OPENED to LOOT_CLOSED.
+NR = fresh()
+WoW.fire("LOOT_OPENED")
+frames(60)
+check(NR.MoveScan.stats.bursts == 0 and NR.MoveScan.lastRefusal == "a loot window is open",
+    "LOOT_OPENED with no items: still refused")
+WoW.fire("LOOT_CLOSED")
+check(untilBorrowed(), "LOOT_CLOSED: a burst")
+runBurst()
 
 done("test_movescan")

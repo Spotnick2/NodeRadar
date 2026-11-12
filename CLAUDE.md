@@ -111,7 +111,7 @@ live game, WoWInterface (#37).
 ## Layout
 
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
-committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
+committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Data\MinimapTiles.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
 `Track.lua` → `Icons.lua` → `Share.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
 `Locate.lua` → `ScanFace.lua` → `MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
@@ -242,8 +242,13 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   observation, `NR.Observe("presence", { counts })` → `Alert.Counts` (the sound and the chat line).
   The rest of a burst (up to `MS.PLACEMENTS`, within the 250 ms budget) is Locate's windows. Followers (another
   addon's frame anchored into the map) and a Glass MiniMap without version 1 refuse the scan, named
-  once. The login prompt (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs'
-  move model (`WoW.moveModel`).
+  once. No look while the cursor is busy (#113: aiming, something held, casting, a loot window, a
+  unit hovered, within `NEAR_PX` of the map) nor until the map's home has held still `STABLE` s (#116:
+  sampled every frame outside our borrows, no hook; `MOVES` changes in 10 s stop the scan 30 s,
+  "something keeps moving the minimap"); a first look after combat, a taxi and a dismount (#114).
+  `MS.Trouble`: the lasting reason it can't run, shown in red in Options (#116). The login prompt
+  (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs' move model
+  (`WoW.moveModel`).
 - `Locate.lua` (#91, step 2): where the scan's nodes are. Windows in world yards (`M = 2R·9/W` px: the
   16 px hit square less twice its 3.5 px offset), the map's sixteenths split while positive down to
   `FINE` (16 yards), deepest then nearest first; each read paired with the player's move since its
@@ -251,7 +256,8 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   the burst. A burst's positive leaves settle at its end, grouped per axis within a leaf's reach
   (complete-link, in a fixed order), never more new records than the count leaves room for. Records
   live on evidence (a presence count of 0, a re-check at the spot every `RECHECK` s, out of range by
-  more than `SLACK`, a gather), never time; each keeps its uncertainty `err`. A re-check window covers
+  more than `SLACK`, a gather), never time; each keeps its uncertainty `err`. `LISTS` (#112, off until
+  measured) would narrow the search only, never what's out of range; the drop lines carry the distance. A re-check window covers
   it when the record is isolated (its negative drops it), or half the gap to the nearest record of its
   name in a cluster (its negative proves nothing). Identity errors (an ambiguous or narrow re-check, a
   group beyond the count) trigger a **rebuild**: the name's records become priors (drawn, not counted),
@@ -269,10 +275,19 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   (`MinimapCompassTexture`'s atlas, read at the borrow), an unnamed mouse-off frame on `UIParent`.
   `ScanFace.Begin` in the borrow before the map moves, `ScanFace.End` at the restore: held 0.4 s,
   faded 0.2 s (Glass MiniMap's timing). Ours only without Glass MiniMap, or when its
-  `ScanStandIn()` answers false; its 1.1.0 (no `ScanStandIn`) gets none. Tests: `test_scanface`.
+  `ScanStandIn()` answers false; its 1.1.0 (no `ScanStandIn`) gets none. In the map's shape
+  (`SF.Shape()`: EllesmereUI's, `GetMinimapShape`, then the stock ring): a square skin's map a square
+  plate, cropped as the skin crops it. The real ground (#117): outdoors, on a map whose shape is
+  known, the minimap's own tiles around the player (`Data/MinimapTiles.lua`, by
+  FileDataID) under its mask, the arrow and ring on a frame above; loaded outside bursts
+  (`SF.Warm`, once a second), never inside one; the radar face otherwise (`SF.Ground()`,
+  `SF.lastGround` say why). `SF.Preview` for the probe. Tests: `test_scanface`.
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.
+- `Data/MinimapTiles.lua` (#117): **generated** by `Tools/export_tiles.py <community-listfile.csv>
+  --release <tag> --write` (the wowdev listfile's `world/minimaps/{azeroth,kalimdor}/map<x>_<y>.blp`):
+  `NodeRadar.MINIMAP_TILES[instance][x * 64 + y] = fileID`. Never edit it by hand.
 - `Tools/export_nodes.lua` (+ `.ps1`): merges learned nodes from SavedVariables into the library;
   prints additions with their provenance for review, writes with `--write`.
 - `Tools/Reference/classic-enUS.lua`: the classic herb and ore names (English, not measured: a

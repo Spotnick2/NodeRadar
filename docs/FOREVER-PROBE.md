@@ -1124,3 +1124,37 @@ three runs was OK; no blocked action, no Lua error.
   player moved 0.1 yd in a 5-frame burst (2.8 yd in a held one); the reads matched the static hit
   square. Weakly in favour of the world at the read; unresolved.
 
+
+### The blank ground after a look: `/fp steps nr blank`, `blankmask`, `blankzoom`, `blankquest`, `blankmove`, `blankcursor`, `blanklake`, 1.60.1.70888 (the owner, 2026-11-11/12, Tirisfal Glades) (#111)
+
+Seen: after a scan look the minimap's ground (terrain) drawn as a flat dark disc while the arrow,
+the POIs, NodeRadar's icons and the ring are still drawn; back on its own within 1 to 3 s while
+the player moves. Screenshots 0.5 s after each restore, each checked by eye.
+- **Nothing a probe borrow did blanked it**, from a fresh baseline each time:
+  - standing still: alpha 0, off screen (-2000), `SetSize(20)`, all of them with `SetIconScale(0.01)`
+    and `UpdateBlips`, 6 frames, 4 times each: 0 of 16;
+  - standing still, the zoom nudged mid-borrow as HereBeDragons does (`SetZoom(z + 1)`, `SetZoom(z)`,
+    one frame; `MINIMAP_UPDATE_ZOOM` fired), with alpha 0, without it, with a repaint after the
+    restore, and with an empty mask texture (`Minimap:SetMaskTexture`, a transparent TGA) instead of
+    alpha 0: 0 of 5;
+  - running (only NodeRadar, ForeverProbe, NodeRadarProbe): each of those alone and together, and
+    the mask: 0 of 20;
+  - running: a presence look's own placement (alpha 0, the map 15.4 px under the cursor,
+    `UpdateBlips`, the mouseover read), with the quest areas off and back on at alpha 0 (the scan's
+    order), and with the mask: 0 of 12.
+- **Real looks:** blank in about half the shots, alternating with drawn ones within seconds, in
+  two stretches at Brightwater Lake (2026-11-11 23:59 and 00:43, the owner's ~90 add-ons with Glass
+  MiniMap, walking slowly), then drawn for minutes as the looks went on. `MINIMAP_UPDATE_ZOOM`
+  never fired; the zoom stayed 0. Not seen again in 36 real looks on 2026-11-12: the stock UI
+  running (8), Glass MiniMap alone (8), the full set walking (8), and Brightwater Lake again, walking
+  through the point where the tiles in view change (12). The owner exited and restarted the game
+  between the blanks and the clean runs, and thinks the restart may have cleared it: a client state
+  that survives `/reload` is possible (unmeasured).
+- **So:** neither alpha 0, the resize, the move, a zoom nudge nor the quest areas' toggle blanks it
+  on its own, and the empty mask isn't needed to avoid it. The cause is unmeasured; Codex's review
+  ranks another add-on reacting to a look first (not Glass MiniMap alone, measured), then an engine
+  state the exact multi-frame sequence leaves behind. No defect found in the scan's restore order.
+- **`GetMouseFoci()` over the 3D world on the stock UI is empty** (`WorldFrame:IsMouseEnabled()`
+  false, not mouselooking, cursor read fine): the scan read that as "not over the world" and never
+  looked without another add-on (one of the owner's draws a full-screen frame below the map, which
+  counts). An empty list now counts as over the world; mouselook (also empty) is refused first.

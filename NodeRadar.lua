@@ -42,6 +42,7 @@ local DEFAULTS = {
     moveScan = false,   -- the minimap scan (#91), from build 70862: opt-in; moveScanAsked: the
                         -- login prompt asked once per account
     scanEvery = 2,      -- the scan's seconds between looks moving (standing still: three times, at most 10)
+    scanQuiet = true,   -- other frames on the minimap mouse-off during a look (#119)
 }
 -- Settings no longer used: v1's (it never worked on Forever), and the ring's
 -- colour (the sonar is green for herbs, gold for ore). Dropped.
