@@ -872,4 +872,61 @@ WoW.fire("LOOT_CLOSED")
 check(untilBorrowed(), "LOOT_CLOSED: a burst")
 runBurst()
 
+--------------------------------------------------------------------------------
+-- 15. Codex on PR #124.
+--------------------------------------------------------------------------------
+
+-- Another scanner borrows the map between our restore and the settle frame: the geometry, the
+-- visibility and the input are all its own now; the settle frame writes none of ours over them.
+NR = fresh()
+check(untilBorrowed(), "(control) a burst")
+for _ = 1, 20 do
+    local b = NR.MoveScan._test.burst()
+    if not b or b.phase == "settle" then break end
+    frames(1)
+end
+local sb = NR.MoveScan._test.burst()
+check(sb and sb.phase == "settle" and atHome(), "(control) restored and verified home, the settle frame next")
+local rival = NR.MoveScan.RIVALS[1].name
+WoW.loadedAddons = { [rival] = true }                -- its setting unread: on
+Minimap:ClearAllPoints()
+Minimap:SetPoint("CENTER", UIParent, "BOTTOMLEFT", -2000, -2000)
+Minimap:SetAlpha(0)
+Minimap:SetMouseClickEnabled(false)
+Minimap:EnableMouseWheel(false)
+frames(1)                                            -- the settle frame
+check(NR.MoveScan._test.burst() == nil, "the settle frame ran")
+local ax = select(4, Minimap:GetPoint(1))
+check(ax == -2000, "its borrow's geometry left to it")
+check(Minimap:GetAlpha() == 0, "its alpha 0 kept: our saved alpha not written over its borrow (got " .. tostring(Minimap:GetAlpha()) .. ")")
+check(Minimap:IsMouseClickEnabled() == false and Minimap:IsMouseWheelEnabled() == false, "its input kept off")
+check(NR.MoveScan._test.saved() == nil and NR.MoveScan.Trouble(GetTime()) ~= "halted", "nothing left owed, the scan not halted")
+WoW.loadedAddons = nil
+
+-- An owner's call made from another hook during our own setter call drops that claim: a frame on
+-- the map whose hook on SetMouseClickEnabled(false) also turns its motion off keeps it off after
+-- the burst; its clicks come back.
+NR = fresh()
+local pin = CreateFrame("Frame", nil, Minimap)
+pin:Show()
+pin:EnableMouse(true)
+hooksecurefunc(pin, "SetMouseClickEnabled", function(self, v) if v == false then self:EnableMouseMotion(false) end end)
+check(untilBorrowed(), "(control) a burst")
+check(pin:IsMouseMotionEnabled() == false and pin:IsMouseClickEnabled() == false, "(control) quieted during the borrow")
+runBurst()
+frames(2)
+check(atHome(), "(control) home after it")
+check(pin:IsMouseClickEnabled() == true, "its clicks back")
+check(pin:IsMouseMotionEnabled() == false, "its motion left off: the owner turned it off during our call")
+-- And with no such hook, both come back.
+NR = fresh()
+local pin2 = CreateFrame("Frame", nil, Minimap)
+pin2:Show()
+pin2:EnableMouse(true)
+check(untilBorrowed(), "(control) a burst")
+check(pin2:IsMouseMotionEnabled() == false and pin2:IsMouseClickEnabled() == false, "(control) quieted")
+runBurst()
+frames(2)
+check(pin2:IsMouseMotionEnabled() == true and pin2:IsMouseClickEnabled() == true, "a plain frame: both back")
+
 done("test_movescan")

@@ -303,10 +303,21 @@ local function quiet()
             if type(f) == "table" and ask(f, "IsShown") == true and ask(f, "IsProtected") ~= true then
                 local motion, click = ask(f, "IsMouseMotionEnabled") == true, ask(f, "IsMouseClickEnabled") == true
                 if (motion or click) and hookFrame(f) then
+                    -- Each claim published before its setter: an owner's call made from another
+                    -- hook during ours drops it, and it's never recreated after (Codex, PR #124).
                     local c = claims[f] or {}
-                    if motion and ourSet(f, "SetMouseMotionEnabled", false) then c.motion = true end
-                    if click and ourSet(f, "SetMouseClickEnabled", false) then c.click = true end
-                    if c.motion or c.click then claims[f] = c; n = n + 1 end
+                    claims[f] = c
+                    if motion then
+                        c.motion = true
+                        if not ourSet(f, "SetMouseMotionEnabled", false) then c.motion = nil end
+                    end
+                    if click then
+                        if claims[f] == nil then claims[f] = c end   -- dropped whole meanwhile
+                        c.click = true
+                        if not ourSet(f, "SetMouseClickEnabled", false) then c.click = nil end
+                    end
+                    if c.motion or c.click then n = n + 1
+                    elseif claims[f] == c then claims[f] = nil end
                 end
                 if depth < MS.QUIET_DEPTH then walk(f, depth + 1) end
             end
@@ -621,17 +632,29 @@ local function restore(keep)
         halt("the minimap couldn't be put back yet; retried until it can")
         return false
     end
+    -- Released to another scanner (the settle frame): what our restore already put back and read
+    -- back is handed off with the geometry, never written over its borrow (Codex, PR #124). A
+    -- visibility still owed waits until the map is home again: never shown away from home.
+    local handoff = s.released and s.visVerified
+    if s.released and not s.visVerified and not geometryHome(s) then
+        pending = "visibility"
+        glassEnd()
+        halt("the minimap's visibility or input couldn't be put back yet; retried until it can")
+        return false
+    end
     -- The geometry is home: the quest areas back on now, never while the map is away.
     if s.quest and MS.QuestAreas(true) then s.quest = nil end
-    setOn(Minimap, "SetAlpha", s.alpha)
-    for _, h in ipairs(s.held) do
-        setOn(h.f, "SetAlpha", h.alpha)
-        if h.mouse ~= nil then setOn(h.f, "EnableMouse", h.mouse) end
+    if not handoff then
+        setOn(Minimap, "SetAlpha", s.alpha)
+        for _, h in ipairs(s.held) do
+            setOn(h.f, "SetAlpha", h.alpha)
+            if h.mouse ~= nil then setOn(h.f, "EnableMouse", h.mouse) end
+        end
+        setOn(Minimap, "EnableMouseWheel", s.wheel)
+        setOn(Minimap, "SetMouseClickEnabled", s.click)   -- last
     end
-    setOn(Minimap, "EnableMouseWheel", s.wheel)
-    setOn(Minimap, "SetMouseClickEnabled", s.click)       -- last
     glassEnd()
-    if not visibilityHome(s) then
+    if not handoff and not visibilityHome(s) then
         pending = "visibility"
         halt("the minimap's visibility or input couldn't be put back yet; retried until it can")
         return false
@@ -1039,7 +1062,10 @@ local function finish(b, reason)
     local s = saved
     restore(true)
     -- Whether our restore put the geometry home and read it back (the settle frame's handoff).
-    if s then s.homeVerified = pending ~= "geometry" and not s.released end
+    if s then
+        s.homeVerified = pending ~= "geometry" and not s.released
+        s.visVerified = pending ~= "geometry" and pending ~= "visibility"
+    end
     if NR.ScanFace then NR.ScanFace.End() end            -- held over the returned map, then faded
     pcall(Minimap.UpdateBlips, Minimap)
     b.phase = "settle"
