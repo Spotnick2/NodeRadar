@@ -1035,6 +1035,55 @@ runBurst()
 local found = NR.MoveScan.FindFollower()
 WoW.Methods.GetChildren = realKids
 check(gcCalls < 30, "30 childless frames on the map: GetChildren never asked of them, only of frames with children (" .. gcCalls .. " calls)")
+-- #134: a frame on the map that takes the mouse wheel (a skin's scroll-to-zoom): off for the look,
+-- back after; the owner turning it off during the look keeps it off.
+NR = fresh()
+local wheelPin = CreateFrame("Frame", nil, Minimap)
+wheelPin:Show()
+wheelPin:EnableMouse(false)
+wheelPin:EnableMouseWheel(true)
+check(untilBorrowed(), "(control) a burst")
+check(wheelPin:IsMouseWheelEnabled() == false, "a frame on the map: its wheel off during the look")
+runBurst()
+frames(2)
+check(wheelPin:IsMouseWheelEnabled() == true, "...and back after it")
+NR = fresh()
+local wheelPin2 = CreateFrame("Frame", nil, Minimap)
+wheelPin2:Show()
+wheelPin2:EnableMouse(false)
+wheelPin2:EnableMouseWheel(true)
+check(untilBorrowed(), "(control) a burst")
+wheelPin2:EnableMouseWheel(false)                    -- the owner's own call, mid-look
+runBurst()
+frames(2)
+check(wheelPin2:IsMouseWheelEnabled() == false, "the owner turned its wheel off during the look: kept off")
+
+-- #133: a look right after a gather (the loot window closing), not at the next 6 s turn.
+NR = fresh()
+check(untilBorrowed(), "(control) a burst")
+runBurst()
+frames(30)
+local gb = NR.MoveScan.stats.bursts
+WoW.fire("LOOT_OPENED")
+frames(10)
+WoW.fire("LOOT_CLOSED")
+local gt = WoW.now
+untilBorrowed(100)
+check(NR.MoveScan.stats.bursts == gb + 1 and WoW.now - gt < 1.5, ("the loot window closed: a look within a second or so (%.1f s)"):format(WoW.now - gt))
+runBurst()
+-- And still through the refusals: closed with the cursor busy, it waits.
+NR = fresh()
+check(untilBorrowed(), "(control) a burst")
+runBurst()
+frames(30)
+local gb2 = NR.MoveScan.stats.bursts
+WoW.fire("LOOT_OPENED")
+frames(10)
+WoW.combat = true
+WoW.fire("LOOT_CLOSED")
+frames(50)
+check(NR.MoveScan.stats.bursts == gb2, "the loot window closed in combat: no look")
+WoW.combat = false
 -- And with no such hook, both come back.
 NR = fresh()
 local pin2 = CreateFrame("Frame", nil, Minimap)

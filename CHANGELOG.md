@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A look right after you gather** (#133): the scan looks as soon as the loot window closes, while
+  you stand among the nodes, instead of at its next turn.
+- **Your minimap addons' mouse wheel is left alone during a look** (#134): a frame on the minimap
+  that takes the wheel (a skin's scroll-to-zoom) has it off for the look and back after, so turning
+  the wheel for the camera mid-look no longer zooms the minimap.
 - **The real ground in Forever's own zones too**: the scan's stand-in now draws the minimap's own
   ground on Zephras Isle, Hyjal Crater, Azshara Crater, Dalaran City and Forever's other open-world
   maps, not only Eastern Kingdoms and Kalimdor, so the radar face no longer shows there.

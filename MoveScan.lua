@@ -268,9 +268,11 @@ local function kidsOf(f)
     if type(count) == "function" and count(f) == 0 then return NONE end
     return { f:GetChildren() }
 end
+-- The wheel too (#134): a frame taking it under the resting cursor (a skin's scroll-to-zoom) would
+-- zoom the minimap when the wheel turns the camera mid-look.
 local SETTERS = { SetMouseMotionEnabled = "motion", EnableMouseMotion = "motion",
-                  SetMouseClickEnabled = "click", EnableMouse = "both" }
-local claims = {}       -- frame -> { motion = true, click = true }: what we turned off and owe back
+                  SetMouseClickEnabled = "click", EnableMouse = "both", EnableMouseWheel = "wheel" }
+local claims = {}       -- frame -> { motion, click, wheel = true }: what we turned off and owe back
 local hooked = {}       -- frame -> { [setter] = true }: the hooks installed on it
 local tokens = {}       -- frame -> { [setter] = true }: our call under way
 
@@ -282,7 +284,8 @@ local function foreign(f, setter)
     local what = SETTERS[setter]
     if what == "motion" or what == "both" then c.motion = nil end
     if what == "click" or what == "both" then c.click = nil end
-    if not (c.motion or c.click) then claims[f] = nil end
+    if what == "wheel" then c.wheel = nil end
+    if not (c.motion or c.click or c.wheel) then claims[f] = nil end
 end
 
 -- Every setter this frame has, hooked once; false when one can't be (then it isn't quieted).
@@ -317,17 +320,20 @@ local function quiet()
         for _, f in ipairs(kids) do
             if type(f) == "table" and ask(f, "IsShown") == true and ask(f, "IsProtected") ~= true then
                 local motion, click = ask(f, "IsMouseMotionEnabled") == true, ask(f, "IsMouseClickEnabled") == true
-                if (motion or click) and hookFrame(f) then
+                local wheel = ask(f, "IsMouseWheelEnabled") == true
+                if (motion or click or wheel) and hookFrame(f) then
                     -- Both claims published before either setter runs: an owner's call made from
                     -- a hook during ours drops the claim it touches, which is then neither set nor
                     -- recreated (Codex, PR #124, both orders).
                     local c = claims[f] or {}
                     if motion then c.motion = true end
                     if click then c.click = true end
+                    if wheel then c.wheel = true end
                     claims[f] = c
                     if motion and c.motion and not ourSet(f, "SetMouseMotionEnabled", false) then c.motion = nil end
                     if click and c.click and not ourSet(f, "SetMouseClickEnabled", false) then c.click = nil end
-                    if c.motion or c.click then n = n + 1
+                    if wheel and c.wheel and not ourSet(f, "EnableMouseWheel", false) then c.wheel = nil end
+                    if c.motion or c.click or c.wheel then n = n + 1
                     elseif claims[f] == c then claims[f] = nil end
                 end
                 if depth < MS.QUIET_DEPTH then walk(f, depth + 1) end
@@ -350,7 +356,11 @@ local function unquiet()
             if ask(f, "IsMouseClickEnabled") ~= true then ourSet(f, "SetMouseClickEnabled", true) end
             if c.click and ask(f, "IsMouseClickEnabled") == true then c.click = nil end
         end
-        if c.motion or c.click then left = true else claims[f] = nil end
+        if c.wheel then
+            if ask(f, "IsMouseWheelEnabled") ~= true then ourSet(f, "EnableMouseWheel", true) end
+            if c.wheel and ask(f, "IsMouseWheelEnabled") == true then c.wheel = nil end
+        end
+        if c.motion or c.click or c.wheel then left = true else claims[f] = nil end
     end
     return not left
 end
@@ -1608,6 +1618,9 @@ events:SetScript("OnEvent", function(_, event)
         lootOpen = true
     elseif event == "LOOT_CLOSED" then
         lootOpen, lootClosedAt = false, GetTime()
+        -- After a gather the player stands among nodes: a look at once, not at the next turn
+        -- (#133). Still through MS.Refusal.
+        if MS.On() then MS.WantFirst(GetTime()) end
     elseif event == "PLAYER_CONTROL_GAINED" then
         -- A taxi's end among others (#114): a look asked for when nothing ended costs nothing.
         if MS.On() then MS.WantFirst(GetTime()) end
