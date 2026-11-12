@@ -21,6 +21,15 @@
   under the cursor over the world, and the scan took that for "not over the world" and never
   looked.
 
+## v1.8.2
+
+Released 2026-11-11.
+
+- **Forever's own starter nodes are known as their classic kin**: Poor Copper Vein (new), Wilted
+  Peacebloom and Stunted Silverleaf now count as Copper Vein, Peacebloom and Silverleaf, in English
+  and German: they need the profession at skill 1 to alert, show their item's icon, and follow
+  Copper Ore, Peacebloom and Silverleaf in the Herbs and Ores lists.
+
 ## v1.8.1
 
 Released 2026-11-09.
