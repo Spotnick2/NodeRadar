@@ -303,19 +303,15 @@ local function quiet()
             if type(f) == "table" and ask(f, "IsShown") == true and ask(f, "IsProtected") ~= true then
                 local motion, click = ask(f, "IsMouseMotionEnabled") == true, ask(f, "IsMouseClickEnabled") == true
                 if (motion or click) and hookFrame(f) then
-                    -- Each claim published before its setter: an owner's call made from another
-                    -- hook during ours drops it, and it's never recreated after (Codex, PR #124).
+                    -- Both claims published before either setter runs: an owner's call made from
+                    -- a hook during ours drops the claim it touches, which is then neither set nor
+                    -- recreated (Codex, PR #124, both orders).
                     local c = claims[f] or {}
+                    if motion then c.motion = true end
+                    if click then c.click = true end
                     claims[f] = c
-                    if motion then
-                        c.motion = true
-                        if not ourSet(f, "SetMouseMotionEnabled", false) then c.motion = nil end
-                    end
-                    if click then
-                        if claims[f] == nil then claims[f] = c end   -- dropped whole meanwhile
-                        c.click = true
-                        if not ourSet(f, "SetMouseClickEnabled", false) then c.click = nil end
-                    end
+                    if motion and c.motion and not ourSet(f, "SetMouseMotionEnabled", false) then c.motion = nil end
+                    if click and c.click and not ourSet(f, "SetMouseClickEnabled", false) then c.click = nil end
                     if c.motion or c.click then n = n + 1
                     elseif claims[f] == c then claims[f] = nil end
                 end
