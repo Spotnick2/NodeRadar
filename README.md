@@ -40,15 +40,21 @@ Options page, or the question it asks once at login.
   and gets its chat line as soon as a look sees it.
 - **Where it is.** NodeRadar then narrows the node down with a few more quick looks, usually within
   a second or two, for its icon, the sonar on it, the compass and the beacon.
-- **A radar face stands in for your minimap.** The minimap leaves its corner for a split second at
-  each look, more often for a moment while a new node is being located. Meanwhile a radar face with
-  a turning sweep takes its place, under the minimap's frame, and fades out just after. With Glass
-  MiniMap, its own face does this from its version 1.2.0 (with 1.1.0 the minimap still blinks).
-  Sometimes the minimap's ground stays blank after a look until you move; we're working on it.
+- **Your minimap's own ground stands in for it.** The minimap leaves its corner for a split second at
+  each look, more often for a moment while a new node is being located. Meanwhile NodeRadar draws
+  the minimap's own ground and your arrow at its place, under its frame, so a look barely shows:
+  outdoors in Eastern Kingdoms and Kalimdor, on the default minimap or a skin that says its shape
+  (square ones too). Indoors, with a rotating minimap and elsewhere, a radar face with a turning
+  sweep stands in instead. With Glass MiniMap, its own face does this from its version 1.2.0.
+  Rarely the minimap's ground has stayed blank after a look until you move; we're looking into it.
 - **When it can't look:**
   - in combat;
   - while a mouse button is held, so not while you steer with the mouse;
+  - while you aim a spell, hold something on the cursor, cast, or have a loot window open;
+  - while you hover a creature or a player, or rest the mouse on a button around the minimap;
   - while a tooltip or menu is open, or the cursor is over a window rather than the world.
+- **Options says why it isn't running**, in red under its checkbox, with what to do on hover.
+- **A look right after a fight, a flight and dismounting**, rather than at the next turn.
 - **After steering with the mouse, it waits until you move the mouse again.** Autorun, or moving and
   turning with the keyboard, works best.
 - **In the background it's slower.** The game runs a window without focus at its background frame
@@ -62,6 +68,8 @@ Options page, or the question it asks once at login.
   otherwise flash across your screen. That's the only tracking the scan touches.
 - **Other minimap addons.** With Glass MiniMap, the scan needs version 1.1.0 or later. If another
   addon's frame is anchored to your minimap, the scan doesn't run and NodeRadar names the addon once.
+  If another addon's minimap scan is on, or something keeps moving your minimap, NodeRadar's scan
+  waits: two of them break each other's minimap.
 
 ## How it works
 
@@ -153,8 +161,8 @@ alert.
 
 ## Options
 
-**Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; the minimap scan
-and how often it looks while you move (build 70862 and later); how often the radar looks,
+**Esc > Options > AddOns > NodeRadar** (or `/nr options`): the radar on or off; the minimap scan,
+how often it looks while you move and, in red, why it isn't running (build 70862 and later); how often the radar looks,
 standing still (1, 2 or 5 s) and moving (about every 2, 4 or 8 yards: more often costs more memory
 for the game to clean up); the sound, from a dropdown (the minimap ping, a sonar or radar ping from
 the game, or one of six shipped with NodeRadar: sonar, radar blip, deep-sea sonar, bell chime,
