@@ -36,4 +36,5 @@ Minimap.lua
 Locate.lua
 ScanFace.lua
 MoveScan.lua
+ScanFps.lua
 NodeRadar.lua
