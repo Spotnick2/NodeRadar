@@ -176,8 +176,10 @@ do
     WoW.fire("PLAYER_ENTERING_WORLD")
     local fails = 99
     local real = C_TooltipInfo.GetMinimapMouseover
+    -- An unread first look (nothing returned: the reload's loading frame). Empty reads in a row
+    -- wait for the mouse instead (#125, below).
     C_TooltipInfo.GetMinimapMouseover = function()
-        if fails > 0 then return { type = 21, lines = {} } end
+        if fails > 0 then return nil end
         return real()
     end
     local function nextStart()
@@ -351,10 +353,23 @@ frames(5)
 WoW.buttonDown = true
 frames(5)
 WoW.buttonDown = false
-WoW.cursor = { 301, 300 }                       -- a pixel's nudge: the hover answers again
-frames(12)
+frames(1)
+WoW.cursor = { 304, 300 }                       -- a real nudge (REARM_PX): the hover answers again
+frames(11)
 check(NR.MoveScan.stats.bursts == 0, "0.24 s after a mouse button came up: no burst yet")
 check(untilBorrowed(10), "...from 0.3 s, one comes")
+runBurst()
+-- The button released and the mouse moved before the next frame, then still: that move counts
+-- (Codex, PR #126: the anchor is the last held sample, not the first released one).
+NR = fresh()
+frames(5)
+WoW.buttonDown = true
+frames(5)
+WoW.buttonDown = false
+WoW.cursor = { 304, 300 }                       -- released and moved within the same frame
+frames(12)
+check(NR.MoveScan.stats.bursts == 0, "released and moved: 0.24 s on, no burst yet")
+check(untilBorrowed(30), "...a move made before the first released frame counts: a burst")
 runBurst()
 -- After a click or mouselook the minimap's hover answers nothing until the mouse moves (in
 -- game: empty reads): no burst until it has.
@@ -365,7 +380,10 @@ frames(10)
 WoW.mouselook = false
 frames(100)
 check(NR.MoveScan.stats.bursts == 0, "after mouselook, the mouse not moved: no burst (it would read nothing)")
-WoW.cursor = { 302, 300 }
+WoW.cursor = { 301.1, 300 }                     -- #125: jitter (in game 0.4 and 1.1 px passed for moves)
+frames(100)
+check(NR.MoveScan.stats.bursts == 0, "...1.1 px of jitter is no move: still no burst")
+WoW.cursor = { 304, 300 }
 check(untilBorrowed(30), "...the mouse nudged and resting: one comes")
 runBurst()
 -- The cursor's jump as mouselook ends (it reappears where it was) is no move (in game it
@@ -379,7 +397,7 @@ WoW.mouselook = false
 WoW.cursor = { 300, 300 }                       -- back where it was
 frames(100)
 check(NR.MoveScan.stats.bursts == 0, "the cursor's jump as mouselook ends is not a move: no burst")
-WoW.cursor = { 301, 300 }
+WoW.cursor = { 304, 300 }
 check(untilBorrowed(30), "...a real nudge after it: one comes")
 runBurst()
 -- The cursor must rest: moving every frame, nothing.
@@ -940,6 +958,53 @@ runBurst()
 frames(2)
 check(pin4:IsMouseMotionEnabled() == false and pin4:IsMouseClickEnabled() == false,
     "EnableMouse(false) from the owner during our motion call: both left off, no claim recreated")
+-- #125: every presence read's trace line carries its context (the player's state, the map's zoom
+-- and radius, the icon scale, the tooltip, the last loot), valid or empty.
+local function lastTrace(pat)
+    for i = #NR.trace, 1, -1 do if NR.trace[i]:find(pat, 1, true) then return NR.trace[i] end end
+end
+NR = fresh()
+WoW.fire("LOOT_CLOSED")
+check(untilBorrowed(), "(control) a burst")
+runBurst()
+local rl = lastTrace("scan: read ")
+check(rl and rl:find("indoors ", 1, true) and rl:find("radius ", 1, true) and rl:find("dots 0.01", 1, true)
+    and rl:find("loot closed", 1, true), "a valid read's trace has its context (" .. tostring(rl) .. ")")
+NR = fresh()
+local realRead2 = C_TooltipInfo.GetMinimapMouseover
+C_TooltipInfo.GetMinimapMouseover = function() return { type = 21, lines = {} } end
+check(untilBorrowed(), "(control) a burst")
+runBurst()
+C_TooltipInfo.GetMinimapMouseover = realRead2
+local ul = lastTrace("scan: unread (no lines)")
+check(ul and ul:find("; indoors ", 1, true) and ul:find("tooltip ", 1, true), "an empty read's trace has its context (" .. tostring(ul) .. ")")
+-- #125: empty presence reads in a row (the map's hover stale after mouselook or a click, in game
+-- until the mouse really moved): one alone is read again at the next look; two in a row and no
+-- look until the mouse moves; a move, and the looks resume.
+NR = fresh()
+local emptyLeft = 99
+local realRead3 = C_TooltipInfo.GetMinimapMouseover
+C_TooltipInfo.GetMinimapMouseover = function()
+    if emptyLeft > 0 then return { type = 21, lines = {} } end
+    return realRead3()
+end
+check(untilBorrowed(), "(control) a burst")
+runBurst()
+local b1 = NR.MoveScan.stats.bursts
+check(NR.MoveScan.stats.unread == 1, "(control) the first read empty")
+frames(400)
+local b2 = NR.MoveScan.stats.bursts
+check(b2 == b1 + 1, "one empty read: the next look still comes (" .. (b2 - b1) .. " more)")
+frames(1000)
+check(NR.MoveScan.stats.bursts == b2 and NR.MoveScan.lastRefusal == "the mouse hasn't moved since a click or mouselook",
+    "two in a row: no more looks until the mouse moves (got " .. tostring(NR.MoveScan.lastRefusal) .. ")")
+check(lastTrace("empty reads in a row") ~= nil, "...and the trace says so")
+emptyLeft = 0
+WoW.cursor = { WoW.cursor[1] + 40, WoW.cursor[2] }
+check(untilBorrowed(), "the mouse moved: a look again")
+runBurst()
+check(NR.MoveScan.stats.valid >= 1, "...and it reads")
+C_TooltipInfo.GetMinimapMouseover = realRead3
 -- And with no such hook, both come back.
 NR = fresh()
 local pin2 = CreateFrame("Frame", nil, Minimap)

@@ -17,6 +17,10 @@
   on hover: no gathering tracking on, the minimap hidden, the gamepad UI, an instance, a frame
   following the minimap, and more. The scan also waits while something else keeps moving the
   minimap (two addons that move it break each other).
+- **The scan stops wasting looks after you steer or click** (#125): the minimap doesn't answer
+  until the mouse really moves, and the cursor's tiny wobble passed for a move, so many looks read
+  nothing. A move now counts from 2 pixels, and after two empty reads in a row the scan waits for
+  the mouse instead of looking again and again for nothing.
 - **The scan runs on the default UI** (#111): with no other addon loaded, the game reports nothing
   under the cursor over the world, and the scan took that for "not over the world" and never
   looked.
