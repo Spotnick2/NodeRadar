@@ -9,7 +9,7 @@
 -- outside the rim toward it with a highlight arc on the rim beneath, the
 -- distance in a capsule below, the item's tooltip on hover ("The ring,
 -- refined": our own art, Tools/make_media.py). Within 15 yards it hides: the
--- glow on the node is Lueur's (the soft target), and NodeRadar never touches
+-- glow on the node is the soft target's, and NodeRadar never touches
 -- the soft-targeting settings (owner).
 --
 -- Measured on 70450 (docs/FOREVER-PROBE.md, "The compass, first round"):
@@ -24,7 +24,7 @@ local API = NR.API
 local Compass = {}
 NR.Compass = Compass
 
-Compass.NEAR = 15      -- yards: hidden this close (Lueur's soft target takes over; Forever loses it at 15)
+Compass.NEAR = 15      -- yards: hidden this close (the soft target takes over; Forever loses it at 15)
 Compass.HYSTERESIS = 5 -- yards: another node must be this much nearer to take over
 Compass.GRACE = 2      -- seconds past the idle interval without a sweep before it hides
 -- The look, built at medium and scaled to the size (the outer diameter).

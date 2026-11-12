@@ -160,6 +160,9 @@ end
 -- _clicks, as booleans).
 function Methods.SetMouseMotionEnabled(w, v) w._motion = v end
 function Methods.SetMouseClickEnabled(w, v) w._click = v end
+-- As the client: EnableMouse sets both motion and clicks; EnableMouseMotion is motion's other setter.
+function Methods.EnableMouse(w, v) w._mouse, w._motion, w._click = v, v == true, v == true end
+function Methods.EnableMouseMotion(w, v) w._motion = v end
 
 SlashCmdList = {}
 Enum = {}
@@ -463,6 +466,12 @@ end
 
 WoW.mounted = false
 function IsMounted() return WoW.mounted end
+-- The cursor busy (#113): a spell aimed (WoW.targeting), something held (WoW.cursorInfo = "item"),
+-- a loot window's items (WoW.lootItems).
+WoW.targeting, WoW.cursorInfo, WoW.lootItems = false, nil, 0
+function SpellIsTargeting() return WoW.targeting end
+function GetCursorInfo() return WoW.cursorInfo end
+function GetNumLootItems() return WoW.lootItems end
 WoW.sounds = {}
 -- willPlay for vanilla kits; WoW.refusedSounds[kit] refuses one (newer kits are, on Forever).
 WoW.refusedSounds = {}
@@ -727,7 +736,8 @@ C_TooltipInfo = {
 -- - Minimap sits at its home point (CENTER on MinimapCluster.MinimapContainer, _rect)
 --   until a point CENTER on UIParent's BOTTOMLEFT places its centre there, at its size;
 -- - GetMouseFoci: {} while mouselooking (measured), { Minimap } with the cursor in its rect,
---   it visible and its mouse motion on, else { WoW.focus or WorldFrame };
+--   it visible and its mouse motion on, else { WoW.focus }, or over the world {} (the stock UI,
+--   WorldFrame's mouse off, measured on 70888; WoW.worldFocus = true gives { WorldFrame });
 -- - a read, only with Minimap the top focus: the player (WoW.playerName) and every blip
 --   whose hit square (WoW.HIT_PX screen px, measured 16) holds the cursor, a blip's offset
 --   in a 198-unit map's units scaled to the map's width; empty lines (unsettled) the frame
@@ -802,7 +812,8 @@ function GetMouseFoci()
         local l, b, w, h = Methods.GetRect(Minimap)
         if l and x / s >= l and x / s <= l + w and y / s >= b and y / s <= b + h then return { Minimap } end
     end
-    return { WoW.focus or WorldFrame }
+    if WoW.focus then return { WoW.focus } end
+    return WoW.worldFocus and { WorldFrame } or {}
 end
 function IsMouseButtonDown() return WoW.buttonDown == true end
 function IsMouselooking() return WoW.mouselook == true end

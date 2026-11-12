@@ -6995,9 +6995,10 @@ local function healthRun()
         end
     end)
     section("options", function()
-        hlog(rd("Alert.Quiet()", Alert.Quiet))
-        hlog(rd("API.OnTaxi()", API.OnTaxi))
-        hlog(rd("API.InCombat()", API.InCombat))
+        -- v1.8.1 has no Alert.Quiet, API.OnTaxi or API.InCombat: the client's own reads.
+        hlog(rd("UnitOnTaxi(player)", UnitOnTaxi, "player"))
+        hlog(rd("InCombatLockdown()", InCombatLockdown))
+        hlog(rd("UnitAffectingCombat(player)", UnitAffectingCombat, "player"))
         for _, k in ipairs({ "flightMute", "skillOnly", "sound", "soundKind", "icons", "compass", "cooldown", "radar", "chat", "interval" }) do
             hlog("db." .. k .. " = " .. str(db[k]))
         end
@@ -7206,7 +7207,7 @@ local function stepB()
     return "B done"
 end
 Probe:Steps("health", {
-    rev = 3,
+    rev = 4,
     title = "Why the radar does nothing",
     { text = "Stand still where a herb you can gather (Peacebloom, Silverleaf, Earthroot, Mageroyal, Briarthorn, Stranglekelp) shows as a dot on the minimap, then press Check now.",
       button = "Check now", run = healthRun },

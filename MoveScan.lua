@@ -34,6 +34,7 @@ MS.MAX_EVERY = 10
 MS.SOONER = 1           -- a burst asked for sooner never comes closer than this to the last
 MS.REFUSALS = 3         -- Glass MiniMap's refusals in a row before the scan turns itself off
 MS.PLACE_TOL = 1        -- the cursor's offset from the map's centre, in home-map units
+MS.NEAR_PX = 16         -- screen px around the minimap's rect where no burst starts (#113)
 MS.OFF = -2000          -- off screen, in the map's own units
 
 local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6,
@@ -106,10 +107,20 @@ end
 -- else 1. A skin that set one before NodeRadar loaded can't be seen (a stated limit).
 --------------------------------------------------------------------------------
 
+local lastScaleAt = -math.huge         -- when another addon last set it
+MS.MIN_SCALE = 0.2      -- an icon scale set below this by another addon refuses a look (Edit Mode offers 0.5-2)
+MS.TINY_LASTS = 5       -- seconds a tiny one lasts before Options names it
+
 if type(Minimap.SetIconScale) == "function" then
     hooksecurefunc(Minimap, "SetIconScale", function(_, scale)
-        if not ourScale and API.Num(scale) then lastScale = scale end
+        if not ourScale and API.Num(scale) then lastScale, lastScaleAt = scale, GetTime() end
     end)
+end
+
+-- Another addon's tiny icon scale: a minimap scanner sets one (0 to 0.05) while it looks, so it's
+-- also a "someone is scanning now" sign. Kept as the value to restore (the contract), only refused.
+local function tinyScale()
+    return lastScale ~= nil and lastScale < MS.MIN_SCALE
 end
 
 local function iconScale(v)
@@ -165,6 +176,168 @@ local function glassEnd()
     if type(f) ~= "function" then return end
     local ok, err = pcall(f, "NodeRadar")
     if not ok then API.Fail("GlassMiniMap.ScanEnd", err) end
+end
+
+--------------------------------------------------------------------------------
+-- Another minimap scanner on: ours stands down (the owner, 2026-11-11). Two scans that borrow the
+-- map break each other: theirs moves it by a relative offset and undoes it relatively, so starting
+-- inside one of our frames leaves the map off its home, and each takes the other's tiny icon
+-- scale for the player's. Read fresh every time it decides (Codex): admission, every burst frame,
+-- the warm-up, the settle frame. Their settings say "refuse new work", never "who moved the map".
+-- Polling is not mutual exclusion: one starting inside one of our frames can still capture our
+-- borrowed state. Their folder and saved-variable names appear in MS.RIVALS only, never to the
+-- player (the owner's narrow exception, CLAUDE.md "Conventions").
+--------------------------------------------------------------------------------
+
+local function addonLoaded(name)
+    local addons = rg("C_AddOns")
+    local f = type(addons) == "table" and addons.IsAddOnLoaded
+    if type(f) ~= "function" then return false end
+    local ok, loaded = pcall(f, name)
+    return ok and loaded == true
+end
+
+-- A settings table's field; a table we can't read counts as on (stand down when in doubt).
+local function field(t, key)
+    if type(t) ~= "table" then return nil, false end
+    local ok, v = pcall(rawget, t, key)
+    if not ok or API.IsSecret(v) then return nil, false end
+    return v, true
+end
+
+-- Other addons that scan the minimap by moving it: `name` is the addon's folder, `on` reads its
+-- saved setting. Identifiers only where detection needs them; never named to the player (the
+-- owner, 2026-11-12: CLAUDE.md, "Conventions").
+MS.RIVALS = {
+    {   name = "NodeSight",
+        -- Per character unless that's turned off (own == false), then account-wide; on by default.
+        on = function()
+            local char = rg("NodeSightCharDB")
+            local own, okOwn = field(char, "own")
+            local t = (okOwn and own ~= false) and char or rg("NodeSightDB")
+            local v, ok = field(t, "scanMinimap")
+            return not ok or v ~= false                      -- on by default
+        end },
+    {   name = "Lueur",
+        -- Account-wide, off by default.
+        on = function()
+            local t = rg("LueurDB")
+            local herbs, ok1 = field(t, "nodeHerbs")
+            local ore, ok2 = field(t, "nodeOre")
+            return not (ok1 and ok2) or herbs == true or ore == true
+        end },
+}
+
+-- Whether another scanner is loaded with its scan on (a setting we can't read counts as on).
+function MS.Rival()
+    for _, r in ipairs(MS.RIVALS) do
+        if addonLoaded(r.name) then
+            local ok, on = pcall(r.on)
+            if not ok or on then return true end
+        end
+    end
+    return false
+end
+
+--------------------------------------------------------------------------------
+-- Quiet (#119, `scanQuiet`, on by default; the owner, 2026-11-11): during a borrow, the mouse off on
+-- the map's shown, unprotected descendant frames (other addons' pins included): the map shrinks
+-- under the resting cursor, and a pin hovered there opens its tooltip (Questie's flips the zoom,
+-- which ends the read) or takes a click. Each frame's motion and click are claims, put back at
+-- every exit; one that doesn't read back stays owed (pending, retried, never dropped).
+-- The owner's write wins: instance hooks on the four setters see every call; ours carry a token
+-- per (frame, setter), consumed by the first hook call, so any other call (another frame, another
+-- setter, a nested one) drops our claim on what it set. Not seen: an owner calling a cached
+-- function or the metatable's method directly (then the restore overrides it). Frames shown or
+-- created during a borrow aren't quieted; the focus check still ends that burst.
+--------------------------------------------------------------------------------
+
+MS.QUIET_DEPTH = 6
+local SETTERS = { SetMouseMotionEnabled = "motion", EnableMouseMotion = "motion",
+                  SetMouseClickEnabled = "click", EnableMouse = "both" }
+local claims = {}       -- frame -> { motion = true, click = true }: what we turned off and owe back
+local hooked = {}       -- frame -> { [setter] = true }: the hooks installed on it
+local tokens = {}       -- frame -> { [setter] = true }: our call under way
+
+local function foreign(f, setter)
+    local t = tokens[f]
+    if t and t[setter] then t[setter] = nil; return end     -- our own call
+    local c = claims[f]
+    if not c then return end
+    local what = SETTERS[setter]
+    if what == "motion" or what == "both" then c.motion = nil end
+    if what == "click" or what == "both" then c.click = nil end
+    if not (c.motion or c.click) then claims[f] = nil end
+end
+
+-- Every setter this frame has, hooked once; false when one can't be (then it isn't quieted).
+local function hookFrame(f)
+    local h = hooked[f]
+    if not h then h = {}; hooked[f] = h end
+    for setter in pairs(SETTERS) do
+        if not h[setter] and type(f[setter]) == "function" then
+            local s = setter
+            if not pcall(hooksecurefunc, f, s, function(self) foreign(self, s) end) then return false end
+            h[setter] = true
+        end
+    end
+    return true
+end
+
+local function ourSet(f, setter, value)
+    local t = tokens[f]
+    if not t then t = {}; tokens[f] = t end
+    t[setter] = true
+    local ok = pcall(f[setter], f, value)
+    t[setter] = nil                                          -- consumed, or the call threw
+    return ok
+end
+
+local function quiet()
+    local n = 0
+    if not (NR.db and NR.db.scanQuiet ~= false) then return n end
+    local function walk(parent, depth)
+        local ok, kids = pcall(function() return { parent:GetChildren() } end)
+        if not ok then return end
+        for _, f in ipairs(kids) do
+            if type(f) == "table" and ask(f, "IsShown") == true and ask(f, "IsProtected") ~= true then
+                local motion, click = ask(f, "IsMouseMotionEnabled") == true, ask(f, "IsMouseClickEnabled") == true
+                if (motion or click) and hookFrame(f) then
+                    -- Both claims published before either setter runs: an owner's call made from
+                    -- a hook during ours drops the claim it touches, which is then neither set nor
+                    -- recreated (Codex, PR #124, both orders).
+                    local c = claims[f] or {}
+                    if motion then c.motion = true end
+                    if click then c.click = true end
+                    claims[f] = c
+                    if motion and c.motion and not ourSet(f, "SetMouseMotionEnabled", false) then c.motion = nil end
+                    if click and c.click and not ourSet(f, "SetMouseClickEnabled", false) then c.click = nil end
+                    if c.motion or c.click then n = n + 1
+                    elseif claims[f] == c then claims[f] = nil end
+                end
+                if depth < MS.QUIET_DEPTH then walk(f, depth + 1) end
+            end
+        end
+    end
+    walk(Minimap, 1)
+    return n
+end
+
+-- Every claim put back and read back: true when none is left owed.
+local function unquiet()
+    local left = false
+    for f, c in pairs(claims) do
+        if c.motion then
+            if ask(f, "IsMouseMotionEnabled") ~= true then ourSet(f, "SetMouseMotionEnabled", true) end
+            if c.motion and ask(f, "IsMouseMotionEnabled") == true then c.motion = nil end
+        end
+        if c.click then
+            if ask(f, "IsMouseClickEnabled") ~= true then ourSet(f, "SetMouseClickEnabled", true) end
+            if c.click and ask(f, "IsMouseClickEnabled") == true then c.click = nil end
+        end
+        if c.motion or c.click then left = true else claims[f] = nil end
+    end
+    return not left
 end
 
 --------------------------------------------------------------------------------
@@ -401,6 +574,16 @@ local function geometryHome(s)
         and same(ask(Minimap, "GetHeight"), s.h) and ask(Minimap, "IsClampedToScreen") == s.clamp
 end
 
+-- True when the geometry reads away from home, false when home, nil when unreadable (a getter
+-- failing is no evidence of a move, Codex).
+local function geometryMoved(s)
+    local p = points()
+    local w, h = API.Num(ask(Minimap, "GetWidth")), API.Num(ask(Minimap, "GetHeight"))
+    local clamp = ask(Minimap, "IsClampedToScreen")
+    if not (p and w and h and type(clamp) == "boolean") then return nil end
+    return not (samePoints(p, s.points) and same(w, s.w) and same(h, s.h) and clamp == s.clamp)
+end
+
 local function visibilityHome(s)
     if not (same(ask(Minimap, "GetAlpha"), s.alpha) and ask(Minimap, "IsMouseClickEnabled") == s.click
         and ask(Minimap, "IsMouseWheelEnabled") == s.wheel) then
@@ -419,7 +602,9 @@ local function restore(keep)
     local s = saved
     if not s then return true end
     if s.scaled and iconScale(lastScale or 1) then s.scaled = false end   -- kept until the setter works
-    if not geometryHome(s) then
+    -- s.released: the map moved after our verified restore while another scanner is on (the
+    -- settle frame): left to it, never corrected (Codex).
+    if not s.released and not geometryHome(s) then
         -- Invisible and inert again first: a correction after the visibility came back (the
         -- settle frame's readback) must never leave a shown, clickable map away from home
         -- if it fails (Codex, PR #101).
@@ -437,23 +622,35 @@ local function restore(keep)
         setOn(Minimap, "SetSize", s.w, s.h)
         setOn(Minimap, "SetClampedToScreen", s.clamp)
     end
-    if not geometryHome(s) then
+    if not s.released and not geometryHome(s) then
         pending = "geometry"
         glassEnd()
         halt("the minimap couldn't be put back yet; retried until it can")
         return false
     end
+    -- Released to another scanner (the settle frame): what our restore already put back and read
+    -- back is handed off with the geometry, never written over its borrow (Codex, PR #124). A
+    -- visibility still owed waits until the map is home again: never shown away from home.
+    local handoff = s.released and s.visVerified
+    if s.released and not s.visVerified and not geometryHome(s) then
+        pending = "visibility"
+        glassEnd()
+        halt("the minimap's visibility or input couldn't be put back yet; retried until it can")
+        return false
+    end
     -- The geometry is home: the quest areas back on now, never while the map is away.
     if s.quest and MS.QuestAreas(true) then s.quest = nil end
-    setOn(Minimap, "SetAlpha", s.alpha)
-    for _, h in ipairs(s.held) do
-        setOn(h.f, "SetAlpha", h.alpha)
-        if h.mouse ~= nil then setOn(h.f, "EnableMouse", h.mouse) end
+    if not handoff then
+        setOn(Minimap, "SetAlpha", s.alpha)
+        for _, h in ipairs(s.held) do
+            setOn(h.f, "SetAlpha", h.alpha)
+            if h.mouse ~= nil then setOn(h.f, "EnableMouse", h.mouse) end
+        end
+        setOn(Minimap, "EnableMouseWheel", s.wheel)
+        setOn(Minimap, "SetMouseClickEnabled", s.click)   -- last
     end
-    setOn(Minimap, "EnableMouseWheel", s.wheel)
-    setOn(Minimap, "SetMouseClickEnabled", s.click)       -- last
     glassEnd()
-    if not visibilityHome(s) then
+    if not handoff and not visibilityHome(s) then
         pending = "visibility"
         halt("the minimap's visibility or input couldn't be put back yet; retried until it can")
         return false
@@ -466,6 +663,12 @@ local function restore(keep)
     if s.quest then
         pending = "quest areas"
         halt("the minimap's quest areas couldn't be turned back on yet; retried until they can")
+        return false
+    end
+    -- Other frames' mouse (#119), with the rest of the input.
+    if not unquiet() then
+        pending = "other frames' mouse"
+        halt("the mouse of frames on the minimap couldn't be put back yet; retried until it can")
         return false
     end
     pending = nil
@@ -514,10 +717,14 @@ local function mouselooking()
     return ok and on == true
 end
 
+-- The top mouse focus, and whether there is none at all: on the stock UI the cursor over the 3D
+-- world has no focus (GetMouseFoci() is empty, WorldFrame's mouse off; measured on 70888), the
+-- same as while mouselooking, which every caller refuses first.
 local function topFocus()
     local ok, foci = pcall(GetMouseFoci)
-    if not ok or type(foci) ~= "table" then return nil end
-    return foci[1]
+    if not ok or type(foci) ~= "table" or API.IsSecret(foci) then return nil, false end
+    local top = foci[1]
+    return top, top == nil
 end
 
 -- A frame drawn below the map (a UI suite's full-screen layer): the borrowed map is above it.
@@ -529,8 +736,9 @@ local function below(f)
     return a ~= nil and b ~= nil and a < b
 end
 
-local function overWorld(f)
-    return f ~= nil and (f == rg("WorldFrame") or (f ~= Minimap and not inside(f) and below(f)))
+local function overWorld(f, none)
+    if f == nil then return none == true end
+    return f == rg("WorldFrame") or (f ~= Minimap and not inside(f) and below(f))
 end
 
 local function tooltipShown()
@@ -546,6 +754,143 @@ end
 local function instanced()
     local ok, inside1 = pcall(IsInInstance)
     return not ok or API.IsSecret(inside1) or inside1 == true
+end
+
+-- A global function's first answer, or nil when it's missing, throws or answers a secret.
+local function call(name, ...)
+    local f = rg(name)
+    if type(f) ~= "function" then return nil end
+    local ok, v = pcall(f, ...)
+    if not ok or API.IsSecret(v) then return nil end
+    return v
+end
+
+-- The cursor busy (#113): a burst would move the map under it. The two a burst under way also
+-- ends on (`interrupted`) come first.
+local function aiming()
+    if call("SpellIsTargeting") == true then return "aiming a spell" end
+    if call("GetCursorInfo") ~= nil then return "something on the cursor" end
+    return nil
+end
+
+-- A loot window open, empty ones too (Codex: Blizzard opens an empty one): LOOT_OPENED and
+-- LOOT_CLOSED, the items' count as a backstop.
+local lootOpen = false
+local function looting()
+    if lootOpen then return true end
+    local loot = API.Num(call("GetNumLootItems"))
+    return loot ~= nil and loot > 0
+end
+
+-- Talking to an NPC (a vendor, a quest giver, gossip, a bank, a mailbox, an auction house, a trade):
+-- each type guarded, a missing one skipped.
+local NPC_TYPES = { "Merchant", "QuestGiver", "Gossip", "Banker", "MailInfo", "Auctioneer", "TradePartner" }
+local function atNpc()
+    local pim, enum = rg("C_PlayerInteractionManager"), rg("Enum")
+    local f = type(pim) == "table" and pim.IsInteractingWithNpcOfType
+    local types = type(enum) == "table" and rawget(enum, "PlayerInteractionType")
+    if type(f) ~= "function" or type(types) ~= "table" then return false end
+    for _, name in ipairs(NPC_TYPES) do
+        local v = rawget(types, name)
+        if v ~= nil then
+            local ok, yes = pcall(f, v)
+            if ok and yes == true then return true end
+        end
+    end
+    return false
+end
+
+local function busy()
+    local why = aiming()
+    if why then return why end
+    local okC, casting = pcall(API.Casting)
+    if okC and casting == true then return "casting" end
+    if looting() then return "a loot window is open" end
+    if call("UnitExists", "mouseover") == true then return "a unit under the mouse" end
+    if atNpc() then return "talking to an NPC" end
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- The home holding still (#116). Another addon that moves the minimap the same way would have
+-- its borrowed place saved as our home: so a borrow waits until the map's anchors, size and alpha
+-- have held still STABLE seconds, sampled every frame outside our own borrows (no hook: a skin
+-- asserting the same anchors changes nothing here). MOVES changes within MOVES_WINDOW mean
+-- something keeps moving it: no scan until MOVES_QUIET seconds pass without one. A best-effort
+-- circuit breaker, not arbitration: an addon borrowing the map without cooperating stays unsafe.
+--------------------------------------------------------------------------------
+
+MS.STABLE = 0.5
+MS.MOVES = 3
+MS.MOVES_WINDOW = 10
+MS.MOVES_QUIET = 30
+local seen = { pts = {} }               -- the home as last sampled, reused (no garbage per frame)
+local buf = { pts = {} }                -- this frame's sample, committed only when complete (Codex)
+local stableSince = -math.huge
+local moveTimes = {}
+local movedAt = -math.huge              -- the last time the moves crossed MOVES
+
+-- The home read whole into `buf`: true, or false when any part is unreadable (nothing kept).
+local function readHome()
+    local n = API.Num(ask(Minimap, "GetNumPoints"))
+    if not n then return false end
+    for i = 1, n do
+        local ok, p, rel, rp, x, y = pcall(Minimap.GetPoint, Minimap, i)
+        if not ok or API.IsSecret(p) or API.IsSecret(rel) or API.IsSecret(rp) or API.IsSecret(x) or API.IsSecret(y) then
+            return false
+        end
+        local q = buf.pts[i]
+        if not q then q = {}; buf.pts[i] = q end
+        q[1], q[2], q[3], q[4], q[5] = p, rel, rp, x, y
+    end
+    local w, h, a = API.Num(ask(Minimap, "GetWidth")), API.Num(ask(Minimap, "GetHeight")), API.Num(ask(Minimap, "GetAlpha"))
+    if not (w and h and a) then return false end
+    buf.n, buf.w, buf.h, buf.a = n, w, h, a
+    return true
+end
+
+-- True when the home differs from the last complete sample, false when not, nil when unreadable
+-- (then nothing is committed: a getter failing for a frame is no move, Codex). The first
+-- complete sample is the baseline: "changed", never counted as a move (sampleHome).
+local function homeChanged()
+    if not readHome() then return nil end
+    local changed = seen.n ~= buf.n or not (same(seen.w, buf.w) and same(seen.h, buf.h) and same(seen.a, buf.a))
+    for i = 1, buf.n do
+        local p, q = buf.pts[i], seen.pts[i]
+        if not q then q = {}; seen.pts[i] = q; changed = true end
+        if q[1] ~= p[1] or q[2] ~= p[2] or q[3] ~= p[3] or not same(q[4], p[4]) or not same(q[5], p[5]) then
+            changed = true
+            q[1], q[2], q[3], q[4], q[5] = p[1], p[2], p[3], p[4], p[5]
+        end
+    end
+    seen.n, seen.w, seen.h, seen.a = buf.n, buf.w, buf.h, buf.a
+    return changed
+end
+
+local function sampleHome(now)
+    local first = seen.n == nil
+    local changed = homeChanged()
+    if changed == nil then stableSince = now; return end
+    if not changed then return end
+    stableSince = now
+    if first then return end
+    moveTimes[#moveTimes + 1] = now
+    while moveTimes[1] and now - moveTimes[1] > MS.MOVES_WINDOW do table.remove(moveTimes, 1) end
+    -- Tripped, every further move restarts the quiet (Codex: a lone move 20 s on must still
+    -- hold the scan MOVES_QUIET seconds).
+    if #moveTimes >= MS.MOVES or now - movedAt < MS.MOVES_QUIET then
+        if now - movedAt >= MS.MOVES_QUIET then API.Trace("scan: the minimap keeps moving (another addon?): no scan for a while") end
+        movedAt = now
+    end
+end
+
+local function keepsMoving(now) return now - movedAt < MS.MOVES_QUIET end
+
+-- Whether the cursor (x, y: GetCursorPosition's) is within `margin` screen px of the minimap's
+-- rect (l, b, w, h in the map's units at effective scale es).
+local function nearRect(x, y, es, l, b, w, h, margin)
+    local m = margin / es
+    return x / es >= l - m and x / es <= l + w + m and y / es >= b - m and y / es <= b + h + m
 end
 
 -- The scan's context: what a burst's read is about. Anything changing cancels it.
@@ -568,6 +913,12 @@ end
 function MS.Refusal(now)
     if not MS.On() then return "off" end
     if saved or pending then return "a restore is pending" end
+    if MS.Rival() then
+        say("rival", "the minimap scan stands down: another addon's minimap scan is on too, and two scans break "
+            .. "each other's minimap. To use NodeRadar's, turn the other one's off; or turn NodeRadar's off: /nr scan.")
+        return "another minimap scanner is on"
+    end
+    if tinyScale() then return "the minimap's dots are set tiny" end
     if inCombat() then return "in combat" end
     if ask(Minimap, "IsProtected") == true then return "the minimap is protected" end
     if API.Gamepad() then return "the gamepad UI" end
@@ -576,10 +927,16 @@ function MS.Refusal(now)
     if API.Dead() then return "dead" end
     local okT, taxi = pcall(UnitOnTaxi, "player")
     if okT and API.Yes(taxi) then return "on a taxi" end
+    if call("IsFlying") == true then return "flying" end
     if instanced() then return "in an instance" end
     if ask(Minimap, "IsVisible") ~= true then return "the minimap is hidden" end
     if ask(Minimap, "IsMouseMotionEnabled") == false then return "the minimap's mouse motion is off" end
     if not NR.Learn.AnyOn() then return "no gathering tracking on" end
+    if keepsMoving(now) then
+        say("mover", "the minimap scan waits: something else keeps moving the minimap (two addons that move it break each other).")
+        return "something keeps moving the minimap"
+    end
+    if now - stableSince < MS.STABLE then return "the minimap just moved" end
     if mouselooking() then return "mouselook" end
     if buttonDown() then return "a mouse button is down" end
     if now - lastDown < MS.RELEASE then return "a mouse button was just released" end
@@ -592,9 +949,13 @@ function MS.Refusal(now)
     if not (x and es and okR and API.Num(l) and API.Num(b) and API.Num(w) and API.Num(h)) then
         return "the minimap's place is unreadable"
     end
-    if x / es >= l and x / es <= l + w and y / es >= b and y / es <= b + h then return "the cursor is over the minimap" end
+    if nearRect(x, y, es, l, b, w, h, 0) then return "the cursor is over the minimap" end
+    -- A button around the ring (LibDBIcon's, ours too): the map would move out from under it.
+    if nearRect(x, y, es, l, b, w, h, MS.NEAR_PX) then return "the cursor is near the minimap" end
     if tooltipShown() then return "a tooltip is shown" end
     if menuOpen() then return "a menu is open" end
+    local doing = busy()
+    if doing then return doing end
     local f = follower(now)
     if f then
         say("follower", "the minimap scan waits: a frame anchored to the minimap would follow it to your mouse ("
@@ -609,9 +970,58 @@ function MS.Refusal(now)
     return nil
 end
 
+-- Why the scan can't run, when the reason lasts (#116: the Options page): a key, a line and a
+-- hint, or nil. The moment-to-moment reasons (the cursor, a tooltip, a button) are never here.
+function MS.Trouble(now)
+    local db = NR.db
+    if not (db and db.enabled and db.moveScan and API.Blind()) then return nil end
+    now = now or GetTime()
+    if halted then
+        return "halted", "it turned itself off this session (" .. halted .. ").", "/nr scan turns it on again."
+    end
+    if MS.Rival() then
+        return "rival", "another addon scans the minimap too.",
+            "Two minimap scans break each other's minimap, so NodeRadar's stands down. To use it, turn the "
+            .. "other addon's minimap scan off; or turn NodeRadar's scan off."
+    end
+    if tinyScale() and now - lastScaleAt >= MS.TINY_LASTS then
+        return "tiny", ("the minimap's dots are set tiny (%.2f)."):format(lastScale),
+            "Another addon set them; a minimap scanner does while it looks. NodeRadar's scan waits until they're back."
+    end
+    if API.Gamepad() then
+        return "gamepad", "the gamepad UI is on.", "It can't run with the gamepad UI (Options > Controls)."
+    end
+    if ask(Minimap, "IsProtected") == true then
+        return "protected", "the minimap is protected.", "Something made the minimap protected, so the scan can't move it."
+    end
+    if ask(Minimap, "IsVisible") ~= true then return "hidden", "the minimap is hidden.", "Show the minimap." end
+    if ask(Minimap, "IsMouseMotionEnabled") == false then
+        return "mouse", "the minimap doesn't take the mouse.", "An addon turned the minimap's mouse off; the scan reads the minimap's hover."
+    end
+    if not NR.Learn.AnyOn() then
+        return "no tracking", "no gathering tracking is on.", "Turn on Find Herbs or Find Minerals in the minimap's tracking menu."
+    end
+    if keepsMoving(now) then
+        return "mover", "something keeps moving the minimap.",
+            "Another addon seems to move the minimap the same way. Two addons that move it break each other: turn one off."
+    end
+    local f = follower(now)
+    if f then
+        return "follower", "a frame follows the minimap (" .. tostring(ask(f, "GetDebugName") or "unnamed") .. ").",
+            "It would move with the minimap to your mouse. Hide it, or move it off the minimap."
+    end
+    if MS.Glass() == "old" then
+        return "glass", "Glass MiniMap needs updating.", "The scan needs Glass MiniMap 1.1.0 or later."
+    end
+    if instanced() then return "instance", "you're in an instance.", "The scan doesn't run in instances." end
+    return nil
+end
+
 -- Why the burst under way must end now, or nil. `phase`: "off" (off screen) or "placed".
 local function interrupted(b, now)
     if not MS.On() then return "turned off" end
+    if MS.Rival() then return "another scanner" end
+    if tinyScale() then return "the dots set tiny" end
     if inCombat() then return "combat" end
     if editMode() then return "Edit Mode" end
     if NR.Learn.loading then return "loading" end
@@ -624,11 +1034,13 @@ local function interrupted(b, now)
     if not (x and y) or math.abs(x - b.x) > MS.STILL_PX or math.abs(y - b.y) > MS.STILL_PX then return "the cursor moved" end
     if tooltipShown() then return "a tooltip" end
     if menuOpen() then return "a menu" end
+    local held = aiming()
+    if held then return held end
     if not b.eye and eyeShown() then return "the LFG eye" end
-    local top = topFocus()
+    local top, none = topFocus()
     if b.phase == "placed" then
         if top ~= Minimap and not (b.frame <= b.placedAt + 1) then return "covered" end
-    elseif not overWorld(top) then
+    elseif not overWorld(top, none) then
         return "covered"
     end
     return nil
@@ -643,7 +1055,13 @@ local function finish(b, reason)
     b.reason = reason
     -- A window placed but not read (interrupted): back in Locate's queue.
     if b.cur and b.cur.kind == "window" and not b.cur.read and NR.Locate then NR.Locate.Unread(b.cur) end
+    local s = saved
     restore(true)
+    -- Whether our restore put the geometry home and read it back (the settle frame's handoff).
+    if s then
+        s.homeVerified = pending ~= "geometry" and not s.released
+        s.visVerified = pending ~= "geometry" and pending ~= "visibility"
+    end
     if NR.ScanFace then NR.ScanFace.End() end            -- held over the returned map, then faded
     pcall(Minimap.UpdateBlips, Minimap)
     b.phase = "settle"
@@ -707,7 +1125,8 @@ function MS.TraceBurst(b, now, quick, soon)
         tostring(b.reason), b.observation and "read" or "not read",
         MS.stats.windows - (b.w0 or MS.stats.windows), MS.stats.windows - (b.w0 or MS.stats.windows) == 1 and "" or "s",
         b.stop and (", then " .. b.stop) or "", soon, quick and " (locating)" or "")
-        .. (NR.Locate and ("; queued %d search, %d re-check"):format(NR.Locate.Queued()) or ""))
+        .. (NR.Locate and ("; queued %d search, %d re-check"):format(NR.Locate.Queued()) or "")
+        .. ((b.quieted or 0) > 0 and ("; %d frame%s quieted"):format(b.quieted, b.quieted == 1 and "" or "s") or ""))
 end
 
 -- Seconds between bursts: scanEvery moving, three times that standing still.
@@ -759,6 +1178,8 @@ local function borrow(now)
     setOn(Minimap, "EnableMouseWheel", false)
     setOn(Minimap, "SetClampedToScreen", false)
     s.scaled = iconScale(0.01)
+    -- Other frames on the map: mouse off for the borrow (#119), before it moves.
+    b.quieted = quiet()
     -- The quest areas the minimap draws ignore its alpha and its mask: at a locate window's size
     -- they flash across the screen (the owner's screenshots). Their tracking off for the borrow,
     -- the only tracking the scan touches (the owner, 2026-11-09), saved first so a scan cut short
@@ -960,6 +1381,13 @@ local function stepBurst(b, now)
         -- The frame after the restore: the suppression ends, everything is read back.
         suppress, burst = false, nil
         pcall(Minimap.UpdateBlips, Minimap)
+        -- Moved after our verified restore (a readable change: nothing of ours writes geometry
+        -- in between) while another scanner is on: its borrow, so not corrected (correcting it
+        -- would be undone relatively later, off home). Our own failed restore is never released.
+        if saved and saved.homeVerified and geometryMoved(saved) == true and MS.Rival() then
+            saved.released = true
+            API.Trace("scan: the minimap moved after our restore while another scanner is on: left to it")
+        end
         if saved then restore() end
         if b.observation and b.gen ~= gen then API.Trace("scan: the read was cancelled (gen " .. b.gen .. " vs " .. gen .. ")") end
         if b.observation and b.gen == gen and NR.Observe then NR.Observe("presence", b.observation, now) end
@@ -1026,6 +1454,17 @@ function MS.Tick(now)
         end
     end
     if buttonDown() then lastDown, movedSince = now, false end
+    -- The home holding still, sampled outside our own borrows (#116).
+    local warmed = false
+    if not (burst or saved) then
+        sampleHome(now)
+        -- The stand-in's ground loaded ahead of a borrow (#117), at most once a second, only when
+        -- a look could come at all (Codex: no blocking loads in combat, loading or hidden).
+        if NR.ScanFace and not (inCombat() or NR.Learn.loading or API.Gamepad() or editMode() or instanced())
+            and ask(Minimap, "IsVisible") == true and NR.Learn.AnyOn() and not MS.Rival() then
+            warmed = NR.ScanFace.Warm(now) == true
+        end
+    end
     -- The end of mouselook or a stop after moving asks for a burst sooner.
     local speed = API.Speed()
     local move = speed ~= nil and speed > 0
@@ -1060,6 +1499,8 @@ function MS.Tick(now)
         API.Trace(("scan: waited %.0f s: %s"):format(now - waitedSince, table.concat(parts, ", ")))
     end
     waited, waitedSince = {}, nil
+    -- A tile loaded this frame: the borrow waits a frame, so the load isn't charged to its budget.
+    if warmed then return end
     -- A quick locate burst (sooner than the cadence) spends the allowance.
     if locating and now - lastBurst < MS.Every() then quickAt[#quickAt + 1] = now end
     borrow(now)
@@ -1072,7 +1513,7 @@ local events = CreateFrame("Frame")
 API.RegisterEvents(events, { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_LEAVING_WORLD",
     "LOADING_SCREEN_ENABLED", "LOADING_SCREEN_DISABLED", "GLOBAL_MOUSE_DOWN", "MINIMAP_UPDATE_ZOOM",
     "MINIMAP_UPDATE_TRACKING", "ZONE_CHANGED_NEW_AREA", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED", "PLAYER_LOGIN",
-    "PLAYER_LOGOUT" })
+    "PLAYER_LOGOUT", "PLAYER_CONTROL_GAINED", "PLAYER_MOUNT_DISPLAY_CHANGED", "LOOT_OPENED", "LOOT_CLOSED" })
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         MS.HookTooltip()
@@ -1090,6 +1531,19 @@ events:SetScript("OnEvent", function(_, event)
     elseif event == "PLAYER_REGEN_ENABLED" or event == "LOADING_SCREEN_DISABLED" then
         if pending then MS.Retry() end
         MS.QuestAreasBack()
+        -- A fight over: a look at once, not at the next turn (#114; the player stands among
+        -- nodes after a fight). Still through MS.Refusal.
+        if event == "PLAYER_REGEN_ENABLED" and MS.On() then MS.WantFirst(GetTime()) end
+    elseif event == "LOOT_OPENED" then
+        lootOpen = true
+    elseif event == "LOOT_CLOSED" then
+        lootOpen = false
+    elseif event == "PLAYER_CONTROL_GAINED" then
+        -- A taxi's end among others (#114): a look asked for when nothing ended costs nothing.
+        if MS.On() then MS.WantFirst(GetTime()) end
+    elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
+        -- Off the mount: a gatherer stops at a node (#114).
+        if MS.On() and call("IsMounted") == false then MS.WantFirst(GetTime()) end
     elseif event == "MINIMAP_UPDATE_TRACKING" then
         -- Our own quest-area toggle isn't a reason to stop; a gathering tracking change is.
         local key = gatheringKey()
@@ -1131,11 +1585,15 @@ MS._test = {
         prevX, prevY, settleUntil = nil, nil, -math.huge
         quickAt, firstLook, holdUntil = {}, nil, -math.huge
         followers = { at = -math.huge }
+        seen, buf, stableSince, moveTimes, movedAt, lootOpen = { pts = {} }, { pts = {} }, -math.huge, {}, -math.huge, false
+        lastScale, lastScaleAt, claims, tokens = nil, -math.huge, {}, {}
         MS.stats = { bursts = 0, valid = 0, unread = 0, windows = 0 }
     end,
     burst = function() return burst end,
     saved = function() return saved end,
     lastScale = function() return lastScale end,
+    claims = function() return claims end,
+    hooked = function() return hooked end,
 }
 
 --------------------------------------------------------------------------------
