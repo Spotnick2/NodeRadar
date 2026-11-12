@@ -60,6 +60,7 @@ local state             -- nil (hidden), "full" (a borrow under way), "hold" (he
 local since, angle = 0, 0
 local previewFor = 0    -- seconds a preview stays up
 local grounded = false  -- the ground drawn for the face shown now
+local base = 1          -- the map's effective alpha at home when the face went up (a fader's, Glass MiniMap's)
 
 -- A method's answer, nil if it throws or is secret.
 local function ask(obj, method, ...)
@@ -68,6 +69,11 @@ local function ask(obj, method, ...)
     if not ok or API.IsSecret(v) or API.IsSecret(w) then return nil end
     return v, w
 end
+
+-- The player's choice (`scanRadar`, off by default, the owner 2026-11-12): the radar face with its
+-- sweep at every look instead of the minimap's own ground. A skin drawing its own stand-in can
+-- follow it too (Glass MiniMap reads it).
+function SF.RadarLook() return NR.db ~= nil and NR.db.scanRadar == true end
 
 -- Who draws the stand-in for a borrow (MoveScan.Glass's answer): true when it's ours.
 function SF.Ours(glass, g)
@@ -106,7 +112,7 @@ local function step(_, elapsed)
     end
     if since < SF.HOLD then return end
     local a = 1 - (since - SF.HOLD) / SF.FADE
-    if a > 0 then face:SetAlpha(a) else cancel() end
+    if a > 0 then face:SetAlpha(base * a) else cancel() end
 end
 
 local function build()
@@ -228,6 +234,7 @@ end
 -- or nil and why the radar face is drawn instead.
 local function groundAt()
     if SF.GROUND == false then return nil, "off" end
+    if SF.RadarLook() then return nil, "the radar look (Options)" end
     local okI, indoors = pcall(IsIndoors)
     if not okI or API.IsSecret(indoors) or indoors ~= false then return nil, "indoors" end
     if not NR.Scan.Where() then return nil, "the map rotates or is unreadable" end
@@ -374,11 +381,20 @@ local function place()
     return true
 end
 
+-- The map's effective alpha at home, read before the borrow hides it: a minimap faded at rest (Glass
+-- MiniMap's fader, 60%) gets a face as translucent, not an opaque pulse at each look.
+local function homeAlpha()
+    local a = API.Num(ask(Minimap, "GetEffectiveAlpha"))
+    if not a or a <= 0 then return 1 end
+    return math.min(1, a)
+end
+
 local function begin(glass, g)
     if not SF.Ours(glass, g) then return cancel() end
+    base = homeAlpha()
     if not place() then return cancel() end
     state, since = "full", 0
-    face:SetAlpha(1)
+    face:SetAlpha(base)
     face:Show()
 end
 
@@ -436,7 +452,8 @@ function SF.Preview(dx, dy, seconds)
     face:ClearAllPoints()
     face:SetPoint(p, rel, rp, x + (dx or 0), y + (dy or 0))
     state, since, previewFor = "preview", 0, seconds or 4
-    face:SetAlpha(1)
+    base = homeAlpha()
+    face:SetAlpha(base)
     face:Show()
     return true, SF.lastGround
 end

@@ -107,6 +107,21 @@ check(shown(NR) and face:GetAlpha() < 1 and face:GetAlpha() > 0, "then fading")
 frames(math.ceil(NR.ScanFace.FADE / 0.02) + 1)
 check(not shown(NR) and NR.ScanFace.State() == nil and face:GetAlpha() == 1, "...then gone, its alpha reset")
 
+-- A minimap faded at rest (Glass MiniMap's fader: its container at 60%): the face as translucent
+-- as the map was at home, held and faded from there, not an opaque pulse at each look.
+NR = fresh()
+local realEA = Minimap.GetEffectiveAlpha
+Minimap.GetEffectiveAlpha = function() return 0.6 end
+check(untilBorrowed(), "(control) a burst, the map at 60% at home")
+local faded = NR.ScanFace._test.face()
+check(near(faded:GetAlpha(), 0.6), "the face at the map's 60% while it's away (got " .. tostring(faded:GetAlpha()) .. ")")
+runBurst()
+check(near(faded:GetAlpha(), 0.6), "...held at 60%")
+frames(math.floor(NR.ScanFace.HOLD / 0.02) + 4)
+check(faded:GetAlpha() < 0.6 and faded:GetAlpha() > 0, "...fading from 60%")
+Minimap.GetEffectiveAlpha = realEA
+frames(40)
+
 --------------------------------------------------------------------------------
 -- 2. A borrow during the hold brings it straight back; never left up; a hidden map hides it.
 -- (The scan off: the face driven directly.)
@@ -279,6 +294,15 @@ fallsBack(function() WoW.indoors = true end, "indoors")
 fallsBack(function() WoW.cvars.rotateMinimap = "1" end, "the map rotates or is unreadable")
 fallsBack(function() standIn(TX, TY, 530) end, "no tiles for this map")
 fallsBack(function() NR.ScanFace.GROUND = false end, "off")
+-- The radar look chosen in Options (scanRadar): the radar face with its sweep even where the
+-- ground could be drawn, and nothing loaded for it; off again, the ground.
+fallsBack(function() NR.db.scanRadar = true end, "the radar look (Options)")
+NR = fresh()
+standIn(TX, TY)
+NR.db.scanRadar = true
+check(NR.ScanFace.RadarLook() and NR.ScanFace.Warm(GetTime() + 100, "none") == false, "the radar look: no tiles loaded ahead")
+NR.db.scanRadar = false
+check(not NR.ScanFace.RadarLook() and NR.ScanFace.Ground() == "tiles", "the radar look off: the ground again")
 -- A spot with no tile at all (the ocean beyond the table): no ground, the radar face.
 NR = fresh()
 WoW.pos = { (32 - 63.5) * T, (32 - 63.5) * T, 1 }

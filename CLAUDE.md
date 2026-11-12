@@ -124,7 +124,7 @@ live game, WoWInterface (#37).
 TOC load order: the libraries (`Libs\`: LibStub, CallbackHandler-1.0, LibDataBroker-1.1, LibDBIcon-1.0,
 committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` → `Data\MinimapTiles.lua` → `Scan.lua` → `Learn.lua` → `Alert.lua` →
 `Track.lua` → `Icons.lua` → `Share.lua` → `Compass.lua` → `Marker.lua` → `FarMarker.lua` → `Options.lua` → `TrackOptions.lua` → `Tooltip.lua` → `Minimap.lua` →
-`Locate.lua` → `ScanFace.lua` → `MoveScan.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
+`Locate.lua` → `ScanFace.lua` → `MoveScan.lua` → `ScanFps.lua` → `NodeRadar.lua`. `Bindings.xml` is found by its name (the key binding). One global namespace, `NodeRadar` (`local NR = NodeRadar`).
 
 - `Compat.lua`: `NodeRadar.API`: `API.Blind()` (#90: from build 70862, `NR.BLIND_FROM`, a sweep reads
   nothing, so `NR.Step` stops before it and `NR.BlindNotice` says why once per build); `RegisterEvents` / `RegisterUnitEvent` (a throw or a `false` is a
@@ -293,6 +293,14 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   FileDataID) under its mask, the arrow and ring on a frame above; loaded outside bursts
   (`SF.Warm`, once a second), never inside one; the radar face otherwise (`SF.Ground()`,
   `SF.lastGround` say why). `SF.Preview` for the probe. Tests: `test_scanface`.
+- `ScanFps.lua` (#104, `scanFps`, per character, off): `maxFPSBk` raised to 60 only while a search is
+  under way on this character (`MS.On()`, no `MS.Trouble`, `Locate.Busy()`, and `HOLD` 5 s after; the
+  owner: a second client mustn't run hot the whole time), from a readable value between 0 and 60
+  with `useMaxFPSBk` on; the player's value saved (`NodeRadarDB.fpsClaim = { old, ours }`) and put
+  back when it stops, only while still ours; an unreadable value or an unconfirmed put-back keeps
+  the claim; any other value is the player's (`NodeRadarCharDB.scanFpsCancelled` until the option is
+  off and on); at logout ours put back and the claim kept, judged at login; nothing written in
+  combat; read on `CVAR_UPDATE` and every second. Tests: `test_scanfps`.
 - `NodeRadar.lua`: settings (`NodeRadarDB`: settings and `learned`), the radar loop (`NR.Step`),
   events, `/nr`; the zoom (#63): a `Minimap:SetZoom` hook resets the alert when the zoom changes,
   `MINIMAP_UPDATE_ZOOM` alone (the swap indoors or out) keeps it and voids the learner's experiment.
