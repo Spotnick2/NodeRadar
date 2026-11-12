@@ -259,6 +259,15 @@ end
 --------------------------------------------------------------------------------
 
 MS.QUIET_DEPTH = 6
+-- A frame's children as a list (one table; no closure per call: the walks below visit thousands).
+-- Most of the minimap's are pins without children (1,388 frames with the owner's addons): those get
+-- the one shared empty list, never a new table (asked with GetNumChildren first).
+local NONE = {}
+local function kidsOf(f)
+    local count = f.GetNumChildren
+    if type(count) == "function" and count(f) == 0 then return NONE end
+    return { f:GetChildren() }
+end
 local SETTERS = { SetMouseMotionEnabled = "motion", EnableMouseMotion = "motion",
                   SetMouseClickEnabled = "click", EnableMouse = "both" }
 local claims = {}       -- frame -> { motion = true, click = true }: what we turned off and owe back
@@ -303,7 +312,7 @@ local function quiet()
     local n = 0
     if not (NR.db and NR.db.scanQuiet ~= false) then return n end
     local function walk(parent, depth)
-        local ok, kids = pcall(function() return { parent:GetChildren() } end)
+        local ok, kids = pcall(kidsOf, parent)
         if not ok then return end
         for _, f in ipairs(kids) do
             if type(f) == "table" and ask(f, "IsShown") == true and ask(f, "IsProtected") ~= true then
@@ -391,15 +400,21 @@ local function shows(f)
     return a == nil or a > 0
 end
 
+-- Kept between searches and emptied (the search visits thousands of frames every FOLLOWERS_EVERY
+-- seconds: fresh tables were 1.4 MB a search, measured).
+local findMemo, findSeen = {}, {}
+local function empty(t) for k in pairs(t) do t[k] = nil end end
 function MS.FindFollower()
-    local memo, seen = {}, { [Minimap] = true }
+    empty(findMemo); empty(findSeen)
+    local memo, seen = findMemo, findSeen
+    seen[Minimap] = true
     local own = coords()
     if own then seen[own] = true end
     local eye = rg("QueueStatusButton")
     if type(eye) == "table" then seen[eye] = true end
     local found
     local function look(parent, depth)
-        local ok, kids = pcall(function() return { parent:GetChildren() } end)
+        local ok, kids = pcall(kidsOf, parent)
         if not ok then return end
         for _, f in ipairs(kids) do
             if found then return end
@@ -510,14 +525,22 @@ do
     if type(f) == "table" and API.Num(rawget(f, "QuestPOIs")) then QUEST_POIS = f.QuestPOIs end
 end
 
+-- The filter's index, kept (each GetTrackingFilter answer is a new table; a look asks twice) and
+-- checked with one call before use: a list that changed is searched again.
+local questIdx
 local function questIndex()
     local get = C_Minimap.GetTrackingFilter
     if type(get) ~= "function" then return nil end
+    if questIdx then
+        local ok, filter = pcall(get, questIdx)
+        if ok and type(filter) == "table" and not API.IsSecret(filter) and filter.filterID == QUEST_POIS then return questIdx end
+        questIdx = nil
+    end
     local okN, n = pcall(C_Minimap.GetNumTrackingTypes)
     n = okN and API.Num(n) or 0
     for i = 1, n do
         local ok, filter = pcall(get, i)
-        if ok and type(filter) == "table" and not API.IsSecret(filter) and filter.filterID == QUEST_POIS then return i end
+        if ok and type(filter) == "table" and not API.IsSecret(filter) and filter.filterID == QUEST_POIS then questIdx = i; return i end
     end
 end
 

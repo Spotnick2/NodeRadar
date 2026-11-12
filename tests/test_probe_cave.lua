@@ -158,9 +158,11 @@ poll(); poll()
 check(later("Wilted Peacebloom %(drop none, wanted%)"), "a drop before a reset forgotten, as Alert does")
 check(later("FIRE Wilted Peacebloom"), "...and it alerts")
 WoW.tracking[1].active = false
+WoW.fire("MINIMAP_UPDATE_TRACKING")
 poll()
 check(later("a step without an update: [^/]*tracking on false; sweep not run"), "tracking off: the gate named")
 WoW.tracking[1].active = true
+WoW.fire("MINIMAP_UPDATE_TRACKING")
 WoW.secretNames = true
 poll()
 check(later("a step without an update: [^/]*tracking on true; sweep failed: "), "a failed sweep: its reason")

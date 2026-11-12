@@ -168,9 +168,20 @@ function Learn.Trackings()
     return list
 end
 
+-- Whether a gathering tracking is on, cached: the scan asks every frame, and each
+-- GetTrackingInfo answer is a new table (12 KB a call with a character's ~30 tracking types,
+-- measured: half a MB a second of garbage). Read again on MINIMAP_UPDATE_TRACKING
+-- (Learn.TrackingChanged) and at least every ANYON_TTL seconds.
+Learn.ANYON_TTL = 5
+local anyOn, anyOnAt = false, nil
+function Learn.TrackingChanged() anyOnAt = nil end
 function Learn.AnyOn()
-    for _, t in ipairs(Learn.Trackings()) do if t.active then return true end end
-    return false
+    local now = GetTime()
+    if anyOnAt and now - anyOnAt < Learn.ANYON_TTL and now >= anyOnAt then return anyOn end
+    anyOn = false
+    for _, t in ipairs(Learn.Trackings()) do if t.active then anyOn = true; break end end
+    anyOnAt = now
+    return anyOn
 end
 
 local function find(spellID)
@@ -206,6 +217,7 @@ end
 local function setTracking(index, on)
     exp.awaiting = on
     local ok, err = pcall(C_Minimap.SetTracking, index, on)
+    Learn.TrackingChanged()                            -- AnyOn's cache: our own change
     if not ok then API.Fail("SetTracking " .. tostring(on), err) end
     return ok
 end
@@ -356,6 +368,7 @@ end
 -- MINIMAP_UPDATE_TRACKING: a change we didn't make voids the experiment, and
 -- the player's choice wins (Codex).
 function Learn.OnTrackingChanged()
+    Learn.TrackingChanged()
     if not exp then return end
     local current = states()
     local t = find(exp.spellID)
