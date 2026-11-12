@@ -95,13 +95,20 @@ function FS.Update(now)
             API.Trace("scan fps: an unconfirmed raise didn't take; nothing to put back")
             return
         end
-        c.pending = nil
+        if c.restoring and same(cur, c.old) then
+            -- A put-back whose read-back failed did take: done (Codex, PR #129).
+            NR.db.fpsClaim = nil
+            API.Trace("scan fps: an unconfirmed put-back took; done")
+            return
+        end
+        c.pending, c.restoring = nil, nil
         if same(cur, c.ours) then
             if not FS.Active(now) then
                 if put(c.old) then
                     NR.db.fpsClaim = nil
                     API.Trace(("scan fps: put back %s -> %s"):format(tostring(c.ours), tostring(c.old)))
                 else
+                    c.restoring = true                   -- judged at the next readable check
                     API.Trace("scan fps: the put-back didn't read back; kept, tried again")
                 end
             end

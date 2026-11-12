@@ -207,6 +207,25 @@ SEARCH = false
 secs(1.2)
 check(fps() == "30" and NR.charDb.scanFpsCancelled == nil, "a raise that didn't take: nothing cancelled, 30 left")
 
+-- A put-back that takes but doesn't read back at once: done at the next readable check, not taken
+-- for someone else's change; a later search claims again without an off and on.
+NR = fresh()
+secs(1.5)
+check(fps() == "60", "(control) claimed")
+local realGet5, blind5 = C_CVar.GetCVar, false
+C_CVar.GetCVar = function(name) if blind5 and name == "maxFPSBk" then blind5 = false; return nil end return realGet5(name) end
+local realSet5 = C_CVar.SetCVar
+C_CVar.SetCVar = function(name, value) realSet5(name, value); if name == "maxFPSBk" then blind5 = true end end
+SEARCH = false
+secs(NR.ScanFps.HOLD + 1.5)
+C_CVar.SetCVar, C_CVar.GetCVar = realSet5, realGet5
+secs(1.2)
+check(fps() == "30" and NR.db.fpsClaim == nil and NR.charDb.scanFpsCancelled == nil,
+    "a put-back unreadable at once: done at the next check, the option not cancelled")
+SEARCH = true
+secs(1.2)
+check(fps() == "60", "...a new search claims again")
+
 -- 3. The first read after login unreadable: the login check waits for a readable value.
 local loginBlind = 2
 NR = fresh({ db = { moveScan = true, moveScanAsked = true, fpsClaim = { old = "30", ours = "60" } },
