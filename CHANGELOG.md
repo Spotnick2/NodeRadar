@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.8.2
+
+Released 2026-11-11.
 
 - **Forever's own starter nodes are known as their classic kin**: Poor Copper Vein (new), Wilted
   Peacebloom and Stunted Silverleaf now count as Copper Vein, Peacebloom and Silverleaf, in English
