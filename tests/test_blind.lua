@@ -5,16 +5,11 @@
 
 -- A fresh client on `build`, with these saved settings: the stubs loaded again
 -- and the addon from scratch, so each case starts clean (a reload, or another build).
--- WowTestKit keeps its pass and fail counts in the stubs' own load, so loading them again
--- starts them at 0: each case's earlier counts are carried over by replaying them, and
--- the harness (whose done() wraps the kit's) is loaded again on top.
+-- WowTestKit (API 2) carries its pass and fail counts across loading the stubs again
+-- (Spotnick2/WowTestKit#31); the harness (whose done() wraps the kit's) is loaded again on top.
 local function fresh(build, db)
-    local passed, failed = 0, 0
-    if Kit then passed, failed = Kit.counts() end
     dofile("tests/wow_stubs.lua")
     dofile("tests/harness.lua")
-    for _ = 1, passed do check(true) end
-    for _ = 1, failed do check(false, "(an earlier case's failure, carried over)") end
     NodeRadar, NodeRadarDB, NodeRadarCharDB = nil, nil, nil
     WoW.build = build
     WoW.tracking[1].active = true
