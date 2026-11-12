@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **The radar animation is now a choice** (Options, off by default): during a look the stand-in
+  shows the minimap's own ground where it can, and the radar face with its turning sweep only if
+  you pick it (and still indoors and where the ground can't be drawn). Glass MiniMap can follow
+  the same choice.
+- **The scan can raise the background frame rate while it locates a node** (#104, Options, per
+  character, off by default): in a window without focus the game runs at 30 fps, and the scan then
+  takes up to a minute to place a node. With it on, the background frame rate is 60 only while that
+  character is locating one, and yours is put back a few seconds after and at logout, so a second
+  game client isn't kept at a high frame rate. Change it yourself and NodeRadar leaves it alone.
+
 ## v1.9.0
 
 Released 2026-11-12.
