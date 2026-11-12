@@ -68,6 +68,12 @@ local lookEnded                       -- when mouselook last ended (the trace)
 -- (in game: empty reads 0.5 s after mouselook, and four in a row standing still after a click).
 local movedSince = true
 local prevX, prevY                    -- the cursor last frame
+local rearmed                         -- #125: the move that last set movedSince (the trace)
+local emptyRun = 0                    -- #125: presence reads in a row that came back with no lines
+local anchorX, anchorY                -- #125: where the cursor sat when movedSince went false
+MS.REARM_PX = 2                       -- a real move: this far from there (in game, 0.4 and 1.1 px of
+                                      -- jitter passed for moves, and the reads after them were empty)
+MS.EMPTY_WAIT = 2                     -- that many in a row: no look until the mouse moves
 local settleUntil = -math.huge        -- the cursor's jump as mouselook ends is no move
 MS.LOOK_SETTLE = 0.1
 
@@ -776,6 +782,7 @@ end
 -- A loot window open, empty ones too (Codex: Blizzard opens an empty one): LOOT_OPENED and
 -- LOOT_CLOSED, the items' count as a backstop.
 local lootOpen = false
+local lootClosedAt = -math.huge         -- #125: the read's context
 local function looting()
     if lootOpen then return true end
     local loot = API.Num(call("GetNumLootItems"))
@@ -1272,6 +1279,24 @@ local function countsOf(names)
     return counts
 end
 
+-- The read's context for the trace (#125: presence reads empty in runs, unexplained): the
+-- player's state, the map's zoom and radius, the icon scale, the tooltip, the last loot.
+local function readContext(b, now)
+    local function yes(v) return v == true and "y" or (v == false and "n" or "?") end
+    local okR, radius = pcall(C_Minimap.GetViewRadius)
+    radius = okR and API.Num(radius)
+    local tt = rg("GameTooltip")
+    local owner = ask(tt, "IsShown") == true and ask(ask(tt, "GetOwner"), "GetDebugName") or nil
+    local pn, pw = playerPos()
+    return ("indoors %s, resting %s, mounted %s, speed %s, zoom %s, radius %s, alpha %s, dots %s, tooltip %s, loot %s, at %s"):format(
+        yes(call("IsIndoors")), yes(call("IsResting")), yes(call("IsMounted")),
+        tostring(API.Num(call("GetUnitSpeed", "player")) or "?"), tostring(API.Num(ask(Minimap, "GetZoom")) or "?"),
+        radius and ("%.0f"):format(radius) or "?", tostring(API.Num(ask(Minimap, "GetAlpha")) or "?"),
+        (saved and saved.scaled) and ("0.01" .. (lastScale and (", others' " .. tostring(lastScale)) or "")) or "not set", owner and tostring(owner) or (ask(tt, "IsShown") == true and "shown" or "-"),
+        lootOpen and "open" or (lootClosedAt > -math.huge and ("closed %.0f s ago"):format(now - lootClosedAt) or "-"),
+        pn and ("%.0f,%.0f"):format(pn, pw) or "?")
+end
+
 -- Returns true when the read is final; false: read again next frame (an empty read, at most
 -- MS.REREADS times, within the budget: 5 of 16 in the owner's run came back with no lines).
 MS.REREADS = 2
@@ -1322,13 +1347,23 @@ local function read(b, now)
             API.Trace(("scan: unread (no lines): type %s, frame +%d, %d rereads, size %s/%s, cursor %s from the centre, mouse over %s, mouselook ended %s s ago"):format(
                 tostring(MS.emptyType), b.frame - b.placedAt, b.rereads or 0, w and ("%.2f"):format(w) or "?",
                 ("%.2f"):format(b.cur.units), (x and cx) and ("%.2f,%.2f"):format(x / b.es - cx, y / b.es - cy) or "?",
-                tostring(ask(Minimap, "IsMouseOver")), lookEnded and ("%.1f"):format(now - lookEnded) or "never"))
+                tostring(ask(Minimap, "IsMouseOver")), lookEnded and ("%.1f"):format(now - lookEnded) or "never")
+                .. "; " .. readContext(b, now) .. "; the mouse re-armed by " .. tostring(rearmed or "-"))
+            -- #125: empty presence reads in a row mean the map's hover is stale (in game, runs of
+            -- 2 to 58 after mouselook or a click, ending when the mouse really moved): no more
+            -- looks until the mouse moves again. One alone is tried again (the first look's retry).
+            emptyRun = emptyRun + 1
+            if emptyRun >= MS.EMPTY_WAIT and movedSince then
+                movedSince, anchorX, anchorY = false, nil, nil
+                API.Trace(("scan: %d empty reads in a row: no look until the mouse moves"):format(emptyRun))
+            end
         else
             API.Trace("scan: unread (" .. tostring(why) .. ")")
         end
         return true
     end
     MS.stats.valid = MS.stats.valid + 1
+    emptyRun = 0
     local counts = countsOf(names)
     b.cur.read = true
     b.observation = { counts = counts, at = now, gen = b.gen }
@@ -1337,7 +1372,7 @@ local function read(b, now)
     local seen = {}
     for name, n in pairs(counts) do seen[#seen + 1] = name .. " x" .. n end
     table.sort(seen)
-    API.Trace("scan: read " .. (#seen > 0 and table.concat(seen, ", ") or "no node"))
+    API.Trace("scan: read " .. (#seen > 0 and table.concat(seen, ", ") or "no node") .. "; " .. readContext(b, now))
     return true
 end
 
@@ -1447,13 +1482,23 @@ function MS.Tick(now)
         -- A real move only: frame to frame, outside mouselook and the jump as it ends (the
         -- cursor reappears where it was: in game that jump passed for a move, and every read
         -- after it was empty).
-        if prevX and not look and now >= settleUntil and (x ~= prevX or y ~= prevY) then movedSince = true end
+        if look or now < settleUntil then
+            anchorX, anchorY = nil, nil                      -- taken again once the jump is over
+        elseif not movedSince then
+            if not anchorX then
+                anchorX, anchorY = x, y
+            elseif math.abs(x - anchorX) >= MS.REARM_PX or math.abs(y - anchorY) >= MS.REARM_PX then
+                rearmed = ("%.1f,%.1f px, %s after mouselook, %s after a click"):format(x - anchorX, y - anchorY,
+                    lookEnded and ("%.1f s"):format(now - lookEnded) or "never", ("%.1f s"):format(now - lastDown))
+                movedSince, anchorX, anchorY = true, nil, nil
+            end
+        end
         prevX, prevY = x, y
         if not cursorX or math.abs(x - cursorX) > MS.STILL_PX or math.abs(y - cursorY) > MS.STILL_PX then
             quietSince, cursorX, cursorY = now, x, y
         end
     end
-    if buttonDown() then lastDown, movedSince = now, false end
+    if buttonDown() then lastDown, movedSince, anchorX, anchorY = now, false, nil, nil end
     -- The home holding still, sampled outside our own borrows (#116).
     local warmed = false
     if not (burst or saved) then
@@ -1537,7 +1582,7 @@ events:SetScript("OnEvent", function(_, event)
     elseif event == "LOOT_OPENED" then
         lootOpen = true
     elseif event == "LOOT_CLOSED" then
-        lootOpen = false
+        lootOpen, lootClosedAt = false, GetTime()
     elseif event == "PLAYER_CONTROL_GAINED" then
         -- A taxi's end among others (#114): a look asked for when nothing ended costs nothing.
         if MS.On() then MS.WantFirst(GetTime()) end
@@ -1550,7 +1595,7 @@ events:SetScript("OnEvent", function(_, event)
         if key ~= lastGathering then MS.Stop(event) end
         lastGathering = key
     elseif event == "GLOBAL_MOUSE_DOWN" then
-        lastDown, movedSince = GetTime(), false
+        lastDown, movedSince, anchorX, anchorY = GetTime(), false, nil, nil
         if burst then MS.Stop("a mouse button") end
     else
         -- Combat, a loading screen, logout: home now (Minimap stays unprotected, so this is
@@ -1582,6 +1627,7 @@ MS._test = {
         gen, burst, saved, pending, suppress, halted, glassOwed, glassRefusals = 0, nil, nil, nil, false, nil, false, 0
         said, nextAt, lastBurst, lastRetry, lastDown = {}, 0, -math.huge, -math.huge, -math.huge
         cursorX, cursorY, quietSince, looking, moving, movedSince = nil, nil, nil, false, false, true
+        emptyRun, rearmed, anchorX, anchorY = 0, nil, nil, nil
         prevX, prevY, settleUntil = nil, nil, -math.huge
         quickAt, firstLook, holdUntil = {}, nil, -math.huge
         followers = { at = -math.huge }

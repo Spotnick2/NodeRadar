@@ -1166,3 +1166,27 @@ NodeRadar's icon textures snap to the pixel grid by default (`IsSnappingToPixelG
 icon's 12 regions (its textures and masks), held for 27 s while walking past a located node with
 the scan on: **no visible difference** (the owner, with screenshots of both). Left as it is; the
 toggle stays in the probe in case the icon is ever seen shifting against its dot.
+
+### The scan's busy waits and the real ground: `/fp steps nr scanbusy` and `ground`, 1.60.1.70888 (the owner, 2026-11-12, Tirisfal Glades and Brill, Mining) (#113, #114, #116, #117)
+
+- **`scanbusy`:** the refusal named as expected for something on the cursor, a loot window open and
+  no gathering tracking (`Trouble()` "no tracking", the red line in Options seen on the second
+  look). The first look after a fight came 0.2 s after it ended. Aiming a spell, a unit hovered and
+  the cursor beside the minimap were refused for an earlier reason first ("the cursor is not over
+  the world" while aiming, "a tooltip is shown" over a unit or a button): the round waits for one
+  exact reason, so those three are inconclusive. No look while aiming. Two looks each landed in the
+  unit and the near-the-minimap steps, at times the log can't match to the hover.
+- **`ground`, the stock UI** (Glass MiniMap off): `ScanFace.Ground()` = tiles. Our copy beside the
+  real minimap lines up and its colour is close, zoomed out (radius 233) and at the closest zoom
+  (radius 67): the same roads, buildings and terrain, the arrow at the centre (the owner, and the
+  screenshots). Indoors the radar face, as it should. With Glass MiniMap loaded the shape reads
+  unknown and the radar face is drawn (Glass MiniMap draws its own stand-in there anyway). A scan
+  look replaces a preview: run the round with the scan off.
+- **Empty reads (#125):** 154 of 255 presence reads that session came back with no lines, in runs
+  (2 to 58 in a row), Glass MiniMap on or off. Each read's context (indoors, resting, mounted, speed,
+  zoom, radius, alpha, icon scale, tooltip, last loot) was the same for empty and valid reads. The
+  runs came after mouselook or a click and ended when the mouse really moved: the hover stays stale
+  until then. What had re-armed the scan were fractional cursor jitters (0.4 and 1.1 px,
+  `GetCursorPosition`, 0.4 s and 16 s after mouselook), not moves. Two empty reads in a row now wait
+  for the mouse, and a move counts from 2 px away from where the cursor sat (`MS.REARM_PX`); with
+  the first of those, the next session had 5 empty reads in 95 looks, no run over 2.
