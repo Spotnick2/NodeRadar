@@ -66,6 +66,14 @@ local rebuilt = {}        -- [name] = when its records were last turned into pri
 local dirty = false
 local found = {}          -- new records to announce, at the burst's end (the map home again)
 local fresh = false       -- a search started since the last Take (MoveScan's quick run restarts)
+local lastRead = nil      -- { north, west, at }: the player at the last valid presence read
+local bias = nil          -- { n, w, at }: the player's move when a count rose (#137), for the order
+
+-- The sixteenths' order after a rise while moving (#137): the node came into range ahead of the
+-- player, most likely, so the outer cells toward the move are read first. Order only.
+Locate.BIAS_AGE = 10      -- seconds: the read before at most this old; the bias lives this long
+Locate.BIAS_MOVE = 5      -- yards moved since the read before, at least
+Locate.GATHER_TRACE = 15  -- seconds after a gather each presence read logs that name (#137, part 4)
 
 local function d2(a, n, w) return (a.north - n) ^ 2 + (a.west - w) ^ 2 end
 local function yards(a, n, w) return ("%.0f yd"):format(math.sqrt(d2(a, n, w))) end
@@ -84,6 +92,7 @@ function Locate.Reset()
     rebuilt = {}
     quiet = nil
     dirty, fresh = true, false
+    lastRead, bias = nil, nil
 end
 
 -- The alert's silent baseline taken again (Alert.Reset: a zoom, Codex, PR #102): the next
@@ -137,6 +146,22 @@ local function searching(name)
     for _, w in ipairs(windows) do if not w.record and w.names[name] then return true end end
     return false
 end
+-- Whether a search of the name has windows open (Alert.Flush: a held sound waits for it, #137).
+Locate.Searching = searching
+
+local function anySearch()
+    for _, w in ipairs(windows) do if not w.record then return true end end
+    return false
+end
+
+-- The move between the read before and this one, when it says where a new node came from.
+local function biasFrom(prev, pn, pw, now)
+    if not prev or now - prev.at > Locate.BIAS_AGE then return nil end
+    local dn, dw = pn - prev.north, pw - prev.west
+    local len = math.sqrt(dn * dn + dw * dw)
+    if len < Locate.BIAS_MOVE then return nil end
+    return { n = dn / len, w = dw / len, at = now }
+end
 
 -- A presence read (MoveScan): what needs finding or re-checking.
 function Locate.Presence(c, now)
@@ -148,6 +173,9 @@ function Locate.Presence(c, now)
     if not pn then return end
     local before = counts                                  -- the read before: what an ended search ran under
     counts = c
+    local prev = lastRead                                  -- nil at the first read after a reset
+    lastRead = { north = pn, west = pw, at = now }
+    local rose = false                                     -- a search started by a rise (the bias)
     -- World positions need a map that doesn't turn (Scan.Where: nil when it rotates, in an
     -- instance, or unreadable; Codex, PR #102): no locating then, what was located forgotten.
     -- The presence alert doesn't need it.
@@ -188,6 +216,15 @@ function Locate.Presence(c, now)
     for name, q in pairs(quiet) do quiet[name] = math.min(q, math.max(0, (c[name] or 0) - ofName(name))) end
     -- Expired gathered spots trimmed.
     for i = #gone, 1, -1 do if now - gone[i].at > Locate.GONE then table.remove(gone, i) end end
+    -- Soon after a gather, that name's count against its records (#137, part 4: measured first).
+    local logged = {}
+    for _, g in ipairs(gone) do
+        if now - g.at <= Locate.GATHER_TRACE and not logged[g.name] then
+            logged[g.name] = true
+            API.Trace(("locate: %.0f s after gathering %s: %d in range, %d recorded"):format(now - g.at, g.name,
+                c[g.name] or 0, ofName(g.name)))
+        end
+    end
     local need = {}
     for name, n in pairs(c) do
         local m = ofName(name)
@@ -214,6 +251,7 @@ function Locate.Presence(c, now)
         if e and (n > e.n or n <= m or n > (before[name] or 0)) then ended[name], e = nil, nil end
         if n > m and not on and not (e and now - e.at < Locate.BACKOFF) then
             need[name], active[name] = true, true
+            if n > (before[name] or 0) then rose = true end
             API.Trace(("locate: %s search starts (%d in range, %d recorded)"):format(name, n, m))
         elseif n > m and on and n > (before[name] or 0) then
             -- A rise mid-search: the new node can be where this search already read nothing
@@ -228,7 +266,7 @@ function Locate.Presence(c, now)
                     if next(rest) then w.names = rest else table.remove(windows, i) end
                 end
             end
-            need[name] = true
+            need[name], rose = true, true
             API.Trace(("locate: %s search starts again (%d in range, a rise)"):format(name, n))
         elseif n > m and not on then
             API.Trace(("locate: %s waits its backoff (%.0f s left)"):format(name, Locate.BACKOFF - (now - e.at)))
@@ -271,6 +309,13 @@ function Locate.Presence(c, now)
             for i = before + 1, #windows do quarters[#quarters + 1] = table.remove(windows) end
             for _, q in ipairs(quarters) do split(q.north, q.west, q.size, need, 2) end
             fresh = true
+            -- A rise while moving: the outer cells toward the move first (#137). Standing, or a
+            -- search started otherwise (a backoff over), the bias already set stays to expire.
+            local b = rose and biasFrom(prev, pn, pw, now)
+            if b then
+                bias = b
+                API.Trace(("locate: the sixteenths toward the move first (%.2f, %.2f)"):format(b.n, b.w))
+            end
         end
     end
 end
@@ -318,11 +363,28 @@ function Locate.Next(pn, pw, radius, es)
             end
         end
     end
+    if bias and (now - bias.at > Locate.BIAS_AGE or not anySearch()) then bias = nil end
+    -- Deepest first, then nearest the player; while a rise's bias holds, the sixteenths (depth 2)
+    -- outer ones first, by their angle to the move, the inner four last (#137).
+    local half = reachOf(radius) / 2
+    local function aheadOf(w)
+        local dn, dw = w.north - pn, w.west - pw
+        local len = math.sqrt(dn * dn + dw * dw)
+        return len >= half, len > 0 and (dn * bias.n + dw * bias.w) / len or -1
+    end
+    local function first(a, b)
+        if a.depth ~= b.depth then return a.depth > b.depth end
+        if bias and a.depth == 2 then
+            local oa, ca = aheadOf(a)
+            local ob, cb = aheadOf(b)
+            if oa ~= ob then return oa end
+            if oa and ca ~= cb then return ca > cb end
+        end
+        return d2(a, pn, pw) < d2(b, pn, pw)
+    end
     local best
     for _, w in ipairs(windows) do
-        if not best or w.depth > best.depth or (w.depth == best.depth and d2(w, pn, pw) < d2(best, pn, pw)) then
-            best = w                                       -- deepest, then nearest the player
-        end
+        if not best or first(w, best) then best = w end
     end
     if not best then return nil end
     for i, w in ipairs(windows) do
@@ -368,8 +430,9 @@ local function located(name, north, west, now, size)
     dirty = true
     -- A gathered spot keeps its node silent for all of GONE, whatever it's found again
     -- (Codex, PR #102: consumed at the first rediscovery, a second one alerted).
-    if goneAt(name, north, west, now) then
-        API.Trace("locate: " .. name .. " at a gathered spot: the same node, silent")
+    local g = goneAt(name, north, west, now)
+    if g then
+        API.Trace(("locate: %s at a gathered spot: the same node, silent (%.0f s after the gather)"):format(name, now - g.at))
         return
     end
     -- There at the scan's first look after a reset: no sound of its own (a rise that
@@ -519,7 +582,21 @@ function Locate.Gathered(name, now)
         local d = d2(r, n, w)
         if r.name == name and d <= Locate.NEAR ^ 2 and (not bestD or d < bestD) then best, bestD = r, d end
     end
-    if best then drop(best, "gathered") end
+    -- What a gather did to the records (#137, part 4: the compass slow to go, measured first).
+    if best then
+        API.Trace(("locate: gathered %s: its record %.0f yd from you"):format(name, math.sqrt(bestD)))
+        drop(best, "gathered")
+    else
+        local nearest
+        for _, r in ipairs(records) do
+            if r.name == name then
+                local d = math.sqrt(d2(r, n, w))
+                if not nearest or d < nearest then nearest = d end
+            end
+        end
+        API.Trace(("locate: gathered %s: no record within %d yd%s"):format(name, Locate.NEAR,
+            nearest and (", the nearest %.0f yd"):format(nearest) or ", none of its name"))
+    end
     gone[#gone + 1] = { name = name, north = best and best.north or n, west = best and best.west or w, at = now }
 end
 
@@ -535,9 +612,31 @@ function Locate.Queued()
     return s, r
 end
 
-function Locate.Busy()
-    for _, w in ipairs(windows) do if not w.record then return true end end
-    return false
+Locate.Busy = anySearch
+
+-- This burst's positive leaves so far, and the search windows queued at a leaf's size: with a
+-- hit and no leaf left, MoveScan ends the burst ("found", #137), a scheduling rule only.
+function Locate.Hits() return #hits end
+function Locate.LeavesQueued()
+    local n = 0
+    for _, w in ipairs(windows) do if not w.record and w.size <= Locate.FINE then n = n + 1 end end
+    return n
+end
+
+-- After settling: names whose count the records meet leave the search windows (a window goes
+-- once no name is left), so Busy() says whether anything is still being searched (#137).
+local function prune()
+    for i = #windows, 1, -1 do
+        local w = windows[i]
+        if not w.record then
+            local rest, cut = {}, false
+            for name in pairs(w.names) do
+                if (counts[name] or 0) > ofName(name) then rest[name] = true else cut = true end
+            end
+            if not next(rest) then table.remove(windows, i) elseif cut then w.names = rest end
+        end
+    end
+    if bias and not anySearch() then bias = nil end
 end
 
 -- Whether a search started since the last call (MoveScan restarts its quick run for it).
@@ -551,6 +650,7 @@ end
 -- consumers are told once a burst, with the map home). The burst's leaves settle first.
 function Locate.Take()
     if #hits > 0 then settleHits(GetTime()) end
+    prune()
     local d, f = dirty, found
     dirty, found = false, {}
     return d or #f > 0, f
@@ -558,4 +658,5 @@ end
 
 Locate._test = { rebuild = function(name, now, why) return rebuild(name, now, why or "test") end,
                  windows = function() return windows end, gone = function() return gone end,
-                 quiet = function() return quiet end, hits = function() return hits end }
+                 quiet = function() return quiet end, hits = function() return hits end,
+                 bias = function() return bias end }

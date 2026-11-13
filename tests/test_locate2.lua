@@ -106,6 +106,7 @@ check(has(NR.Locate.Records(), rec) and rec.at > WoW.now - 10, "one empty frame,
 --------------------------------------------------------------------------------
 
 NR = fresh()
+NR.MoveScan.SEARCH_PLACEMENTS = 1                   -- presence reads only (#137: a search burst finds it)
 WoW.blips = { { "Silverleaf", 20, -15 } }
 bursts(2)                                           -- a presence read: counts known
 local ws = NR.Locate._test.windows()
@@ -364,6 +365,7 @@ check(#NR.Locate.Records() == 0, "a burst stopped mid-way: its pending leaf is d
 
 -- A quiet allowance doesn't outlive its name leaving range.
 NR = fresh()
+NR.MoveScan.SEARCH_PLACEMENTS = 1                   -- presence reads only (#137: a search burst finds it)
 WoW.blips = { { "Silverleaf", 20, -15 } }
 bursts(2)
 check(((NR.Locate._test.quiet() or {}).Silverleaf or 0) > 0, "(control) an unspent quiet allowance for the first look")
@@ -705,5 +707,158 @@ table.insert(NR.Locate.Records(), { name = "Silverleaf", kind = "herbs", north =
     at = GetTime(), misses = 0, err = 20 })
 NR.Locate.Presence({}, GetTime())
 check(traced("locate: Silverleaf dropped %(not in range, 50 yd%)"), "a name no longer listed: dropped with its distance")
+
+--------------------------------------------------------------------------------
+-- #137: what a burst's "found" stop leaves to the settlement, Take's pruning, the sixteenths'
+-- order after a rise while moving, and the gather's trace lines.
+--------------------------------------------------------------------------------
+
+local function leaf(n, w, name)
+    NR.Locate.Read({ window = { north = n, west = w, size = 10, names = { [name or "Silverleaf"] = true }, depth = 6, tries = 0 } },
+        { [name or "Silverleaf"] = 1 }, nil, nil, GetTime())
+end
+
+-- Leaves at north 0, 12, 14 (size 10), count 2: two complete-link groups, {0, 12} and {14}, the
+-- second's centre within the first record's reach: one record, and the search carries on.
+NR = fresh()
+local L = NR.Locate
+local pn0, pw0 = WoW.pos[1], WoW.pos[2]
+L.Presence({ Silverleaf = 2 }, GetTime())
+check(L.Busy(), "(control) a search for two")
+leaf(pn0 + 40, pw0); leaf(pn0 + 52, pw0); leaf(pn0 + 54, pw0)
+L.Take()
+check(#L.Records() == 1, "leaves at 0, 12, 14 for a count of 2: one record (" .. #L.Records() .. ")")
+check(L.Busy() and L.Searching("Silverleaf"), "...and the search carries on: its windows kept")
+
+-- Count 2, one record, two groups matching neither: a rebuild, and the search carries on.
+NR = fresh()
+L = NR.Locate
+table.insert(L.Records(), { name = "Silverleaf", kind = "herbs", north = pn0 + 100, west = pw0, at = GetTime(), misses = 0, err = 20 })
+L.Presence({ Silverleaf = 2 }, GetTime())
+leaf(pn0 - 60, pw0); leaf(pn0 - 60, pw0 + 60)
+L.Take()
+check(traced("locate: Silverleaf rebuilt %(a group beyond the count%)"), "two unmatched groups beyond the count: a rebuild")
+check(L.Busy() and L.Searching("Silverleaf"), "...and the search carries on")
+
+-- Take prunes per name: a name the records meet leaves the shared windows, a window goes once
+-- no name is left in it.
+NR = fresh()
+L = NR.Locate
+L.Presence({ Silverleaf = 1, ["Wilted Peacebloom"] = 1 }, GetTime())
+local n16 = #L._test.windows()
+leaf(pn0 + 40, pw0)
+L.Take()
+check(#L._test.windows() == n16 and not L.Searching("Silverleaf") and L.Searching("Wilted Peacebloom"),
+    "Silverleaf found: it leaves the shared windows, which stay for Wilted Peacebloom")
+leaf(pn0 - 40, pw0, "Wilted Peacebloom")
+L.Take()
+check(#L._test.windows() == 0 and not L.Busy(), "...and found too: the windows go, nothing is searched")
+
+-- The order. A rise after a 30-yard move north: the outer sixteenths first, by their angle to
+-- the move, the inner four last; none dropped.
+local function order()
+    local list = {}
+    for _ = 1, 20 do
+        local p = NodeRadar.Locate.Next(WoW.pos[1], WoW.pos[2], 150, 1.2)
+        if not p then break end
+        local w = p.window
+        local dn, dw = w.north - WoW.pos[1], w.west - WoW.pos[2]
+        local d = math.sqrt(dn * dn + dw * dw)
+        list[#list + 1] = { dn = dn, dw = dw, d = d, cos = dn / d }
+    end
+    return list
+end
+local function risen(move)
+    NR = fresh()
+    local t = GetTime()
+    NR.Locate.Presence({}, t)
+    WoW.pos = { WoW.pos[1] + move, WoW.pos[2], 0, 0 }
+    WoW.now = t + 2
+    NR.Locate.Presence({ Silverleaf = 1 }, t + 2)
+    return t + 2
+end
+local at = risen(30)
+check(NR.Locate._test.bias() ~= nil, "a rise after a 30-yard move: a bias")
+local o = order()
+check(#o == 16, "...all 16 sixteenths placed, none dropped (" .. #o .. ")")
+local outerFirst, sorted = true, true
+for i = 1, 12 do
+    if not (o[i] and o[i].d >= 75) then outerFirst = false end
+    if i > 1 and o[i] and o[i - 1] and o[i].cos > o[i - 1].cos + 1e-9 then sorted = false end
+end
+local innerLast = true
+for i = 13, 16 do if not (o[i] and o[i].d < 75) then innerLast = false end end
+check(o[1] and math.abs(o[1].dn - 112.5) < 0.01 and math.abs(math.abs(o[1].dw) - 37.5) < 0.01,
+    ("...the first cell ahead of the move (%.1f, %.1f)"):format(o[1] and o[1].dn or 0, o[1] and o[1].dw or 0))
+check(outerFirst and sorted, "...the twelve outer cells first, by their angle to the move")
+check(innerLast, "...the inner four last")
+-- Standing (a few yards are no move): no bias, nearest first as before.
+risen(NR.Locate.BIAS_MOVE - 2)
+check(NR.Locate._test.bias() == nil, "a rise after a move under BIAS_MOVE: no bias")
+o = order()
+local nearestFirst = #o == 16
+for i = 1, 4 do if not (o[i] and o[i].d < 75) then nearestFirst = false end end
+check(nearestFirst, "...the inner four first, nearest first (unchanged)")
+-- The first read after a reset: no read before it, no bias.
+NR = fresh()
+NR.Locate.Reset()
+WoW.pos = { WoW.pos[1] + 30, WoW.pos[2], 0, 0 }
+NR.Locate.Presence({ Silverleaf = 1 }, GetTime())
+check(NR.Locate._test.bias() == nil, "the first read after a reset: no bias")
+-- The bias expires BIAS_AGE seconds after the read that set it.
+at = risen(30)
+WoW.now = at + NR.Locate.BIAS_AGE - 0.5
+local early = order()[1]
+check(early and early.d >= 75, "the bias still holds just before BIAS_AGE")
+at = risen(30)
+WoW.now = at + NR.Locate.BIAS_AGE + 0.5
+local late = order()[1]
+check(late and late.d < 75 and NR.Locate._test.bias() == nil, "...and past it, nearest first again")
+-- The read before too old: no bias.
+NR = fresh()
+local t0 = GetTime()
+NR.Locate.Presence({}, t0)
+WoW.pos = { WoW.pos[1] + 30, WoW.pos[2], 0, 0 }
+WoW.now = t0 + NR.Locate.BIAS_AGE + 1
+NR.Locate.Presence({ Silverleaf = 1 }, WoW.now)
+check(NR.Locate._test.bias() == nil, "a read before older than BIAS_AGE: no bias")
+
+-- The gather's trace lines (part 4: no behaviour change, measured first).
+NR = fresh()
+L = NR.Locate
+table.insert(L.Records(), { name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 10, west = WoW.pos[2], at = GetTime(), misses = 0, err = 20 })
+L.Gathered("Silverleaf", GetTime())
+check(traced("locate: gathered Silverleaf: its record 10 yd from you"), "a gather: the record dropped and its distance")
+table.insert(L.Records(), { name = "Silverleaf", kind = "herbs", north = WoW.pos[1] + 60, west = WoW.pos[2], at = GetTime(), misses = 0, err = 20 })
+L.Gathered("Silverleaf", GetTime())
+check(traced("locate: gathered Silverleaf: no record within 25 yd, the nearest 60 yd"), "...none within NEAR: the nearest of its name")
+L.Gathered("Wilted Peacebloom", GetTime())
+check(traced("locate: gathered Wilted Peacebloom: no record within 25 yd, none of its name"), "...none of its name at all")
+local tg = GetTime()
+WoW.now = tg + 3
+L.Presence({ Silverleaf = 1 }, WoW.now)
+check(traced("locate: 3 s after gathering Silverleaf: 1 in range, 1 recorded"), "a presence read soon after: the name's count and records")
+leaf(WoW.pos[1] + 10, WoW.pos[2])
+L.Take()
+check(traced("locate: Silverleaf at a gathered spot: the same node, silent %(3 s after the gather%)"),
+    "a record made at the gathered spot: the seconds since the gather")
+local lines = #NodeRadar.trace
+WoW.now = tg + NR.Locate.GATHER_TRACE + 1
+L.Presence({ Silverleaf = 1 }, WoW.now)
+local again = false
+for i = lines + 1, #NodeRadar.trace do if NodeRadar.trace[i]:find("after gathering") then again = true end end
+check(not again, "...and no such line past GATHER_TRACE")
+
+-- The compass: one line when its target changes, the reset included.
+NR = fresh({ moveScan = true, moveScanAsked = true, compass = true })
+WoW.blips = { { "Silverleaf", 20, -15 } }
+check(not traced("compass: target"), "(control) no compass line before a target")
+bursts(12, function() return NR.Compass.Chosen() ~= nil end)
+check(traced("compass: target Silverleaf, %d+ yd"), "the compass's new target in the trace, with its distance")
+local before = #NodeRadar.trace
+NR.Compass.Reset()
+check(NodeRadar.trace[#NodeRadar.trace]:find("compass: target none") and #NodeRadar.trace == before + 1, "...and its loss, once")
+NR.Compass.Reset()
+check(#NodeRadar.trace == before + 1, "...not again while there's still none")
 
 done("test_locate2")

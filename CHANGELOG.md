@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The sound and the ripple together again** (#137): with the minimap scan, a new node's sound
+  played at once while its sonar, icon and compass came only once the node was located, many seconds
+  later at 30 fps. Now the sound is held for up to a second and a half and plays with the sonar the
+  moment the node is found; a look that has a node to find runs a little longer (up to 0.8 s behind
+  the stand-in), ends as soon as it has found it, and searches ahead of you first when you ride.
+
 - **A look right after you gather** (#133): the scan looks as soon as the loot window closes, while
   you stand among the nodes, instead of at its next turn.
 - **Your minimap addons' mouse wheel is left alone during a look** (#134): a frame on the minimap

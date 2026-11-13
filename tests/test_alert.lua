@@ -338,4 +338,176 @@ before = sounds()
 SlashCmdList.NODERADAR("test")
 eq(sounds(), before + 1, "/nr test sounds")
 eq(WoW.softCursor, false, "the soft cursor off at the end")
+
+--------------------------------------------------------------------------------
+-- #137: from 70862 the scan's alert is one moment. A presence read's rise holds its sound
+-- until a node of it is located (the sound and the sonar together), no search of it is open,
+-- or HOLD seconds pass. Driven by hand: the scan itself stays off.
+--------------------------------------------------------------------------------
+
+dofile("tests/wow_stubs.lua")
+dofile("tests/harness.lua")
+NodeRadar, NodeRadarDB, NodeRadarCharDB = nil, nil, nil
+WoW.build = "70862"
+WoW.tracking[1].active = true
+WoW.pos = { 1000, 2000, 0, 0 }
+NR = loadAddon({ db = { moveScanAsked = true } })
+NR.db.learn, NR.db.cooldown = false, 0
+local A = NR.Alert
+local open = {}                                            -- the names with a search open
+NR.Locate.Searching = function(name) return open[name] == true end
+local sonarCalls, realSonar = 0, A.Sonar
+A.Sonar = function(...) sonarCalls = sonarCalls + 1; return realSonar(...) end
+local function node(name, dn)
+    return { name = name or "Silverleaf", kind = "herbs", north = WoW.pos[1] + (dn or 30), west = WoW.pos[2] }
+end
+-- A baseline of `n` Silverleaf, then a rise to `to` at `t` (now). Returns the sounds and sonars so far.
+local function rise(t, n, to, name)
+    name = name or "Silverleaf"
+    A.Reset("test")
+    A.Counts({ [name] = n }, t - 1, nil, nil, math.huge)
+    A.Counts({ [name] = to }, t, nil, nil, math.huge, 0)
+    return sounds(), sonarCalls
+end
+local function tickTo(t)
+    while WoW.now < t do WoW.now = WoW.now + 0.05; WoW.tick(0.05) end
+end
+
+-- Held, then located: one sound and one sonar, in one call.
+local t = WoW.now + 10
+WoW.now = t
+open.Silverleaf = true
+local s0, r0 = rise(t, 1, 2)
+eq(sounds(), s0, "a scan's rise: held, no sound yet")
+A.Flush(t + 0.5)
+eq(sounds(), s0, "...a search open: still held")
+A.Located(node(), t + 0.6)
+check(sounds() == s0 + 1 and sonarCalls == r0 + 1, "located: its sound and its sonar in one call")
+tickTo(t + 3)
+eq(sounds(), s0 + 1, "...and nothing more after HOLD")
+
+-- The deadline: still searching after HOLD, the sound plays (Alert's own timer).
+t = WoW.now + 10
+WoW.now = t
+s0 = rise(t, 1, 2)
+tickTo(t + A.HOLD - 0.1)
+eq(sounds(), s0, "searching, before HOLD: held")
+tickTo(t + A.HOLD + 0.1)
+eq(sounds(), s0 + 1, "...past HOLD: the sound plays on its own")
+
+-- No search open (a rotating map, a backoff, a search that ran out): at once, at NR.Located.
+open = {}
+t = WoW.now + 10
+WoW.now = t
+s0, r0 = rise(t, 1, 2)
+NR.Located({}, t)
+check(sounds() == s0 + 1 and sonarCalls == r0, "no search open: the sound at once, no sonar")
+
+-- During a burst only the deadline plays it (the window being read isn't queued).
+local realBursting = NR.MoveScan.Bursting
+NR.MoveScan.Bursting = function() return true end
+t = WoW.now + 10
+WoW.now = t
+s0 = rise(t, 1, 2)
+A.Flush(t + 0.5)
+eq(sounds(), s0, "a burst under way: no search open isn't judged yet")
+A.Flush(t + A.HOLD)
+eq(sounds(), s0 + 1, "...the deadline still plays it")
+NR.MoveScan.Bursting = realBursting
+
+-- Two holds overlapping (cooldown 0): the first plays before the second is held, each once.
+open = { Silverleaf = true, ["Wilted Peacebloom"] = true }
+t = WoW.now + 10
+WoW.now = t
+s0 = rise(t, 1, 2)
+A.Counts({ Silverleaf = 2, ["Wilted Peacebloom"] = 1 }, t + 0.5, nil, nil, math.huge, 0)
+eq(sounds(), s0 + 1, "a second batch held: the first plays first")
+A.Located(node("Wilted Peacebloom"), t + 0.7)
+eq(sounds(), s0 + 2, "...the second at its location")
+A.Located(node(), t + 0.8)
+tickTo(t + 4)
+eq(sounds(), s0 + 2, "...each once")
+
+-- A gather during a hold: played before its token retires; a record a moment later ripples only.
+t = WoW.now + 10
+WoW.now = t
+s0, r0 = rise(t, 1, 2)
+A.Gathered("Silverleaf", t + 0.3)
+eq(sounds(), s0 + 1, "a gather during a hold: the held sound plays first")
+A.Located(node(), t + 0.5)
+check(sounds() == s0 + 1 and sonarCalls == r0 + 1, "...a node located just after: its sonar, no second sound")
+WoW.pos = { WoW.pos[1] + 100, WoW.pos[2], 0, 0 }           -- away from the gathered one (Alert.NEAR)
+-- A fall during a hold: the same.
+t = WoW.now + 10
+WoW.now = t
+s0, r0 = rise(t, 1, 2)
+A.Counts({ Silverleaf = 1 }, t + 0.4, nil, nil, math.huge, 0)
+eq(sounds(), s0 + 1, "a fall during a hold: the held sound plays first")
+A.Located(node(), t + 0.6)
+check(sounds() == s0 + 1 and sonarCalls == r0 + 1, "...a node located just after: its sonar, no second sound")
+-- A location 2 s after the emission, no token left: the full alert, as before.
+A.Located(node("Silverleaf", -40), t + 2.5)
+eq(sounds(), s0 + 2, "a location 2 s after the emission, no token: the full alert")
+
+-- A stall past OWED_TTL (the client frozen): one sound, one sonar a node, in either order.
+local function stall(timerFirst, nodes)
+    t = WoW.now + 10
+    WoW.now = t
+    local s, r = rise(t, 1, 2)
+    local late = t + A.OWED_TTL + 1
+    if timerFirst then WoW.now = late; WoW.tick(0.05) end
+    for i = 1, nodes do A.Located(node("Silverleaf", 20 * i), late) end
+    WoW.now = late
+    return sounds() - s, sonarCalls - r
+end
+for _, first in ipairs({ true, false }) do
+    for _, n in ipairs({ 1, 2 }) do
+        local s, r = stall(first, n)
+        check(s == 1 and r == n, ("a stall past OWED_TTL, %s first, %d located: one sound, %d sonar (%d, %d)"):format(
+            first and "the timer" or "the location", n, n, s, r))
+    end
+end
+
+-- Two nodes of the risen name located within the second: a sonar each, one sound (two tokens,
+-- or one token and the name's sound just played).
+for _, to in ipairs({ 3, 2 }) do
+    t = WoW.now + 10
+    WoW.now = t
+    s0, r0 = rise(t, 1, to)
+    A.Located(node("Silverleaf", 20), t + 0.4)
+    A.Located(node("Silverleaf", -20), t + 0.7)
+    check(sounds() == s0 + 1 and sonarCalls == r0 + 2, ("a rise of %d, two located within the second: one sound, two sonars"):format(to - 1))
+end
+
+-- A reset, a new area, the scan turned off: the held sound plays; the radar turned off: dropped.
+local function heldThen(f)
+    t = WoW.now + 10
+    WoW.now = t
+    local s = rise(t, 1, 2)
+    f(t)
+    local played = sounds() - s
+    tickTo(t + 3)
+    return played, sounds() - s
+end
+local a, b2 = heldThen(function() A.Reset("zoom") end)
+check(a == 1 and b2 == 1, "a reset: the held sound plays at once, once")
+a, b2 = heldThen(function(now) A.NewArea(now) end)
+check(a == 1 and b2 == 1, "a new area: the held sound plays at once, once")
+a, b2 = heldThen(function() NR.Set("moveScan", false) end)
+check(a == 1 and b2 == 1, "the scan turned off: the held sound plays at once")
+a, b2 = heldThen(function() NR.Set("enabled", false) end)
+check(a == 0 and b2 == 0, "the radar turned off: the held sound dropped")
+NR.Set("enabled", true)
+a, b2 = heldThen(function() NR.db.enabled = false end)
+check(b2 == 0, "the radar off by the deadline: dropped")
+NR.db.enabled = true
+
+-- The sweep's path (blips given) fires at once, as before.
+t = WoW.now + 10
+WoW.now = t
+A.Reset("test")
+A.Counts({ Silverleaf = 1 }, t - 1, { Silverleaf = { { x = 0, y = 0 } } })
+s0 = sounds()
+A.Counts({ Silverleaf = 2 }, t, { Silverleaf = { { x = 0, y = 0 }, { x = 20, y = 20 } } }, nil, nil, 0)
+eq(sounds(), s0 + 1, "blips given (the sweep's path): the sound at once")
 done("test_alert")

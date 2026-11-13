@@ -158,7 +158,12 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   (`Alert.Gatherable`: `NODE_INFO`'s skill against `API.Skill`, Cultivation for herbs, #26); the sound (`Alert.SOUNDS`: the map ping, two of
   the client's files by FileDataID, six `Media\*.ogg` from Pixabay made by `Tools/import_sounds.py`,
   README "Sounds"), the sonar, chat line, solo-only ping. `Alert.Wanted` = gatherable and not
-  skipped (#47): what the alert, the compass and the icons' dim all use.
+  skipped (#47): what the alert, the compass and the icons' dim all use. From 70862 the scan's rise
+  is **held** (#137, one batch, `held`): played by `emit()` with the sonar when `Alert.Located` meets
+  an owed token of it, by `Alert.Flush` when no search of its names is open (judged after a burst,
+  `MoveScan.Bursting`), past `HOLD` (1.5 s, its own `OnUpdate`), or forced (`Reset`, `NewArea`);
+  before a token of it retires (a gather, a fall); dropped with the radar off. A node of a name
+  played within `JUST` (1 s), no token left: its sonar only. The sweep's path fires at once.
 - `Track.lua` (#47): which herbs and ores, per character (`NodeRadarCharDB.track`: `ignored` by item
   ID, `smart`, `last`), one row per item from `NODE_INFO` (several nodes give one item, each keeping
   its skill); the items' states from the **base rank** (`API.Skill(line, true)`: gear moves only the
@@ -257,7 +262,11 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   restore, a settle frame (the tooltip post-hook still hiding, everything read back). Every 2 s moving,
   6 s still (`MS.Every`). A valid read (lines, `Minimap` the top focus, in place) is a **presence**
   observation, `NR.Observe("presence", { counts })` → `Alert.Counts` (the sound and the chat line).
-  The rest of a burst (up to `MS.PLACEMENTS`, within the 250 ms budget) is Locate's windows. Followers (another
+  The rest of a burst (up to `MS.PLACEMENTS`, within the 250 ms budget; with a search open at the
+  presence read `MS.SEARCH_PLACEMENTS` and `SEARCH_BUDGET`, 24 and 0.8 s, `b.limit` / `b.budget`, #137)
+  is Locate's windows; a hit with no leaf queued ends it ("found"), and a settlement that ends the
+  search puts the next burst at `Every()` (the settle frame). `LOCATE_RUN` 3 quick bursts a
+  `QUICK_WINDOW`. Followers (another
   addon's frame anchored into the map) and a Glass MiniMap without version 1 refuse the scan, named
   once. No look while the cursor is busy (#113: aiming, something held, casting, a loot window, a
   unit hovered, within `NEAR_PX` of the map) nor until the map's home has held still `STABLE` s (#116:
@@ -271,7 +280,11 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   `FINE` (16 yards), deepest then nearest first; each read paired with the player's move since its
   placement; a window's empty answer is no node there (nil is unread), and a failed presence read ends
   the burst. A burst's positive leaves settle at its end, grouped per axis within a leaf's reach
-  (complete-link, in a fixed order), never more new records than the count leaves room for. Records
+  (complete-link, in a fixed order), never more new records than the count leaves room for;
+  `Take` then prunes the met names from the search windows (#137). A rise after a move of
+  `BIAS_MOVE` yards within `BIAS_AGE` s sets `bias`: the sixteenths (depth 2) outer ones first by
+  their angle to the move, the inner four last, order only (#137). The gather's trace lines (#137,
+  part 4: measured first, no behaviour change; the compass logs its target's changes too). Records
   live on evidence (a presence count of 0, a re-check at the spot every `RECHECK` s, out of range by
   more than `SLACK`, a gather), never time; each keeps its uncertainty `err`. `LISTS` (#112, off until
   measured) would narrow the search only, never what's out of range; the drop lines carry the distance. A re-check window covers

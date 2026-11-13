@@ -52,6 +52,63 @@ end
 local risenFrom = {}
 local prevCounts = {}
 
+-- One alert moment (#137, docs/PLAN.md "The alert as one moment"): from 70862 a count's rise
+-- doesn't sound at once. Its batch is held until the scan locates one of its nodes (the sound
+-- and the sonar in one frame), no search of its names is left, or HOLD seconds pass. One batch
+-- at most: a new one plays the old first. A node of a name the sound announced, located within
+-- JUST seconds of it with no token left (a stall past OWED_TTL, a second node of the name), gets
+-- its sonar only: a stated coalescing policy, not proof of identity.
+Alert.HOLD = 1.5
+Alert.JUST = 1
+local held            -- { names, at }: the sound and chat line owed, or nil
+local played = {}     -- [name] = when a held batch naming it played
+local flusher = CreateFrame("Frame")
+
+local function holds(name)
+    if not held then return false end
+    for _, n in ipairs(held.names) do if n == name then return true end end
+    return false
+end
+
+-- The only place a held batch plays: taken first, so nothing it calls plays it twice. It spends
+-- no cooldown (reserved when it was held). With the radar off, dropped.
+local function emit(now)
+    local h = held
+    held = nil
+    flusher:SetScript("OnUpdate", nil)
+    if not h then return end
+    if not (NR.db and NR.db.enabled) then
+        API.Trace("alert: held, dropped (the radar is off): " .. table.concat(h.names, ", "))
+        return
+    end
+    API.Trace(("alert: FIRED %s (held %.1f s)"):format(table.concat(h.names, ", "), now - h.at))
+    Alert.Fire(h.names, nil)
+    for _, name in ipairs(h.names) do played[name] = now end
+end
+
+local function trimPlayed(now)
+    for name, at in pairs(played) do if now - at > Alert.JUST then played[name] = nil end end
+end
+
+-- A held batch played when nothing will locate it (no search of its names open: a rotating map,
+-- a backoff, a search that ran out), past HOLD, or forced (a reset, a new area, turned off).
+-- During a burst only the deadline counts: the window being read isn't queued.
+function Alert.Flush(now, force)
+    if not held then return end
+    if force or now - held.at >= Alert.HOLD then return emit(now) end
+    if NR.MoveScan and NR.MoveScan.Bursting() then return end
+    for _, name in ipairs(held.names) do
+        if NR.Locate and NR.Locate.Searching(name) then return end
+    end
+    emit(now)
+end
+
+local function hold(names, now)
+    if held then emit(now) end                        -- never overwritten, never extended
+    held = { names = names, at = now }
+    flusher:SetScript("OnUpdate", function() Alert.Flush(GetTime()) end)
+end
+
 local function here()
     local ok, north, west = pcall(UnitPosition, "player")
     north, west = ok and API.Num(north), ok and API.Num(west)
@@ -65,6 +122,7 @@ end
 
 function Alert.Gathered(name, now)
     gathered[name] = now
+    if holds(name) then emit(now) end                  -- played before its token retires (#137)
     owedRetire(name, 1, now)
     if API.Blind() and hist and (hist.counts[name] or 0) > 0 then
         hist.counts[name] = hist.counts[name] - 1
@@ -76,6 +134,8 @@ end
 
 -- The next successful sweep sets the counts without alerting.
 function Alert.Reset(why)
+    Alert.Flush(GetTime(), true)
+    played = {}
     hist = nil
     owed = {}
     -- One baseline: a node the next read counts silently is located silently too (Codex,
@@ -86,6 +146,8 @@ end
 
 -- A new area: counts from zero, so its nodes alert.
 function Alert.NewArea(now)
+    Alert.Flush(now, true)
+    played = {}
     hist = { counts = {}, drops = {}, at = now }
     owed = {}
     API.Trace("alert: a new area, counts from zero")
@@ -142,6 +204,7 @@ end
 -- `blink`: the seconds a rise after a drop counts as the same node at the edge (BLINK by
 -- default; the scan's sparse reads use a shorter one, #91).
 function Alert.Counts(counts, now, blips, result, every, blink)
+    trimPlayed(now)
     if hist and now - hist.at > Alert.STALE + (every or NR.db.interval) then
         hist = nil
         API.Trace("alert: stale, baseline")
@@ -189,7 +252,10 @@ function Alert.Counts(counts, now, blips, result, every, blink)
         -- A fall retires as many tokens (the nodes they were for may be the ones gone).
         for name in pairs(owed) do
             local fall = (prevCounts[name] or 0) - (counts[name] or 0)
-            if fall > 0 then owedRetire(name, fall, now) end
+            if fall > 0 then
+                if holds(name) then emit(now) end      -- played before its token retires (#137)
+                owedRetire(name, fall, now)
+            end
         end
         for _, name in ipairs(new) do
             if Alert.Wanted(name) then
@@ -216,6 +282,12 @@ function Alert.Counts(counts, now, blips, result, every, blink)
     end
     lastAlert = now
     table.sort(fire)
+    -- The scan's presence read (#137): the sound waits for the location, HOLD seconds at most.
+    if blips == nil and API.Blind() then
+        API.Trace("alert: HELD " .. table.concat(fire, ", ") .. " (the sound waits for its location)")
+        hold(fire, now)
+        return fire
+    end
     API.Trace("alert: FIRED " .. table.concat(fire, ", "))
     Alert.Fire(fire, blips, result)
     return fire
@@ -379,7 +451,18 @@ end
 -- A node the scan located where none was known (#91, Locate.lua): a rise already announced
 -- it (only its sonar, no second sound), or it's new to us (the full alert: a node replaced
 -- another between two reads, or one beside the node just gathered, which counts can't see).
+-- A located node's ripple: the sonar, and the solo ping the sound couldn't place (Codex, PR #102).
+local function ripple(blip, r)
+    if blip and NR.db.ring then Alert.Sonar(blip.x, blip.y, r.kind or NR.Learn.Kind(r.name)) end
+    if blip and NR.db.ping and not IsInGroup() then
+        local ok, err = pcall(Minimap.PingLocation, Minimap, blip.x, blip.y)
+        if not ok then API.Fail("PingLocation", err) end
+    end
+end
+
 function Alert.Located(r, now)
+    trimPlayed(now)
+    if held and now - held.at >= Alert.HOLD then emit(now) end   -- an overdue hold never plays after
     local pn, pw = UnitPosition("player")
     pn, pw = API.Num(pn), API.Num(pw)
     local okR, radius = pcall(C_Minimap.GetViewRadius)
@@ -394,13 +477,19 @@ function Alert.Located(r, now)
     local list = owedLive(r.name, now)
     if list then
         table.remove(list)                               -- the newest: the rise this node most likely is
-        API.Trace("alert: " .. r.name .. " located, already announced: its sonar")
-        if blip and NR.db.ring then Alert.Sonar(blip.x, blip.y, r.kind or NR.Learn.Kind(r.name)) end
-        -- The solo ping the sound couldn't place, now it can (Codex, PR #102).
-        if blip and NR.db.ping and not IsInGroup() then
-            local ok, err = pcall(Minimap.PingLocation, Minimap, blip.x, blip.y)
-            if not ok then API.Fail("PingLocation", err) end
+        if holds(r.name) then
+            emit(now)                                    -- the sound and the ripple in one frame (#137)
+            API.Trace("alert: " .. r.name .. " located: its sound and its sonar")
+        else
+            API.Trace("alert: " .. r.name .. " located, already announced: its sonar")
         end
+        ripple(blip, r)
+        return
+    end
+    -- No token left, but the sound for its name just played (#137): its sonar only.
+    if played[r.name] and now - played[r.name] <= Alert.JUST then
+        API.Trace("alert: " .. r.name .. " located, its name's sound just played: its sonar")
+        ripple(blip, r)
         return
     end
     if r.quiet then return end                          -- there at the first look after a reset
