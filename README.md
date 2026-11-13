@@ -11,12 +11,12 @@ on the map, green for herbs, gold for ore. Look up, go grab it, carry on.
 Made for **World of Warcraft: Forever**.
 
 > [!CAUTION]
-> **Client build 70862 broke how NodeRadar sees nodes.** Blizzard changed the game, on
-> purpose, so that addons can no longer read the minimap's dots from afar, and the radar went blind.
-> Version 1.8.0 brings a workaround, the **minimap scan** (off by default: `/nr scan`, the Options
-> page, or the question asked once at login). It finds nodes again, but it can't look while you steer
-> with the mouse: **autorun, or moving and turning with the keyboard, gives much better results.** We're still working on it; see
-> [The minimap scan](#the-minimap-scan-client-build-70862-and-later) below.
+> **Development is paused: from client build 70938, no addon can tell what a minimap dot is.**
+> Build 70862 stopped addons reading the minimap's dots from afar; version 1.8.0's minimap scan
+> worked around that. Build 70938 (November 12) now hides the text of the minimap's tooltip from
+> addons as well, so the scan can't tell a herb from a quest giver, and NodeRadar can't find nodes.
+> From 1.11.0 the scan notices, stops moving your minimap and says why in chat and in Options; it
+> tries again on each new client build. Development is paused until a way is found.
 
 ![Four herbs come into range at once near Sen'jin Village: a sonar ripples out from each blip on the minimap](docs/images/four-nodes.gif)
 ![On a walk: a herb pings at the top of the map, then another at the bottom left](docs/images/walk.gif)
@@ -33,6 +33,11 @@ turn on Find Herbs or Find Minerals.
 From client build 70862, Blizzard no longer lets addons read the minimap's dots from afar, on
 purpose. On these builds NodeRadar finds nodes only with the **minimap scan** on: `/nr scan`, the
 Options page, or the question it asks once at login.
+
+**On client build 70938 the scan can't work**: the game hides the minimap's tooltip text from
+addons, so a look reads nothing. After three such looks the scan stops for that client build, says
+so once in chat and in red in Options, and stops moving your minimap; it tries again on the next
+client build. What follows is how it works on the builds where it can read.
 
 - **How it looks.** While your mouse rests over the world, NodeRadar moves your minimap, invisible,
   under the cursor for a few frames and reads what lies there. It does this every 2 s while you move
