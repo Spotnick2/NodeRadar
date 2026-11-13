@@ -106,16 +106,40 @@ local function tally(b, name, outcome)
     t[outcome] = (t[outcome] or 0) + 1
 end
 
--- A distinct shape of facts (the signature is its facts joined), counted; capped.
+-- Per-frame counters (dataInstanceID changes every frame, measured on 70938) stay out of the
+-- signature, or every frame would be a new shape; their first and last values go in the shape.
+local function volatileName(fact)
+    return fact:match("^([^=]*dataInstanceID)=")
+end
+
+-- A distinct shape of facts (the signature is its facts joined, volatile ids normalised), counted; capped.
 local function addShape(b, key, facts)
     local idx = R.index[b]
     if not idx then idx = { shapes = {}, postShapes = {} }; R.index[b] = idx end
-    local sig = table.concat(facts, "\n")
+    local sigParts, vol = {}, nil
+    for i, fact in ipairs(facts) do
+        local name = volatileName(fact)
+        if name then
+            vol = vol or {}
+            vol[name] = fact:sub(#name + 2)
+            sigParts[i] = name .. "=<volatile>"
+        else
+            sigParts[i] = fact
+        end
+    end
+    local sig = table.concat(sigParts, "\n")
     local s = idx[key][sig]
-    if s then s.count = s.count + 1; return "dup" end
+    if s then
+        s.count = s.count + 1
+        if vol then
+            s.idsLast = s.idsLast or {}
+            for name, v in pairs(vol) do s.idsLast[name] = v end
+        end
+        return "dup"
+    end
     local list = b[key]
     if #list >= MAX_SHAPES then b[key .. "Dropped"] = (b[key .. "Dropped"] or 0) + 1; return "dropped" end
-    s = { count = 1, facts = facts, at = GetTime() }
+    s = { count = 1, facts = facts, at = GetTime(), idsFirst = vol }
     list[#list + 1] = s
     idx[key][sig] = s
     return "new"
@@ -401,8 +425,12 @@ local function keyFrame()
     if not keyf then
         keyf = CreateFrame("Button", KEYFRAME, UIParent)
         keyf:Hide()
-        keyf:RegisterForClicks("AnyUp", "AnyDown")
-        keyf:SetScript("OnClick", function(_, button)
+        -- One edge only: the key's down. A binding click on a button registered for both sends a
+        -- down and an up, so a held key would answer twice. Registering AnyDown alone means the
+        -- client never delivers the up; `down == false` is refused too, in case it does.
+        keyf:RegisterForClicks("AnyDown")
+        keyf:SetScript("OnClick", function(_, button, down)
+            if down == false then return end
             local now = GetTime()
             if now - lastKey < DEBOUNCE then return end
             lastKey = now

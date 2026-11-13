@@ -57,12 +57,13 @@ local function has(list, p) for _, l in ipairs(list) do if l:find(p, 1, true) th
 local function result(i) return FP.db.steps.records["NodeRadarProbe/secret"].results[i] end
 -- tests/wow_stubs.lua's WoW.click always sends LeftButton (its check buttons), so a key click is
 -- driven here with the mouse button the binding names, as the client sends it.
-local function press(key, quick)
+local function press(key, quick, down)
     if not quick then WoW.advance(0.5) end
     local b = WoW.overrideBindings[key]
     if not b then return false end
     local target = rawget(_G, b.name)
-    target._scripts.OnClick(target, b.button or "LeftButton", true)
+    if down == nil then down = true end
+    target._scripts.OnClick(target, b.button or "LeftButton", down)
     return true
 end
 
@@ -109,6 +110,16 @@ check(#b.shapes == 2 and b.tally["data.lines[1].leftText"].plain > 0, "a changed
 for i = 1, 30 do X.addShape(b, "shapes", { "distinct=" .. i }) end
 check(#b.shapes == X.MAX_SHAPES and (b.shapesDropped or 0) > 0, "shapes stop at the cap and the rest are counted (" .. #b.shapes .. ", dropped " .. tostring(b.shapesDropped) .. ")")
 data = hoverData(secretText)
+-- A per-frame id changing between otherwise identical samples is one shape; a real change is another.
+local vb = { shapes = {}, postShapes = {}, shapesDropped = 0, postShapesDropped = 0 }
+for i = 1, 30 do X.addShape(vb, "shapes", { "data.dataInstanceID=number:" .. (1000 + i), "data.type=number:21" }) end
+check(#vb.shapes == 1 and vb.shapes[1].count == 30 and (vb.shapesDropped or 0) == 0, "a changing dataInstanceID dedupes into one shape (" .. #vb.shapes .. ")")
+check(vb.shapes[1].idsFirst["data.dataInstanceID"] == "number:1001" and vb.shapes[1].idsLast["data.dataInstanceID"] == "number:1030", "the first and last id are kept in the shape")
+X.addShape(vb, "shapes", { "data.dataInstanceID=number:2000", "data.type=number:99" })
+check(#vb.shapes == 2, "a real change next to a volatile id is a new shape")
+X.addShape(vb, "postShapes", { "post.data.dataInstanceID=number:1", "x=1" })
+X.addShape(vb, "postShapes", { "post.data.dataInstanceID=number:2", "x=1" })
+check(#vb.postShapes == 1 and vb.postShapes[1].count == 2, "the post-call shapes ignore the volatile id too")
 
 -- The post-call: fires on a MinimapMouseover build, records the data it receives.
 WoW.buildMinimapTooltip(GameTooltip)
@@ -129,6 +140,8 @@ check(at() == 3, "the hover step completes after 3 s on the map (step " .. tostr
 check(press("F9") and at() == 4 and result(3).status == "yes", "F9 answers yes on a question")
 press("F9", true)   -- the key's other edge, at once
 check(at() == 4, "a second click within the debounce is ignored")
+-- A held key: the release, long after the debounce, answers nothing (one edge per press).
+check(press("F9", false, false) and at() == 4, "a key's release edge, past the debounce, answers nothing")
 check(press("NUMPAD2") and at() == 5 and result(4).status == "no", "Numpad 2 answers no")
 check(press("F11") and at() == 6 and result(5).status == "skipped", "F11 skips the control hover")
 check(press("F11") and at() == 7 and result(6).status == "unsure", "F11 answers not sure")
