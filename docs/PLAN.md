@@ -2498,6 +2498,7 @@ Presence says how many of each name. Locate finds where, only while something ne
   old sweep refuses it (`Scan.Where` nil).
 - **Budgets**: at most 8 placements and 250 ms per burst, then restore; the search resumes at the
   next burst. Its target is under 20 placements for a new node, a performance target, not a bound.
+  (From #137 a burst whose presence read holds while a search is open: 24 and 0.8 s, below.)
 
 **As built (step 2, Locate.lua):** windows sized for the hit square's guaranteed cover
 (16 − 2 × 3.5 = 9 px); every positive window split, so a neighbour's positive only costs reads.
@@ -2520,6 +2521,105 @@ a prior was keeps that record silently, and the priors not found again go once t
 burst stopped mid-way discards its pending leaves; an unresolved search restarts only after
 `BACKOFF`, unless the count rose; Alert's owed tokens keep their own ages (`OWED_TTL`) and are
 retired by falls, gathers and new areas.
+
+### The alert as one moment (#137)
+
+The addon's main feature is the sound and the animation the moment a node's dot is detected. With
+the scan it wasn't one moment: the sound played at the presence read (`Alert.Counts`), the sonar,
+the icon and the compass only once `Locate` had found the node (`Alert.Located`). Measured in the
+owner's saved traces (`NodeRadarDB.scanLog`, one Copper Vein each): 0.5 s from sound to sonar at
+69 fps (10 windows in two bursts), but 13 to 43 s at 30 to 40 fps, where a 0.25 s burst read one
+window after its presence read (4 of its 6 to 7 frames), 8 quick bursts and then one window every
+6 s standing still: 21 windows for one vein, 12 of them before its true cell (the nearest
+sixteenths first, two inner cells positive by reach and descended for nothing). Reviewed by Codex
+(gpt-6-astra, high) in three rounds on 2026-11-12, each "approve with changes", all taken. The
+pre-70862 sweep path is untouched.
+
+**1. A search burst may run longer (`MoveScan.lua`).**
+- After a burst's presence read, if `Locate.Busy()`, its budget is `MS.SEARCH_BUDGET` (0.8 s) and
+  its placement limit `MS.SEARCH_PLACEMENTS` (24), stored on the burst (`b.budget`, `b.limit`, read
+  by `interrupted` and `nextPlacement`); otherwise 0.25 s and 8, as before (presence, re-checks).
+  Every per-read check stays. Why it is allowed: the measured stale-hover runs start at a click or
+  mouselook, which both end a burst, so a valid presence read supports the rest of its burst.
+  Supported, not proven for 0.8 s: the burst line counts the unread windows.
+- **The stop**, a scheduling rule that claims nothing: after a window read, with a hit this burst
+  (`Locate.Hits() > 0`) and no search window of a leaf's size queued (`Locate.LeavesQueued() == 0`),
+  the burst finishes ("found"). `settleHits` runs at the burst's end (`Locate.Take`), as before.
+  Demand left unmet by the settlement (two groups merged into one record, a rebuild, an exhausted
+  leaf, a second node) keeps `Locate.Busy()` true and the next quick burst carries on: a wrong stop
+  costs that burst's gap, never a record.
+- **After the settlement:** `Locate.Take` removes the met names (`counts[name] <= ofName(name)`)
+  from the search windows, dropping a window only once its set is empty. The settle frame then
+  corrects `finish`'s schedule: not `Locate.Busy()` and no first look owed, the next burst at
+  `lastBurst + MS.Every()`.
+- `MS.LOCATE_RUN` 8 -> 3 quick bursts a `QUICK_WINDOW` (3 x 0.8 s, about the old 8 x 0.25 s of
+  borrowed time).
+
+**2. The sixteenths' order after a rise while moving (`Locate.lua`).** `Locate.Presence` keeps the
+player's position and time at the last valid presence read. A search started by a rise
+(`counts[name]` above the read before; never the first read after a reset, which has no read
+before) with that read at most `BIAS_AGE` (10 s) old and a move of at least `BIAS_MOVE` (5 yards)
+since sets `bias = { n, w, at }`: the move's unit vector, `at` the time of the read that set it. It
+expires `BIAS_AGE` after `at`, and goes at `Reset` and when no search window is left.
+`Locate.Next`: depth stays the first comparison (re-checks at depth 99 first); among depth-2
+windows only, while `bias` holds, the outer ones first (centre at least `reach / 2` from the
+player), by the smallest angle to the move, the inner four last. Everything else nearest first, as
+before. Order only, never a window dropped: a wrong prior costs reads, never a node; one name's
+rise may reorder another's shared windows (latency, not coverage). Not a crescent (in range now,
+out at the last read): that needs the distance the minimap lists nodes at (#112, unmeasured).
+
+**3. One alert moment (`Alert.lua`, `NodeRadar.lua`).** One pending batch, `held = { names, at }`;
+`Alert.HOLD` 1.5 s, `Alert.JUST` 1 s.
+- **The scan's path** (`blips == nil`, `API.Blind()`): `Alert.Counts` decides as before (wanted,
+  the cooldown reserved through `lastAlert`, the owed tokens added) but holds the batch instead of
+  calling `Alert.Fire`. A batch already held plays first, then is replaced: never overwritten, no
+  queue, the old deadline never extended.
+- **`emit()`**, the only place a held batch plays: takes it into a local and clears `held` first,
+  then `Alert.Fire(names, nil)` (the sound, the chat line) and `played[name] = now` for each name.
+  It spends no cooldown. With `NR.db.enabled` false the batch is dropped silently.
+- **`Alert.Located(r, now)`**: (1) a hold past `HOLD` is emitted first (an overdue hold never meets
+  a location in the wrong order); (2) the `Wanted` check; (3) an owed token: if the hold lists the
+  name, `emit()`, then the sonar and the solo ping, the sound and the ripple in one frame; (4) no
+  live token but `played[name]` within `JUST`: a node that batch announced, its sonar and solo ping
+  only, no `Alert.Fire`, no cooldown. The marker is kept until `JUST` expires (two nodes of a name
+  located after a stall past `OWED_TTL`: one sound, two sonars). A stated one-second coalescing
+  policy, not proof of identity; (5) otherwise `r.quiet` and the full alert, as before.
+- **Retired debt:** a held batch is emitted before a token of one of its names is retired by
+  `Alert.Gathered` or by the fall branch of `Alert.Counts`. `owedLive`'s TTL emits nothing (a held
+  batch that old exists only after a stall, and `played` covers it).
+- **`Alert.Flush(now, force)`** emits when `force`, past `HOLD`, or when no held name has a search
+  open (`Locate.Searching(name)`). While a burst is under way, its settle frame included
+  (`MoveScan.Bursting()`), only the deadline counts: the window being read isn't queued and a
+  leaf found waits for the settle. Called at the end of `NR.Located` (nothing will locate it: a
+  rotating map, a backoff, a search that ran out: it plays at once, as before), from Alert's own
+  `OnUpdate` frame (set only while a batch is held), and with `force` from `Alert.Reset` (which
+  covers the scan or the radar turned off, `NR.Set`) and `Alert.NewArea`.
+- `played` entries older than `JUST` go whenever `Alert.Located` or `Alert.Counts` runs.
+- `NR.Observe` (the sound) and `NR.Located` (the sonar) run in the same settle frame, so a node found
+  in the burst that first saw it alerts as one moment with no further rule. Two names rising together
+  are one batch (the first located sounds for both, the other's sonar follows); 1.5 s is a fallback,
+  and a location after it still splits the sound from the ripple.
+
+**4. After a gather: measured first (trace lines only).** The complaint (the compass slow to go
+after a gather) has no trace behind it: no saved log contains a gather. Two designs argued from the
+code both failed review (a discount by name hid a second node of that name reached within seconds;
+one tied to the gathered spot still hid a replacement once its evidence was stale). So `Locate`'s
+gathered-spot rules stay as they are, and the scan's trace (`API.Trace`) gets: at a gather, the
+record dropped and its distance, or "no record within NEAR" with the nearest of its name; a record
+made within `MATCH` of a `gone` entry, the seconds since that gather; each presence read within
+`GATHER_TRACE` (15 s) of a gather, that name's count and records; the compass, one line when its
+target changes (the name and distance, or "none", the reset included), formatted only then. The
+next session's log says which it is: the record not dropped at the gather, the dot listed again and
+re-recorded (and after how long), or the compass itself.
+
+**In game (the owner):** the longer blink (up to 0.8 s behind the stand-in) is the one thing only
+the owner's eye can judge: ride past nodes at 60 fps and in a background client (30 fps), stock UI
+and Glass MiniMap; then `/reload` and read `NodeRadarDB.scanLog` (sound to sonar per node, windows
+per burst, unread windows in long bursts, the gather lines).
+
+**Not in this plan (measured first):** reads while a mouse button is held (`/fp steps nr held`), the
+hit square's measured offset compensated (fewer false leads), a region search in place of the
+quadtree, #112's listing distance.
 
 ### Cadence
 

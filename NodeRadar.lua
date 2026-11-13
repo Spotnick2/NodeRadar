@@ -198,6 +198,7 @@ function NR.Located(new, now)
     Compass.Reconcile(nil, now)
     NR.FarMarker.Update({ where = NR.Scan.Where() })
     for _, r in ipairs(new) do Alert.Located(r, now) end
+    Alert.Flush(now)                                -- a held sound nothing will locate plays now (#137)
 end
 
 -- What a minimap scan saw (#91), on completion: presence, the counts of each node name in range.

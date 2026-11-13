@@ -73,6 +73,7 @@ check(homeW == 198 and Minimap:GetAlpha() == 1, "the map is home between bursts"
 -- Many new nodes: at most LOCATE_RUN quick bursts in a row, then the usual cadence (the owner:
 -- three new nodes blinked a long while).
 NR = fresh()
+NR.MoveScan.SEARCH_PLACEMENTS = 4                        -- short search bursts: a run of them (#137)
 WoW.blips = { { "Silverleaf", 20, -15 }, { "Silverleaf", -40, 30 }, { "Silverleaf", 50, 50 },
               { "Silverleaf", -60, -40 }, { "Silverleaf", 70, -10 } }
 local starts, inBurst, t0 = {}, false, nil
@@ -87,13 +88,14 @@ for i = 2, #starts do
     if starts[i] - starts[i - 1] < 1 then quick = quick + 1 else quick = 0 end
     if quick > maxRun then maxRun = quick end
 end
-check(maxRun >= 3 and maxRun <= 8,
+check(maxRun >= 2 and maxRun <= NR.MoveScan.LOCATE_RUN,
     "quick locate bursts come in runs of at most LOCATE_RUN (" .. maxRun .. ")")
 
 -- A search its run didn't finish gets quick bursts again once the allowance comes back (in
 -- game: one window every 6 s for half a minute), never more than LOCATE_RUN in any QUICK_WINDOW.
 NR = fresh()
 NR.MoveScan.PLACEMENTS = 2                               -- one window a burst: a long search
+NR.MoveScan.SEARCH_PLACEMENTS = 2                        -- a search burst's too (#137)
 WoW.blips = { { "Silverleaf", 70, -60 } }
 local st, inB = {}, false
 for _ = 1, 3500 do
@@ -337,7 +339,7 @@ for _ = 1, 400 do
     local b = NR.MoveScan._test.burst()
     if b then
         if not quest.active then offDuring = true end
-        if b.reason and b.reason ~= "done" then stopped = true end
+        if b.reason and b.reason ~= "done" and b.reason ~= "found" then stopped = true end
     end
     if NR.MoveScan.stats.windows > 0 and not b then break end
 end
@@ -423,4 +425,124 @@ for _ = 1, 1500 do
 end
 check(sonarAt and startsAfter[1] and startsAfter[1] - sonarAt >= NR.MoveScan.SONAR_HOLD - 0.05,
     ("a sonar on the map: no burst until its rings are done (%.2f s)"):format((startsAfter[1] or 0) - (sonarAt or 0)))
+
+--------------------------------------------------------------------------------
+-- 10. The alert as one moment (#137): a burst whose presence read held runs longer while a
+-- search is open, stops once a node is found and no leaf is left, and the node's sound and
+-- sonar come in the same frame.
+--------------------------------------------------------------------------------
+
+-- Frames until `done(list)`, each burst seen kept (its last frame under way in b.lastAt).
+local function watchBursts(limit, done)
+    local list, cur = {}, nil
+    for _ = 1, limit do
+        frames(1)
+        local b = NodeRadar.MoveScan._test.burst()
+        if b and b ~= cur then cur = b; list[#list + 1] = b end
+        if b and b.phase ~= "settle" then b.lastAt = WoW.now end
+        if done and done(list) then break end
+    end
+    return list
+end
+local function lasted(b) return (b.lastAt or b.t0) - b.t0 end
+
+-- A far node: the search outlasts the old budget and placement limit, within the new ones.
+NR = fresh()
+bursts(2)                                                -- the baseline: nothing in range
+WoW.blips = { { "Silverleaf", 70, -60 } }
+local seen = watchBursts(3000, function(list) return #list >= 1 and list[1].reason ~= nil and list[1].phase == "settle" end)
+local b1 = seen[1]
+check(b1 and b1.observation and b1.budget == NR.MoveScan.SEARCH_BUDGET and b1.limit == NR.MoveScan.SEARCH_PLACEMENTS,
+    "a presence read with a search open: the burst's budget and limit are the search's")
+check(b1 and b1.placements > 8, ("...more than the old 8 placements (%d)"):format(b1 and b1.placements or 0))
+check(b1 and lasted(b1) > 0.25 and lasted(b1) <= NR.MoveScan.SEARCH_BUDGET + 0.03,
+    ("...past the old 0.25 s, within 0.8 s (%.2f s)"):format(b1 and lasted(b1) or 0))
+
+-- A burst without a search keeps the short budget (presence, re-checks).
+NR = fresh()
+bursts(2)
+local short = watchBursts(800, function(list) return #list >= 1 and list[1].phase == "settle" end)[1]
+check(short and short.observation and short.budget == NR.MoveScan.BUDGET and short.limit == NR.MoveScan.PLACEMENTS,
+    "no search open: 0.25 s and 8 placements, as before")
+
+-- An interruption past 0.25 s: the map home, the window placed but unread back in the queue.
+NR = fresh()
+bursts(2)
+WoW.blips = { { "Silverleaf", 70, -60 } }
+local cut, cutWindow
+watchBursts(3000, function(list)
+    local b = list[#list]
+    if b and not cut and b.phase == "placed" and b.cur.kind == "window" and not b.cur.read and WoW.now - b.t0 > 0.3 then
+        cut, cutWindow = b, b.cur.window
+        WoW.cursor = { 340, 300 }                        -- the cursor moves: the burst ends
+    end
+    return cut ~= nil and not NodeRadar.MoveScan._test.burst()
+end)
+WoW.cursor = { 300, 300 }
+local requeued = false
+for _, w in ipairs(NR.Locate._test.windows()) do if w == cutWindow and w.tries == 1 then requeued = true end end
+check(cut and cut.reason == "the cursor moved", "a search burst cut after 0.25 s: " .. tostring(cut and cut.reason))
+check(requeued, "...its placed, unread window back in the queue (one try spent)")
+check(Minimap:GetWidth() == 198 and Minimap:GetAlpha() == 1 and select(2, Minimap:GetPoint(1)) ~= UIParent,
+    "...and the map home")
+
+-- The settle frame's cancellation still drops the read (a long burst too).
+NR = fresh()
+bursts(2)
+WoW.blips = { { "Silverleaf", 70, -60 } }
+local obs, realObserve = 0, NR.Observe
+NR.Observe = function(...) obs = obs + 1; return realObserve(...) end
+local cancelled = false
+watchBursts(3000, function(list)
+    local b = list[#list]
+    if b and b.phase == "settle" and not cancelled then cancelled = true; NR.MoveScan.Cancel() end
+    return cancelled and not NodeRadar.MoveScan._test.burst()
+end)
+check(cancelled and obs == 0, "a search burst cancelled before its settle frame: its read dropped")
+
+-- A near node, risen: found within the burst that saw it, the burst stops there ("found"), and
+-- its sound and sonar play in the same frame.
+NR = fresh()
+bursts(2)
+local soundAt, sonarFirst = nil, nil
+local realSonar3 = NR.Alert.Sonar
+NR.Alert.Sonar = function(...) sonarFirst = sonarFirst or WoW.now; return realSonar3(...) end
+local sounds0 = #WoW.sounds
+WoW.blips = { { "Silverleaf", 20, -15 } }
+local atStop
+seen = watchBursts(3000, function(list)
+    local b = list[#list]
+    if b and b.reason == "found" and b.phase == "settle" and not atStop then
+        atStop = { hits = NR.Locate.Hits(), leaves = NR.Locate.LeavesQueued() }
+    end
+    if not soundAt and #WoW.sounds > sounds0 then soundAt = WoW.now end
+    return soundAt ~= nil and sonarFirst ~= nil
+end)
+check(#seen == 1 and seen[1].reason == "found", "the node found in the burst that saw it, which stops there: "
+    .. tostring(seen[1] and seen[1].reason) .. " (" .. #seen .. " bursts)")
+check(atStop and atStop.hits > 0 and atStop.leaves == 0, ("...stopped with a hit and no leaf left (%s hits, %s leaves)"):format(
+    tostring(atStop and atStop.hits), tostring(atStop and atStop.leaves)))
+check(soundAt and sonarFirst and soundAt == sonarFirst, ("its sound and its sonar in the same frame (%s, %s)"):format(
+    tostring(soundAt), tostring(sonarFirst)))
+check(#WoW.sounds == sounds0 + 1, "...one sound")
+
+-- After a settlement that met the count: the next look at the cadence. With demand left (a
+-- second node): the quick gap. (The ring off: a sonar holds the next burst back.)
+local function gapAfterFound(blips)
+    NR = fresh()
+    NR.db.ring = false
+    bursts(2)
+    WoW.blips = blips
+    local found, nextStart
+    watchBursts(3000, function(list)
+        for _, b in ipairs(list) do if not found and b.reason == "found" then found = b end end
+        if found and list[#list] ~= found then nextStart = list[#list].t0; return true end
+    end)
+    return found and nextStart and nextStart - (found.lastAt or found.t0)
+end
+local met = gapAfterFound({ { "Silverleaf", 20, -15 } })
+check(met and met >= NR.MoveScan.Every() - 0.1, ("the count met: the next look at Every() (%.1f s)"):format(met or -1))
+local left = gapAfterFound({ { "Silverleaf", 20, -15 }, { "Silverleaf", 70, -60 } })
+check(left and left < 1, ("a node left to find: the next look quick (%.1f s)"):format(left or -1))
+check(NR.MoveScan.LOCATE_RUN == 3, "3 quick bursts a QUICK_WINDOW (3 x 0.8 s, about the old 8 x 0.25 s)")
 done("test_locate")

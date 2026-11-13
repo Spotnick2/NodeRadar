@@ -27,6 +27,12 @@ MS.QUIET = 0.2          -- seconds the cursor rests before a burst
 MS.STILL_PX = 2         -- screen px it may drift and still be resting
 MS.RELEASE = 0.3        -- seconds after a mouse button comes up
 MS.BUDGET = 0.25        -- seconds a burst may take, checked every frame
+-- A burst whose presence read held while a search is open may run longer (#137): the measured
+-- stale-hover runs start at a click or mouselook, both of which end a burst, so a valid presence
+-- read supports the rest of its burst (supported, not proven for 0.8 s: the burst line counts
+-- the unread windows). At 30 fps a 0.25 s burst read one window after its presence read.
+MS.SEARCH_BUDGET = 0.8
+MS.SEARCH_PLACEMENTS = 24
 MS.RETRY = 2            -- seconds between retries of a restore left pending
 MS.FOLLOWERS_EVERY = 10 -- seconds between searches for frames anchored to the map
 MS.STILL_FACTOR = 3     -- standing still, a burst every scanEvery x 3 seconds, at most MAX_EVERY
@@ -1068,7 +1074,7 @@ local function interrupted(b, now)
     if API.Gamepad() then return "the gamepad UI" end
     if mouselooking() then return "mouselook" end
     if buttonDown() then return "a mouse button" end
-    if now - b.t0 > MS.BUDGET then return "over budget" end
+    if now - b.t0 > b.budget then return "over budget" end
     if not sameContext(b.context, context()) then return "the map changed" end
     local x, y = cursor()
     if not (x and y) or math.abs(x - b.x) > MS.STILL_PX or math.abs(y - b.y) > MS.STILL_PX then return "the cursor moved" end
@@ -1130,6 +1136,15 @@ local function finish(b, reason)
     MS.TraceBurst(b, GetTime(), quick, soon)
 end
 
+-- The settle frame, after Locate.Take settled the burst's leaves (#137): a search that ended
+-- there doesn't keep its quick schedule, the next look comes at the cadence.
+local function settled()
+    if NR.Locate and not NR.Locate.Busy() and not firstLook and nextAt < lastBurst + MS.Every() then
+        nextAt = lastBurst + MS.Every()
+        API.Trace(("scan: the search is over: next in %.1f s"):format(MS.Every()))
+    end
+end
+
 -- A first look owed (login, a new area, the scan turned on): the next burst at once, and one
 -- that doesn't read is tried again after FIRST_RETRY, FIRST_TRIES times within FIRST_WINDOW.
 MS.FIRST_RETRY = 1
@@ -1146,6 +1161,10 @@ MS.SONAR_HOLD = 1.5
 function MS.Hold(seconds)
     holdUntil = math.max(holdUntil, GetTime() + seconds)
 end
+
+-- A burst under way, its settle frame included (Alert.Flush: a window being read isn't queued and
+-- a leaf found waits for the settle, so "no search open" is judged only after it, #137).
+function MS.Bursting() return burst ~= nil end
 
 -- Quick locate bursts left in the rolling allowance (LOCATE_RUN a QUICK_WINDOW, every name's).
 function MS.QuickLeft(now)
@@ -1202,7 +1221,8 @@ local function borrow(now)
     local x, y = cursor()
     gen = gen + 1
     local b = { gen = gen, t0 = now, frame = 1, x = x, y = y, phase = "off", context = context(),
-                es = s.es, homeW = s.w, eye = eyeShown(), placements = 0, w0 = MS.stats.windows }
+                es = s.es, homeW = s.w, eye = eyeShown(), placements = 0, w0 = MS.stats.windows,
+                budget = MS.BUDGET, limit = MS.PLACEMENTS }
     b.cur = { units = MS.PRESENCE_PX / s.es, ox = 0, oy = 0, kind = "presence" }
     saved, burst, suppress = s, b, true
     MS.stats.bursts = MS.stats.bursts + 1
@@ -1413,7 +1433,8 @@ end
 -- burst and while the budget allows another (a margin for its settle frame).
 MS.PLACEMENTS = 8
 MS.LOCATE_GAP = 0.3     -- seconds between bursts while Locate has windows open
-MS.LOCATE_RUN = 8       -- such quick bursts at most in any QUICK_WINDOW (about 3 s of blinking)
+MS.LOCATE_RUN = 3       -- such quick bursts at most in any QUICK_WINDOW (#137: 3 x 0.8 s, about
+                        -- the old 8 x 0.25 s of borrowed time)
 MS.QUICK_WINDOW = 20    -- seconds (Codex, PR #102: a run that didn't finish its search comes back)
 MS.MARGIN = 0.06
 local function nextPlacement(b, now)
@@ -1421,8 +1442,8 @@ local function nextPlacement(b, now)
     -- a fixed margin at a low frame rate admitted placements that timed out unread).
     local margin = math.max(MS.MARGIN, 3 * frameDt)
     if not NR.Locate then return nil end
-    if b.placements >= MS.PLACEMENTS then b.stop = "the placement limit"; return nil end
-    if now - b.t0 > MS.BUDGET - margin then
+    if b.placements >= b.limit then b.stop = "the placement limit"; return nil end
+    if now - b.t0 > b.budget - margin then
         b.stop = ("the budget (%d ms in, margin %d ms)"):format((now - b.t0) * 1000, margin * 1000)
         return nil
     end
@@ -1464,6 +1485,7 @@ local function stepBurst(b, now)
         if NR.Locate and NR.Located then
             local changed, new = NR.Locate.Take()
             if changed or (b.observation and b.gen == gen) then NR.Located(new, now) end
+            settled()
         end
         return
     end
@@ -1475,6 +1497,15 @@ local function stepBurst(b, now)
         -- A failed presence read ends the burst: its windows' empty answers would prove nothing
         -- and could drop live records (Codex, PR #102).
         if b.cur.kind == "presence" and not b.observation then return finish(b, "the presence read failed") end
+        if b.cur.kind == "presence" and NR.Locate and NR.Locate.Busy() then
+            b.budget, b.limit = MS.SEARCH_BUDGET, MS.SEARCH_PLACEMENTS     -- a search burst (#137)
+        end
+        -- The stop (#137): a node found this burst and no leaf left to read, the burst ends and
+        -- settles now. A scheduling rule that claims nothing: demand left unmet after the
+        -- settlement keeps Locate busy, and the next quick burst carries on.
+        if b.cur.kind == "window" and NR.Locate and NR.Locate.Hits() > 0 and NR.Locate.LeavesQueued() == 0 then
+            return finish(b, "found")
+        end
         local p = nextPlacement(b, now)
         if p then return place(b, p) end
         return finish(b, "done")

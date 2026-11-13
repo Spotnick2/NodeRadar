@@ -31,6 +31,8 @@ local function fresh(db, build)
     local NR = loadAddon({ db = db or { moveScan = true, moveScanAsked = true } })
     NR.db.learn = false
     NR.MoveScan.PLACEMENTS = 1                     -- step 1's checks: the presence read alone (test_locate: the rest)
+    NR.MoveScan.SEARCH_PLACEMENTS = 1              -- a search burst's too (#137; section 13: the longer bursts)
+    NR.Alert.HOLD = 0                              -- the sound at the presence read (#137; test_alert: the hold)
     HOME = home()
     return NR
 end
