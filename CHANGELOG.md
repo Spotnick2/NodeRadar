@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.11.0
+
+Released 2026-11-13.
 
 - **The minimap scan stops on client build 70938 and says why** (#139): from that build the game
   shows the minimap's tooltip but lets no addon read its text, so the scan can't tell which nodes are

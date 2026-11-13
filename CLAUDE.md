@@ -13,7 +13,7 @@ CI). When this file doesn't cover something, check how those handle it before yo
 The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
 [docs/FOREVER-PROBE.md](docs/FOREVER-PROBE.md).
 
-**Status:** v1.10.0, after v1.9.0, v1.8.2, v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
+**Status:** v1.11.0, after v1.10.0, v1.9.0, v1.8.2, v1.8.1, v1.8.0, v1.7.1, v1.7.0, v1.6.0, v1.5.0, v1.4.0, v1.3.0, v1.2.0, v1.1.0, v1.0.1 and v1.0.0 (#23), the first release for Forever. Done:
 - the repo setup (#1) and the probes that decided detection (#2) and classification (#7);
 - the port (#3, `docs/PLAN.md`, reviewed by Codex to consensus), with the release check in game
   (70450, docs/FOREVER-PROBE.md);
@@ -88,6 +88,14 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   character, off); the radar look a choice (`scanRadar`, off), followed by Glass MiniMap 1.2.0, which
   hands the stand-in to NodeRadar otherwise; the stand-in at the map's effective alpha (the fader).
   Offline tested; in game unchecked.
+
+- v1.11.0 (PR #132, PR #135, PR #136, PR #138, PR #140): the real ground in Forever's own zones;
+  a look right after a gather (#133); other frames' mouse wheel off during a look (#134); the alert
+  as one moment (#137: the sound held for the sonar, longer search bursts, the search ahead of the
+  rider); and the scan stopping on a build whose minimap names are secret (#139). Client build 70938
+  hides the minimap tooltip's text from addons (measured), so the scan reads nothing there:
+  development is paused until a way is found (the owner, 2026-11-13). Offline tested; #139's stop
+  in game unchecked.
 
 Next: from client build 70938 the minimap's names are secret and the scan stops (#139); if a build
 lets it read again, the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
