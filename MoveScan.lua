@@ -76,6 +76,7 @@ local movedSince = true
 local prevX, prevY                    -- the cursor last frame
 local rearmed                         -- #125: the move that last set movedSince (the trace)
 local emptyRun = 0                    -- #125: presence reads in a row that came back with no lines
+local secretRun = 0                   -- #139: presence reads in a row whose names were secret
 local anchorX, anchorY                -- #125: where the cursor sat when movedSince went false
 MS.REARM_PX = 2                       -- a real move: this far from there (in game, 0.4 and 1.1 px of
                                       -- jitter passed for moves, and the reads after them were empty)
@@ -614,6 +615,17 @@ local function halt(why)
     end
 end
 
+-- #139: the names are secret on this build: the scan stops until the next one (the scan runs
+-- only on a readable build, API.Blind).
+local function secretNames()
+    secretRun = 0
+    local build = API.Build()
+    NR.db.secretNames = build
+    API.Trace(("scan: %d secret reads in a row: off on build %d"):format(MS.SECRET_READS, build))
+    API.Say("the minimap scan stops: this client build hides the minimap's names from addons, so it can't tell "
+        .. "which nodes are there. It tries again on the next client build.")
+end
+
 local function geometryHome(s)
     return samePoints(points(), s.points) and same(ask(Minimap, "GetWidth"), s.w)
         and same(ask(Minimap, "GetHeight"), s.h) and ask(Minimap, "IsClampedToScreen") == s.clamp
@@ -950,9 +962,21 @@ local function sameContext(a, b)
     return a and b and a.zoom == b.zoom and a.radius == b.radius and same(a.es, b.es)
 end
 
+-- #139: from 70938 the minimap tooltip's text is secret to addons, on the scan and on a real hover
+-- alike (measured, docs/FOREVER-PROBE.md, "70938: the minimap's names are secret"), so a read
+-- names nothing. SECRET_READS secret presence reads in a row stop the scan for this client build
+-- (NodeRadarDB.secretNames); a new build tries again. An empty read proves nothing either way.
+MS.SECRET_READS = 3
+function MS.Secret()
+    local db = NR.db
+    local build = API.Build()
+    return db ~= nil and build ~= nil and db.secretNames == build
+end
+
 function MS.On()
     local db = NR.db
     return db ~= nil and db.enabled == true and db.moveScan == true and API.Blind() and not halted
+        and not MS.Secret()
 end
 
 -- Why no burst may start now, or nil.
@@ -1024,6 +1048,11 @@ function MS.Trouble(now)
     now = now or GetTime()
     if halted then
         return "halted", "it turned itself off this session (" .. halted .. ").", "/nr scan turns it on again."
+    end
+    if MS.Secret() then
+        return "secret", "this client build hides the minimap's names from addons.",
+            "From build 70938 the game shows the minimap's tooltip but lets no addon read its text, so the scan "
+            .. "can't tell which nodes are there. It tries again on the next client build."
     end
     if MS.Rival() then
         return "rival", "another addon scans the minimap too.",
@@ -1412,11 +1441,15 @@ local function read(b, now)
             end
         else
             API.Trace("scan: unread (" .. tostring(why) .. ")")
+            if why == "secret" then
+                secretRun = secretRun + 1
+                if secretRun >= MS.SECRET_READS then secretNames() end
+            end
         end
         return true
     end
     MS.stats.valid = MS.stats.valid + 1
-    emptyRun = 0
+    emptyRun, secretRun = 0, 0
     local counts = countsOf(names)
     b.cur.read = true
     b.observation = { counts = counts, at = now, gen = b.gen }
@@ -1767,7 +1800,7 @@ end
 
 function MS.AskSoon(now)
     local db = NR.db
-    if db and not db.moveScanAsked and not db.moveScan and API.Blind() then askAt = now + MS.ASK_AFTER end
+    if db and not db.moveScanAsked and not db.moveScan and API.Blind() and not MS.Secret() then askAt = now + MS.ASK_AFTER end
 end
 
 local asker = CreateFrame("Frame")
@@ -1775,7 +1808,7 @@ asker:SetScript("OnUpdate", function()
     if not askAt then return end
     local now = GetTime()
     local db = NR.db
-    if not db or db.moveScanAsked or db.moveScan then askAt = nil; return end
+    if not db or db.moveScanAsked or db.moveScan or MS.Secret() then askAt = nil; return end
     if now < askAt or inCombat() or NR.Learn.loading or API.Gamepad() then return end
     askAt = nil
     MS.ShowPrompt()

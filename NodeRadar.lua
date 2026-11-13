@@ -557,7 +557,8 @@ SlashCmdList.NODERADAR = function(msg)
     elseif cmd == "scan" then
         NR.Set("moveScan", not db.moveScan)
         API.Say("the minimap scan " .. onOff(db.moveScan)
-            .. (db.moveScan and not API.Blind() and " (it runs from client build 70862; this client's radar reads the minimap itself)" or ""))
+            .. (db.moveScan and not API.Blind() and " (it runs from client build 70862; this client's radar reads the minimap itself)" or "")
+            .. (db.moveScan and NR.MoveScan.Secret() and " (but this client build hides the minimap's names from addons: it can't run until the next build)" or ""))
     elseif cmd == "test" then
         Alert.Test()
     elseif cmd == "status" then

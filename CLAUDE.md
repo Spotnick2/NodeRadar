@@ -89,7 +89,8 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   hands the stand-in to NodeRadar otherwise; the stand-in at the map's effective alpha (the fader).
   Offline tested; in game unchecked.
 
-Next: the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
+Next: from client build 70938 the minimap's names are secret and the scan stops (#139); if a build
+lets it read again, the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
 suppression bound to one node, names interleaved in a search, no beacon on a coarse record, then
 refining the compass's target (5-yard windows, measured first) and keeping records across a reload;
 the probe of reads right after mouse steering; the background frame rate per character (#104,
@@ -272,6 +273,9 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
   unit hovered, within `NEAR_PX` of the map) nor until the map's home has held still `STABLE` s (#116:
   sampled every frame outside our borrows, no hook; `MOVES` changes in 10 s stop the scan 30 s,
   "something keeps moving the minimap"); a first look after combat, a taxi, a dismount (#114) and a gather (the loot window closing, #133).
+  From 70938 the minimap tooltip's text is secret to addons (#139, measured): `MS.SECRET_READS` secret
+  presence reads in a row stop the scan for that build (`NodeRadarDB.secretNames`, `MS.Secret()`, Trouble
+  "secret"), said once; a new build tries again.
   `MS.Trouble`: the lasting reason it can't run, shown in red in Options (#116). The login prompt
   (`moveScanAsked`), `/nr scan`, Options. Tests: `test_movescan` on the stubs' move model
   (`WoW.moveModel`).

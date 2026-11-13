@@ -1093,4 +1093,63 @@ runBurst()
 frames(2)
 check(pin2:IsMouseMotionEnabled() == true and pin2:IsMouseClickEnabled() == true, "a plain frame: both back")
 
+--------------------------------------------------------------------------------
+-- 14. #139: from 70938 the minimap tooltip's names are secret (measured on a real hover too).
+-- SECRET_READS secret presence reads in a row stop the scan for that build, said once, in
+-- Options in red; a valid read in between starts the count again; a new build tries again.
+--------------------------------------------------------------------------------
+
+local function secretLooks(n)
+    for _ = 1, n do
+        WoW.now = WoW.now + 10
+        if not untilBorrowed(400) then return false end
+        runBurst()
+    end
+    return true
+end
+
+NR = fresh(nil, "70938")
+WoW.blips = { { "Silverleaf", 0, 0 } }             -- under the resting cursor's centre: a line every read
+WoW.secretNames = true
+check(secretLooks(NR.MoveScan.SECRET_READS - 1), "70938: secret looks run")
+check(NR.MoveScan.On() and NR.db.secretNames == nil and NR.MoveScan.Trouble(GetTime()) == nil,
+    "one short of SECRET_READS secret reads: still on")
+WoW.secretNames = false
+check(secretLooks(1) and NR.MoveScan.stats.valid == 1, "(control) a valid read in between")
+WoW.secretNames = true
+check(secretLooks(NR.MoveScan.SECRET_READS - 1) and NR.db.secretNames == nil,
+    "a valid read starts the count again")
+local chatBefore = #WoW.chat
+check(secretLooks(1), "one more secret read")
+check(NR.db.secretNames == 70938 and not NR.MoveScan.On(), "SECRET_READS in a row: off for build 70938")
+check(atHome(), "...the map at home")
+check(chatHas("hides the minimap's names from addons"), "...said in chat")
+check(#WoW.chat == chatBefore + 1, "...once")
+check(NR.MoveScan.Trouble(GetTime()) == "secret", "Options says why (Trouble: secret)")
+check(NR.db.moveScan == true, "the player's setting is kept (the next build tries again)")
+local bursts = NR.MoveScan.stats.bursts
+WoW.now = WoW.now + 60
+frames(300)
+check(NR.MoveScan.stats.bursts == bursts and atHome(), "no look on this build any more: the map never borrowed")
+SlashCmdList.NODERADAR("scan")
+SlashCmdList.NODERADAR("scan")
+check(chatHas("it can't run until the next build"), "/nr scan back on says it can't run on this build")
+check(NR.MoveScan.Trouble(GetTime()) == "secret", "...and Trouble still says why")
+
+-- Across a reload on the same build: still off; a new build: on again.
+local db = NR.db
+NR = fresh(db, "70938")
+frames(300)
+check(NR.MoveScan.stats.bursts == 0 and NR.MoveScan.Trouble(GetTime()) == "secret", "a reload on 70938: still off")
+NR = fresh(db, "70950")
+check(NR.MoveScan.On() and NR.MoveScan.Trouble(GetTime()) == nil, "a new build: the scan tries again")
+WoW.secretNames = false
+
+-- Never asked on a build whose names are secret.
+NR = fresh({ secretNames = 70938 }, "70938")
+check(NR.MoveScan._test.askAt() == nil, "never asked on a build whose names are secret")
+NR = fresh({ secretNames = 70938 }, "70950")
+check(NR.MoveScan._test.askAt() ~= nil, "(control) asked on the next build")
+
+
 done("test_movescan")

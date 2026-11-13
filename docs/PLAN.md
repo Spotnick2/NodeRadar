@@ -2231,6 +2231,14 @@ before any code (docs/FOREVER-PROBE.md, "Reading by moving the minimap"). Two ot
 work this way; their measures were weighed, not copied. Reviewed by Codex (gpt-6-astra, high):
 rounds 1 to 3 on 2026-11-08, each "approve with changes", all taken below; round 4: APPROVE.
 
+**From 70938 the scan reads nothing either** (#139): the minimap tooltip's text is secret to
+addons, on the moved map and on a real hover alike (docs/FOREVER-PROBE.md, "70938: the minimap's
+names are secret"). `MoveScan` counts secret presence reads in a row; at `MS.SECRET_READS` (3) it
+stops for that client build (`NodeRadarDB.secretNames`, `MS.Secret()`): no more borrows, said
+once in chat, in Options in red (`MS.Trouble`: "secret"), no login prompt. A valid read in between
+starts the count again; an empty read counts neither way. The player's `moveScan` is kept, so a new
+build tries again.
+
 ### What it rests on (measured, 70862)
 
 - `Minimap` is unprotected (only `MinimapCluster` is, and only the cluster is an Edit Mode

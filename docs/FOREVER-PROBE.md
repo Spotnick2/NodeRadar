@@ -1031,6 +1031,39 @@ The same round again on the next build, to see whether it came back. Its API dum
 
 So `NR.BLIND_FROM` (70862) stays open-ended, and the scan (#91) remains the way to read the map.
 
+### 70938: the minimap's names are secret: `/fp steps nr held` and `secret`, 1.60.1.70938 (the owner, 2026-11-12, Shen'dar Village) (#139)
+
+The scan read nothing after the update. A session on 70938 logged 75 bursts, 0 valid, every one
+`unread (secret)`; the session before it on 70888 had 42 valid of 63. The 70938 API dump changes
+nothing around the minimap or tooltips (only `C_TradeSkillUI.HasNoReagentCost` and
+`C_TransmogOutfitInfo`'s secondary-slot signatures), and Blizzard's UI source between 70888 and
+70938 doesn't touch `Blizzard_Minimap`. So the change is in the engine.
+
+- **`C_TooltipInfo.GetMinimapMouseover()` still returns a plain table**, `{ dataInstanceID, type = 21,
+  lines }`, and `lines` is a plain table. **`lines[1].leftText` is secret, and so is `leftColor`**
+  (the whole colour table). `type` (0) is plain; there's no `rightText`, `id`, `args` or `guid`.
+  `dataInstanceID` is plain and changes every frame.
+- **The same on the scan's moved map and on a real hover with the map at home** (the `secret`
+  round: the scan off, the owner's mouse on a gathering node's dot: 185 + 941 + 505 samples, every one
+  secret), **and on a non-node icon** (a quest icon: 182 + 1038). Nothing plain tells a node from any
+  other icon.
+- **GameTooltip's own text is secret too:** `GameTooltipTextLeft1:GetText()` and `GetTextColor()`;
+  the font string's `HasAnySecretAspect()` is true, `HasSecretValues()` false.
+  `GameTooltip:GetTooltipData()` holds the same secret line. `GameTooltip:HasSecretValues()` and
+  `IsPreventingSecretValues()` are false.
+- **A `TooltipDataProcessor` post-call for type 21 gets the same secret data** (it fired once a
+  frame on the hover). So `Tooltip.lua`'s "Requires" line adds nothing; the owner saw the name and no
+  such line.
+- `C_Secrets.HasSecretRestrictions()` is true, `canaccesssecrets()` false.
+  `hasanysecretvalues(data)` is **false** with a secret nested in `lines`: it doesn't look inside.
+- **An empty read is still plain** (nil, or no lines; the `held` round), so whether something is
+  under the point is readable, not what it is.
+- The held-button round (`held`, the same evening) found the same secret `leftText` on every look,
+  whatever button was held, so it isn't something the scan's input causes.
+
+So from 70938 the scan has nothing to read (#139: it stops on that build and says why), as the
+sweep had nothing from 70862. Not reported on Stanzilla/WoWUIBugs yet.
+
 ### Reading by moving the minimap: `/fp steps nr movescan` and `/fp nr movetest`, 1.60.1.70862 (the owner, 2026-11-08, the Barrens, Herbalism 98 to 114) (#91)
 
 Eight revisions of the round and its one-shot command (`/fp nr movetest <size> <dx> <dy> [variant]
