@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The minimap scan stops on client build 70938 and says why** (#139): from that build the game
+  shows the minimap's tooltip but lets no addon read its text, so the scan can't tell which nodes are
+  there. After three such reads it stops borrowing the minimap on that build, says so once in chat
+  and in Options, and tries again on the next client build.
+
 - **The sound and the ripple together again** (#137): with the minimap scan, a new node's sound
   played at once while its sonar, icon and compass came only once the node was located, many seconds
   later at 30 fps. Now the sound is held for up to a second and a half and plays with the sonar the

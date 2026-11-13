@@ -10,3 +10,4 @@
 NodeRadarProbe.lua
 MoveScan2.lua
 ScanRound.lua
+SecretRound.lua
