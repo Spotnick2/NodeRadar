@@ -18,7 +18,7 @@ local lib = { New = function() return {
         return g
     end,
     Apply = function(frame) return { top = CreateFrame("Frame", nil, frame) } end,
-    Font = function(parent) return parent:CreateFontString() end,
+    Font = function(parent) return parent:CreateFontString(nil, "OVERLAY", "GameFontNormal") end,
     Mask = function(host) return host:CreateTexture() end,
 } end }
 rawset(_G, "LibStub", setmetatable({}, { __call = function(_, major)
@@ -39,7 +39,7 @@ loadProbe()
 local S = FP.Steps
 local db = NodeRadarProbeDB
 rawset(_G, "GameTooltip", CreateFrame("Frame"))
-rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString())
+rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText"))
 GameTooltip:Hide()
 
 local function errors()

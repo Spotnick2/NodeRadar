@@ -1,5 +1,6 @@
 # WowTestKit for these tests: the commit, and the client build to test against.
-# build stays 70450 with MEASURED_ON_BUILD and the GetBuildInfo stub: moving to a newer build is a re-measure in game first.
-sha=c99451a06cbed5107cba9aa3655fa8f54375d6c0
-build=70450
+# build follows MEASURED_ON_BUILD (Compat.lua), the build docs/FOREVER-PROBE.md was last measured on: the API lists the
+# code is checked against. The GetBuildInfo stub (tests/wow_stubs.lua) stays on 70450, before the sweep went blind (#90).
+sha=b55711d0bb120a889e706718b1e567f7c93643a3
+build=71037
 api=2

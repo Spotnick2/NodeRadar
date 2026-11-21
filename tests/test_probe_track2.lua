@@ -17,7 +17,7 @@ local FP = loadForeverProbe()
 loadProbe()
 local S = FP.Steps
 local db = NodeRadarProbeDB
-rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString())
+rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText"))
 
 local function errors()
     local n = 0
@@ -54,7 +54,7 @@ S.Answer(true)                                             -- 3
 poll()
 eq(result(4).status, nil, "no row hovered: waits")
 H.rows[2].cell._scripts.OnEnter(H.rows[2].cell)
-GameTooltipTextLeft1:SetText(GameTooltip._text)           -- the client's SetText fills its first line
+GameTooltipTextLeft1:SetText(GameTooltip._lines[1])       -- the client's SetText fills its first line
 poll()
 eq(result(4).status, "done", "a row's tooltip: " .. detail(4))
 check(detail(4):find("Peacebloom"), "...its lines read")

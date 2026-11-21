@@ -59,7 +59,10 @@ check(lines:find("Carry Your Weight: not a node %(toggle%)"), "...and a name tha
 nr("forget Carry Your Weight")
 eq(NR.Learn.Kind("Carry Your Weight"), nil, "/nr forget, a name with spaces and capitals")
 newChat()
+local stubBuild = GetBuildInfo                 -- the stub stays before 70862 (the sweep's tests)
+GetBuildInfo = function() return "1.60.1", NR.MEASURED_ON_BUILD:match("(%d+)$"), "Nov 18 2026", 16001 end
 nr("status")
+GetBuildInfo = stubBuild
 lines = table.concat(newChat(), "\n")
 check(lines:find("radar"), "/nr status")
 check(lines:find("known: 3 nodes and 1 other names learned here, 3 nodes shipped %(enUS%)"), "...counts what's known (with the cleaned names)")
@@ -75,10 +78,10 @@ check(chatHas("/nr known"), "help lists the commands")
 
 -- A build the notes weren't measured on: status says so.
 local real = GetBuildInfo
-GetBuildInfo = function() return "1.60.1", "70999", "Nov 1 2026", 16001 end
+GetBuildInfo = function() return "1.60.1", "71999", "Dec 1 2026", 16001 end
 newChat()
 nr("status")
-check(table.concat(newChat(), "\n"):find("measured on 1%.60%.1%.70450; you're on 1%.60%.1%.70999"),
+check(table.concat(newChat(), "\n"):find("measured on 1%.60%.1%.71037; you're on 1%.60%.1%.71999"),
     "a newer build is named in /nr status")
 GetBuildInfo = real
 

@@ -46,7 +46,7 @@ eq(tocFiles()[#tocFiles()], "NodeRadar.lua", "the bootstrap loads last")
 
 -- Two places that must agree, never derived from each other (porting guide section 0).
 local NR = loadAddon()
-eq(NR.MEASURED_ON_BUILD, "1.60.1.70450", "MEASURED_ON_BUILD")
+eq(NR.MEASURED_ON_BUILD, "1.60.1.71037", "MEASURED_ON_BUILD")
 
 local probe = io.open(PROBE_TOC):read("*a")
 check(probe:find("## Interface: 16001", 1, true), "probe: interface 16001")

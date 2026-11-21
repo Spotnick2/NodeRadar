@@ -91,13 +91,10 @@ end
 -- Widget methods that are real on the client although the dump's widget walk can't
 -- see them (Kit.checkMethods' allow list: each with where it comes from).
 METHOD_ALLOW = {
-    -- A template's Lua mixin adds these (wow-ui-source, 70450).
-    ["DropdownButton:SetupMenu"] = "Blizzard_Menu/DropdownButton.lua (DropdownButtonMixin)",
-    ["DropdownButton:GenerateMenu"] = "Blizzard_Menu/DropdownButton.lua (DropdownButtonMixin)",
-    -- DropdownButton is an intrinsic <Button> (Blizzard_Menu/DropdownButton.xml), not a widget
-    -- type of the dump's walk: it has Button's methods.
-    ["DropdownButton:SetPoint"] = "Blizzard_Menu/DropdownButton.xml (an intrinsic Button)",
-    ["DropdownButton:SetWidth"] = "Blizzard_Menu/DropdownButton.xml (an intrinsic Button)",
+    -- A template's Lua mixin adds these (wow-ui-source, 70450). DropdownButton is an intrinsic
+    -- <Button> (Blizzard_Menu/DropdownButton.xml): the kit records its calls on Button.
+    ["Button:SetupMenu"] = "Blizzard_Menu/DropdownButton.lua (DropdownButtonMixin)",
+    ["Button:GenerateMenu"] = "Blizzard_Menu/DropdownButton.lua (DropdownButtonMixin)",
     -- FrameXML's tooltip accessors (TooltipDataHandler.lua: `SetItemByID = "GetItemByID"`).
     ["GameTooltip:SetItemByID"] = "Blizzard_SharedXMLGame/Tooltip/TooltipDataHandler.lua (accessor table)",
 }

@@ -16,7 +16,7 @@ local FP = loadForeverProbe()
 local NS = loadProbe()
 local S = FP.Steps
 local db = NodeRadarProbeDB
-for i = 1, 4 do rawset(_G, "GameTooltipTextLeft" .. i, GameTooltip:CreateFontString()) end
+for i = 1, 4 do rawset(_G, "GameTooltipTextLeft" .. i, GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText")) end
 local names = { "Alert.Reset", "Alert.NewArea", "Alert.Update", "Alert.Fire", "Alert.Gathered", "Scan.Plain", "Step" }
 local function current()
     return { NR.Alert.Reset, NR.Alert.NewArea, NR.Alert.Update, NR.Alert.Fire, NR.Alert.Gathered, NR.Scan.Plain,

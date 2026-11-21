@@ -17,7 +17,7 @@ local FP = loadForeverProbe()
 loadProbe()
 local S = FP.Steps
 local db = NodeRadarProbeDB
-for i = 1, 4 do rawset(_G, "GameTooltipTextLeft" .. i, GameTooltip:CreateFontString()) end
+for i = 1, 4 do rawset(_G, "GameTooltipTextLeft" .. i, GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText")) end
 
 local function errors()
     local n = 0
