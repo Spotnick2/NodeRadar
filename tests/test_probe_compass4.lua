@@ -12,7 +12,7 @@ rawset(_G, "EnumerateFrames", function() return nil end)
 local lib = { New = function() return {
     Disc = function(host, size) return { size = size, top = CreateFrame("Frame", nil, host) } end,
     Apply = function(frame) return { top = CreateFrame("Frame", nil, frame) } end,
-    Font = function(parent) return parent:CreateFontString() end,
+    Font = function(parent) return parent:CreateFontString(nil, "OVERLAY", "GameFontNormal") end,
     Mask = function(host) return host:CreateTexture() end,
 } end }
 rawset(_G, "LibStub", setmetatable({}, { __call = function(_, major)
@@ -31,7 +31,7 @@ local FP = loadForeverProbe()
 loadProbe()
 local S = FP.Steps
 local db = NodeRadarProbeDB
-rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString())
+rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText"))
 
 local function errors()
     local n = 0

@@ -1064,6 +1064,27 @@ nothing around the minimap or tooltips (only `C_TradeSkillUI.HasNoReagentCost` a
 So from 70938 the scan has nothing to read (#139: it stops on that build and says why), as the
 sweep had nothing from 70862. Not reported on Stanzilla/WoWUIBugs yet.
 
+### 71037: a node's name is still secret, a town service's is plain: chat `/run` lines, 1.60.1.71037 (the owner, 2026-11-21) (#146)
+
+The API dump from 70938 to 71037 changes nothing around the minimap or tooltips
+(`C_BattleNet.IsGameAccountOnSameRealm`, `C_Mail.IsCODEnabled`, `BNetGameAccountInfo.hasRealmInfo`).
+So a real hover was read in game, each line run from chat on a 3-second `C_Timer.After`: press
+Enter, then rest the mouse on a minimap icon with the map at home. One sample each.
+
+| A minimap icon hovered | `GameTooltip:GetTooltipData()` | its `lines[1].leftText` | `C_TooltipInfo.GetMinimapMouseover()` | `GameTooltip:GetOwner() == Minimap` |
+|---|---|---|---|---|
+| A Peacebloom node (Find Herbs) | type 21 | **secret** (the tooltip showed "Peacebloom") | a table | not read |
+| An Innkeeper (the tracking menu's town service) | type 21 | **plain**: `Innkeeper Pala (Innkeeper)`, also `GameTooltipTextLeft1:GetText()` | **nil** | false |
+
+- **A gathering node's name is still secret**, as on 70938: the scan still has nothing to read on 71037.
+- **A town service's name is plain**, through GameTooltip, while `GetMinimapMouseover()` returns
+  nil for it. On 70938 the same call answered on a quest icon with a secret name; whether a quest
+  icon changed on 71037 isn't measured. So the secrecy now looks aimed at gathering nodes, which
+  reads as deliberate.
+- The tooltip's owner isn't `Minimap` on the innkeeper icon; what owns it wasn't read.
+- The scan's own stop (#139) wasn't exercised on 71037: the sessions there logged 0 bursts (the
+  scan never got to look), and `NodeRadarDB.secretNames` still names 70959.
+
 ### Reading by moving the minimap: `/fp steps nr movescan` and `/fp nr movetest`, 1.60.1.70862 (the owner, 2026-11-08, the Barrens, Herbalism 98 to 114) (#91)
 
 Eight revisions of the round and its one-shot command (`/fp nr movetest <size> <dx> <dy> [variant]

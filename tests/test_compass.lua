@@ -23,7 +23,7 @@ local lib = { New = function() return {
         G.pill = { frame = frame, size = size, top = CreateFrame("Frame", nil, frame) }
         return { top = G.pill.top }
     end,
-    Font = function(parent) return parent:CreateFontString() end,
+    Font = function(parent) return parent:CreateFontString(nil, "OVERLAY", "GameFontNormal") end,
     Mask = function(host) return host:CreateTexture() end,
 } end }
 rawset(_G, "LibStub", setmetatable({}, { __call = function(_, major)

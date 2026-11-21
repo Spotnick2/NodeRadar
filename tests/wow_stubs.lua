@@ -23,7 +23,7 @@ local function resetNodeRadar()
     WoW.cvars = { rotateMinimap = "0" }
     WoW.tickers = {}
     WoW.now = 0
-    WoW.build = "70450"     -- GetBuildInfo's build (#90: from 70862 the radar is blind)
+    WoW.build = "70450"     -- GetBuildInfo's build: kept before 70862 (#90: from it the radar is blind), so the sweep's tests run
 end
 table.insert(WoW.onReset, resetNodeRadar)
 resetNodeRadar()
@@ -89,12 +89,6 @@ end
 function Methods.SetTexCoord(t, ...) t._texCoord = { ... } end
 function Methods.IsDesaturated(t) return t._desaturated == true end
 function Methods.GetTexture(t) return t._file end
--- WowTestKit: SetText as the core has it, and a GameTooltip's lines start over.
-local coreSetText = Methods.SetText
-function Methods.SetText(fs, text)
-    coreSetText(fs, text)
-    if fs._type == "GameTooltip" then fs._lines = {} end
-end
 
 
 --------------------------------------------------------------------------------

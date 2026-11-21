@@ -97,7 +97,7 @@ The plan is [docs/PLAN.md](docs/PLAN.md); measured client facts go in
   development is paused until a way is found (the owner, 2026-11-13). Offline tested; #139's stop
   in game unchecked.
 
-Next: from client build 70938 the minimap's names are secret and the scan stops (#139); if a build
+Next: from client build 70938 the minimap's names are secret and the scan stops (#139), still so on 71037 (#146); if a build
 lets it read again, the scan's remaining steps (#91; Codex's plan in the PR #102 discussion): the gathered-spot
 suppression bound to one node, names interleaved in a search, no beacon on a coarse record, then
 refining the compass's target (5-yard windows, measured first) and keeping records across a reload;
@@ -382,8 +382,8 @@ committed as GuildSpy ships them, #46) → `Compat.lua` → `Data\Nodes.lua` →
 - `C:\Projects\WoW\References\Docs\PORTING-TBC-TO-FOREVER.md`: measured, addon-agnostic field notes.
   Treat them as fact. New addon-agnostic findings go there, not into a copy here.
 - `C:\Projects\WoW\References\Forever\api\forever-api-<version>.<build>.md`: the API dump; use the **highest
-  build** there. This repo follows **1.60.1.70450** (the kit's data for 70450, `tests\kit.pin`,
-  follows it). **Presence is not a contract.**
+  build** there. This repo follows **1.60.1.71037** (`MEASURED_ON_BUILD`; the kit's data for it, `tests\kit.pin`,
+  follows it; the tests' `GetBuildInfo` stays 70450, before the sweep went blind). **Presence is not a contract.**
 - `C:\Projects\WoW\References\Docs\PROBES.md` and `C:\Projects\WoW\ForeverProbe\docs\GUIDE.md`: probes.
 - `C:\Projects\WoW\wow-ui-source`: the client's own FrameXML. `Blizzard_Minimap/Mainline/Minimap.lua`
   (the hover tooltip, the tracking menu) first; check its `version.txt` against the build.

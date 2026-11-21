@@ -105,7 +105,7 @@ settle()
 -- Hovering through the frame.
 local r = NR.Icons._test.records()[1]
 rawset(_G, "GameTooltip", CreateFrame("Frame"))
-rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString())
+rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText"))
 GameTooltipTextLeft1:SetText("Silverleaf")
 GameTooltip:Show()
 WoW.mouseOver = r.frame

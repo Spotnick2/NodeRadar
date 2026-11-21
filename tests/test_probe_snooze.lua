@@ -20,7 +20,7 @@ local FP = loadForeverProbe()
 loadProbe()
 local S = FP.Steps
 local db = NodeRadarProbeDB
-rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString())
+rawset(_G, "GameTooltipTextLeft1", GameTooltip:CreateFontString(nil, "ARTWORK", "GameTooltipText"))
 
 local function errors()
     local n = 0
@@ -60,7 +60,7 @@ walk(1.2)
 eq(result(2).status, nil, "no tooltip: waits")
 local dbiTip = CreateFrame("Frame")                         -- LibDBIcon's own tooltip, as in game
 rawset(_G, "LibDBIconTooltip", dbiTip)
-rawset(_G, "LibDBIconTooltipTextLeft1", dbiTip:CreateFontString())
+rawset(_G, "LibDBIconTooltipTextLeft1", dbiTip:CreateFontString(nil, "ARTWORK", "GameTooltipText"))
 dbiTip:Show()
 LibDBIconTooltipTextLeft1:SetText("NodeRadar")
 walk(1.2)

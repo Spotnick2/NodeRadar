@@ -8,7 +8,7 @@ NR.API = API
 
 -- The build docs/FOREVER-PROBE.md was measured on. tests/test_toc.lua holds the
 -- same literal: two places that must agree, never derived from each other.
-NR.MEASURED_ON_BUILD = "1.60.1.70450"
+NR.MEASURED_ON_BUILD = "1.60.1.71037"
 
 function API.IsSecret(v) return issecretvalue ~= nil and issecretvalue(v) end
 
